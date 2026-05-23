@@ -80,22 +80,22 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo }) =>
         <div className="absolute bottom-0 left-0 w-[40%] h-[50%] bg-accent opacity-5 skew-x-[-15deg] origin-bottom-left"></div>
       </div>
 
-      <div className="relative z-10 w-full max-w-md p-10 space-y-8 bg-white dark:bg-dark-card rounded-2xl shadow-2xl border-t-8 border-accent">
+      <div className="relative z-10 w-full max-w-[360px] p-8 space-y-4 bg-white dark:bg-dark-card rounded-2xl shadow-2xl border-t-8 border-accent">
         <div className="text-center">
           {companyLogo ? (
-            <img src={companyLogo} alt="Logo da Empresa" className="h-20 mx-auto filter drop-shadow-md" />
+            <img src={companyLogo} alt="Logo da Empresa" className="h-16 mx-auto filter drop-shadow-md" />
           ) : (
             <h1 className="text-4xl font-black text-primary dark:text-white tracking-tighter">
               AGRO<span className="text-accent">MERCANTIL</span>
             </h1>
           )}
-          <div className="mt-4 flex flex-col items-center">
+          <div className="mt-2 flex flex-col items-center">
             <p className="text-lg font-bold text-primary dark:text-blue-400">Sistema de Gestão Logística</p>
             <div className="h-1 w-12 bg-accent mt-1 rounded-full"></div>
           </div>
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div className="relative">
               <input
@@ -135,7 +135,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo }) =>
             <button
               type="submit"
               disabled={isLoading}
-              className={`w-full flex justify-center py-4 px-4 border border-transparent text-base font-black rounded-xl text-white shadow-lg transition-all transform active:scale-[0.98] ${
+              className={`w-full flex justify-center py-3 px-4 border border-transparent text-base font-black rounded-xl text-white shadow-lg transition-all transform active:scale-[0.98] ${
                 isLoading 
                   ? 'bg-gray-400 cursor-not-allowed' 
                   : 'bg-accent hover:bg-accent-dark hover:-translate-y-1 shadow-accent/20'
@@ -154,7 +154,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo }) =>
           </div>
         </form>
         
-        <div className="text-center pt-4">
+        <div className="text-center pt-2">
             <p className="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-widest font-bold">
                 Transparência | Cuidado | Prazo
             </p>
