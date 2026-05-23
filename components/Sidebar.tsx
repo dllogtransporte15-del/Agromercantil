@@ -167,7 +167,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurre
             <img src={companyLogo} alt="Logo da Empresa" className={`transition-all duration-300 mx-auto ${isCollapsed ? 'h-10' : 'h-12'}`} />
         ) : (
             <h2 className="text-3xl font-semibold text-center text-primary dark:text-white">
-            {isCollapsed ? 'Rodochagas' : 'Rodochagas Logística'}
+            {isCollapsed ? 'Agromarcantil' : 'Agromarcantil Logística'}
             </h2>
         )}
       </div>

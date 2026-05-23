@@ -47,7 +47,7 @@ export async function geocodeCity(query: string): Promise<{ lat: number; lng: nu
       {
         headers: {
           'Accept-Language': 'pt-BR',
-          'User-Agent': 'Rodochagas-Control/1.0'
+          'User-Agent': 'Agromarcantil-Control/1.0'
         }
       }
     );

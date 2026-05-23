@@ -71,11 +71,11 @@ export function useDatabase(currentUser: User | null) {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   
-  const [companyLogo, setCompanyLogo] = useState<string | null>(() => localStorage.getItem('rodochagas_companyLogo'));
-  const [themeImage, setThemeImage] = useState<string | null>(() => localStorage.getItem('rodochagas_themeImage'));
+  const [companyLogo, setCompanyLogo] = useState<string | null>(() => localStorage.getItem('agromarcantil_companyLogo'));
+  const [themeImage, setThemeImage] = useState<string | null>(() => localStorage.getItem('agromarcantil_themeImage'));
 
   const [nextIds, setNextIds] = useState(() => {
-    const saved = localStorage.getItem('rodochagas_nextIds');
+    const saved = localStorage.getItem('agromarcantil_nextIds');
     if (saved) return JSON.parse(saved);
     return { client: 100, owner: 100, driver: 100, vehicle: 100, product: 100, shipment: 100, cargo: 100, user: 100, ticket: 1, branch: 10, history: 1000 };
   });

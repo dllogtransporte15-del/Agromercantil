@@ -672,7 +672,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                 <div className="mt-8 flex justify-between items-center">
                     <div>
                         {shipment.status === ShipmentStatus.AguardandoNota && (
-                            <button onClick={() => window.open('https://rodochagas.atua.com.br/adm/sistema.php', '_blank')} className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center gap-2 font-bold shadow-md shadow-emerald-200 dark:shadow-none">
+                            <button onClick={() => window.open('https://agromarcantil.atua.com.br/adm/sistema.php', '_blank')} className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center gap-2 font-bold shadow-md shadow-emerald-200 dark:shadow-none">
                                 <ExternalLinkIcon className="w-4 h-4" /> Emitir Documentos
                             </button>
                         )}

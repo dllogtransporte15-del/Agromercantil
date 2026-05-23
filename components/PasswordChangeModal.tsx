@@ -136,7 +136,7 @@ const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ user, onPassw
 
         <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700 text-center">
           <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] font-bold">
-            RODOCHAGAS | SEGURANÇA DIGITAL
+            AGROMARCANTIL | SEGURANÇA DIGITAL
           </p>
         </div>
       </div>

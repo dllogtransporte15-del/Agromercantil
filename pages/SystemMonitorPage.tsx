@@ -176,7 +176,7 @@ const SystemMonitorPage: React.FC = () => {
         </div>
 
         <p className="mt-8 text-center text-xs text-gray-400 uppercase tracking-widest">
-            RodoChagas Logística - Painel de Controle de Infraestrutura
+            Agromarcantil Logística - Painel de Controle de Infraestrutura
         </p>
       </div>
     </div>
