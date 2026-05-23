@@ -86,7 +86,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo }) =>
             <img src={companyLogo} alt="Logo da Empresa" className="h-20 mx-auto filter drop-shadow-md" />
           ) : (
             <h1 className="text-4xl font-black text-primary dark:text-white tracking-tighter">
-              RODO<span className="text-accent">CHAGAS</span>
+              AGRO<span className="text-accent">MERCANTIL</span>
             </h1>
           )}
           <div className="mt-4 flex flex-col items-center">

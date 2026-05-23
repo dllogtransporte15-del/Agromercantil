@@ -1,9 +1,9 @@
 
 :root {
-  --primary: #1D3B8D;
-  --primary-dark: #142B6A;
-  --accent: #F16421;
-  --accent-dark: #D1541C;
+  --primary: #124E27;       /* Deep Forest Green (Mercantil) */
+  --primary-dark: #0E331B;  /* Darker Forest Green */
+  --accent: #F99F1B;        /* Warm Golden Amber (Agro) */
+  --accent-dark: #C6710B;   /* Deeper Warm Orange */
 }
 
 /* Base styles for a premium feel */
