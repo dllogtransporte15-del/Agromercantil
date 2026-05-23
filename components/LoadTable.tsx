@@ -166,23 +166,28 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                 icmsPercentage: load.icmsPercentage,
               }];
               
-          const totalDriverFreight = freightLegsToDisplay.reduce((sum, leg) => sum + leg.driverFreightValuePerTon, 0);
+          const totalDriverFreightPJ = freightLegsToDisplay.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
+          const totalDriverFreightPF = freightLegsToDisplay.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
           const totalNetCompanyValue = freightLegsToDisplay.reduce((sum, leg) => {
               const icmsRate = leg.hasIcms ? leg.icmsPercentage / 100 : 0;
               return sum + (leg.companyFreightValuePerTon * (1 - icmsRate));
           }, 0);
 
-          const netProfit = totalNetCompanyValue - totalDriverFreight;
-          const margin = (totalNetCompanyValue > 0) ? (netProfit / totalNetCompanyValue) * 100 : 0;
-          const netMarginPercentage = isNaN(margin) || !isFinite(margin) ? '0,00%' : `${margin.toFixed(2).replace('.', ',')}%`;
-
-          let marginColorClass = 'text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800';
-          if (!isNaN(margin) && isFinite(margin)) {
-            if (margin < 5) marginColorClass = 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30';
-            else if (margin < 6) marginColorClass = 'text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/30';
-            else if (margin < 7) marginColorClass = 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30';
-            else marginColorClass = 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30';
-          }
+          const calcMarginVal = (driver: number) => (totalNetCompanyValue > 0) ? ((totalNetCompanyValue - driver) / totalNetCompanyValue) * 100 : 0;
+          const marginPJ = calcMarginVal(totalDriverFreightPJ);
+          const marginPF = calcMarginVal(totalDriverFreightPF);
+          const netMarginPercentagePJ = isNaN(marginPJ) || !isFinite(marginPJ) ? '0,00%' : `${marginPJ.toFixed(2).replace('.', ',')}%`;
+          const netMarginPercentagePF = isNaN(marginPF) || !isFinite(marginPF) ? '0,00%' : `${marginPF.toFixed(2).replace('.', ',')}%`;
+          const getMarginColorClass = (m: number) => {
+            if (isNaN(m) || !isFinite(m)) return 'text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800';
+            if (m < 5) return 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30';
+            if (m < 6) return 'text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/30';
+            if (m < 7) return 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30';
+            return 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30';
+          };
+          
+          const marginColorClassPJ = getMarginColorClass(marginPJ);
+          const marginColorClassPF = getMarginColorClass(marginPF);
 
           return (
             <div key={load.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 hover:border-primary/30 transition-colors">
@@ -347,10 +352,18 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                 <div className="flex items-center justify-between lg:justify-end gap-4 min-w-[150px]">
                   <div className="text-right flex flex-col items-end">
                     <div className="text-[9px] text-gray-400 uppercase font-bold">Frete</div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-sm font-bold text-primary dark:text-blue-400">{formatCurrency(load.driverFreightValuePerTon)}</div>
-                      <div className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${marginColorClass}`} title="Margem de Lucro">
-                        {netMarginPercentage}
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex flex-col items-end gap-0.5">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[8px] font-bold text-emerald-500 uppercase">PJ</span>
+                          <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(totalDriverFreightPJ)}</span>
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${marginColorClassPJ}`} title="Margem PJ">{netMarginPercentagePJ}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[8px] font-bold text-orange-500 uppercase">PF</span>
+                          <span className="text-xs font-bold text-orange-700 dark:text-orange-300">{formatCurrency(totalDriverFreightPF)}</span>
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${marginColorClassPF}`} title="Margem PF">{netMarginPercentagePF}</span>
+                        </div>
                       </div>
                     </div>
                   </div>

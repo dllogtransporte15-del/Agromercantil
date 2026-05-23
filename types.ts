@@ -151,6 +151,8 @@ export interface HistoryLog {
 
 export interface FreightLeg {
   companyFreightValuePerTon: number;
+  driverFreightValuePerTonPJ?: number;
+  driverFreightValuePerTonPF?: number;
   driverFreightValuePerTon: number;
   hasIcms: boolean;
   icmsPercentage: number;
@@ -183,6 +185,8 @@ export interface Cargo {
   scheduledVolume: number; 
   loadedVolume: number; 
   companyFreightValuePerTon: number;
+  driverFreightValuePerTonPJ?: number;
+  driverFreightValuePerTonPF?: number;
   driverFreightValuePerTon: number;
   hasIcms: boolean;
   icmsPercentage: number;

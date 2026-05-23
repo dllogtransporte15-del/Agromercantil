@@ -427,7 +427,7 @@ const App: React.FC = () => {
       return cargos.filter(c => c.clientId === currentUser.clientId);
     }
     // Profiles that see everything
-    if ([UserProfile.Admin, UserProfile.Diretor].includes(currentUser.profile as UserProfile)) {
+    if ([UserProfile.Admin, UserProfile.Diretor, UserProfile.Coordenador].includes(currentUser.profile as UserProfile)) {
       return cargos;
     }
     
@@ -452,7 +452,7 @@ const App: React.FC = () => {
         return shipments.filter(s => clientCargoIds.has(s.cargoId));
     }
     // Profiles that see everything
-    if ([UserProfile.Admin, UserProfile.Diretor].includes(currentUser.profile as UserProfile)) {
+    if ([UserProfile.Admin, UserProfile.Diretor, UserProfile.Coordenador].includes(currentUser.profile as UserProfile)) {
       return shipments;
     }
 
@@ -1687,8 +1687,8 @@ const App: React.FC = () => {
     const shipment = shipments.find(s => s.id === shipmentId);
     if (!shipment || !currentUser) return;
     
-    if (![UserProfile.Admin, UserProfile.Diretor].includes(currentUser.profile)) {
-        showToast("Apenas administradores ou diretores podem reverter o status.", 'warning');
+    if (![UserProfile.Admin, UserProfile.Diretor, UserProfile.Coordenador].includes(currentUser.profile)) {
+        showToast("Apenas administradores, diretores ou coordenadores podem reverter o status.", 'warning');
         return;
     }
 

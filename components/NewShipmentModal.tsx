@@ -219,10 +219,15 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   }, [horsePlate, vehicles, shipments, lastAutofilledPlate]);
 
 
-  const calculatedFreight = useMemo(() => {
+  const calculatedFreightPJ = useMemo(() => {
     if (!cargo || shipmentTonnage <= 0) return 0;
-    return (cargo?.driverFreightValuePerTon || 0) * shipmentTonnage;
+    return (cargo?.driverFreightValuePerTonPJ ?? cargo?.driverFreightValuePerTon ?? 0) * shipmentTonnage;
   }, [cargo, shipmentTonnage]);
+  const calculatedFreightPF = useMemo(() => {
+    if (!cargo || shipmentTonnage <= 0) return 0;
+    return (cargo?.driverFreightValuePerTonPF ?? cargo?.driverFreightValuePerTon ?? 0) * shipmentTonnage;
+  }, [cargo, shipmentTonnage]);
+  const calculatedFreight = calculatedFreightPJ; // legado: usa PJ como padrão
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -458,12 +463,19 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             </div>
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 bg-gray-100 dark:bg-gray-900/50 rounded-lg text-center">
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Valor do Frete (Motorista)</p>
-                <div className="flex flex-col items-center">
-                    <p className="text-2xl font-bold text-gray-800 dark:text-white">
-                        {formatCurrency(cargo?.driverFreightValuePerTon || 0)} <span className="text-sm font-normal text-gray-500">/ TON</span>
-                    </p>
+              <div className="p-4 bg-gray-100 dark:bg-gray-900/50 rounded-lg">
+                <p className="text-xs font-bold text-gray-500 uppercase mb-3">Valor do Frete (por TON)</p>
+                <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">PJ</span>
+                        <span className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(cargo?.driverFreightValuePerTonPJ ?? cargo?.driverFreightValuePerTon ?? 0)}<span className="text-xs font-normal text-gray-500"> / ton</span></span>
+                    </div>
+                    <div className="text-xs text-gray-400 text-right">Total: {formatCurrency(calculatedFreightPJ)}</div>
+                    <div className="flex items-center justify-between mt-1 pt-1 border-t dark:border-gray-700">
+                        <span className="text-sm font-bold text-orange-600 dark:text-orange-400">PF</span>
+                        <span className="text-lg font-bold text-orange-700 dark:text-orange-300">{formatCurrency(cargo?.driverFreightValuePerTonPF ?? cargo?.driverFreightValuePerTon ?? 0)}<span className="text-xs font-normal text-gray-500"> / ton</span></span>
+                    </div>
+                    <div className="text-xs text-gray-400 text-right">Total: {formatCurrency(calculatedFreightPF)}</div>
                 </div>
               </div>
               <div>

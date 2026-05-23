@@ -5,6 +5,7 @@ import type {
   User, Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, Ticket,
   ProfilePermissions, ShipmentLock, Branch 
 } from '../types';
+import { UserProfile } from '../types';
 import { INITIAL_PERMISSIONS } from '../auth';
 import { 
   fetchClients, fetchOwners, fetchDrivers, fetchVehicles, fetchProducts,
@@ -125,7 +126,15 @@ export function useDatabase(currentUser: User | null) {
       setBranches(dbBranches);
       setActiveLocks(dbLocks);
 
-      if (dbPermissions) setProfilePermissions(dbPermissions);
+      if (dbPermissions) {
+        const merged = { ...INITIAL_PERMISSIONS };
+        for (const profile in dbPermissions) {
+           if (dbPermissions[profile]) {
+              merged[profile as UserProfile] = { ...INITIAL_PERMISSIONS[profile as UserProfile], ...dbPermissions[profile] };
+           }
+        }
+        setProfilePermissions(merged);
+      }
       if (dbSettings) {
         if (dbSettings.company_logo) setCompanyLogo(dbSettings.company_logo);
         if (dbSettings.theme_image) setThemeImage(dbSettings.theme_image);
@@ -239,7 +248,15 @@ export function useDatabase(currentUser: User | null) {
           }
           case 'profile_permissions': {
             const dbPermissions = await fetchProfilePermissions();
-            if (dbPermissions) setProfilePermissions(dbPermissions);
+            if (dbPermissions) {
+               const merged = { ...INITIAL_PERMISSIONS };
+               for (const profile in dbPermissions) {
+                  if (dbPermissions[profile]) {
+                     merged[profile as UserProfile] = { ...INITIAL_PERMISSIONS[profile as UserProfile], ...dbPermissions[profile] };
+                  }
+               }
+               setProfilePermissions(merged);
+            }
             break;
           }
           case 'app_settings': {

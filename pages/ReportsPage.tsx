@@ -188,7 +188,12 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
        if (profitMarginStatuses.includes(s.status)) {
            const grossRate = s.companyFreightRateSnapshot || cargo.companyFreightValuePerTon;
            const driverRate = s.driverFreightRateSnapshot || cargo.driverFreightValuePerTon;
-           const profit = (grossRate - driverRate) * s.shipmentTonnage;
+           
+           // Deduct ICMS if applicable
+           const icmsDeduction = cargo.hasIcms ? (grossRate * (cargo.icmsPercentage / 100)) : 0;
+           const effectiveGrossRate = grossRate - icmsDeduction;
+           
+           const profit = (effectiveGrossRate - driverRate) * s.shipmentTonnage;
            
            grossBilled += grossRate * s.shipmentTonnage;
            profitMargin += profit;

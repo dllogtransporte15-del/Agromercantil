@@ -152,9 +152,14 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
                       </div>
                       <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 justify-end">
                         <DollarSign size={14} className="text-gray-400" />
-                        <span className="font-semibold text-gray-900 dark:text-gray-200">
-                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTon)}/ton
-                        </span>
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
+                            PJ: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTonPJ ?? cargo.driverFreightValuePerTon)}/ton
+                          </span>
+                          <span className="text-[9px] font-bold text-orange-600 dark:text-orange-400">
+                            PF: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTonPF ?? cargo.driverFreightValuePerTon)}/ton
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>

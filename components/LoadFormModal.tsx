@@ -57,8 +57,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
     loadingDeadline: '',
     allowedVehicleTypes: DEFAULT_ALLOWED_VEHICLE_TYPES,
     freightLegs: [
-      { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, hasIcms: false, icmsPercentage: 0 },
-      { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, hasIcms: false, icmsPercentage: 0 }
+      { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 },
+      { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 }
     ],
     dailySchedule: [],
     observations: '',
@@ -94,11 +94,15 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
         if (loadToEdit) {
             const { history, createdAt, id, scheduledVolume, loadedVolume, ...editableLoad } = loadToEdit;
             const legs = editableLoad.freightLegs && editableLoad.freightLegs.length > 0
-                ? [...editableLoad.freightLegs]
-                : [{ companyFreightValuePerTon: editableLoad.companyFreightValuePerTon, driverFreightValuePerTon: editableLoad.driverFreightValuePerTon, hasIcms: editableLoad.hasIcms, icmsPercentage: editableLoad.icmsPercentage }];
+                ? editableLoad.freightLegs.map(leg => ({
+                    ...leg,
+                    driverFreightValuePerTonPJ: leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon,
+                    driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
+                  }))
+                : [{ companyFreightValuePerTon: editableLoad.companyFreightValuePerTon, driverFreightValuePerTon: editableLoad.driverFreightValuePerTon, driverFreightValuePerTonPJ: editableLoad.driverFreightValuePerTonPJ ?? editableLoad.driverFreightValuePerTon, driverFreightValuePerTonPF: editableLoad.driverFreightValuePerTonPF ?? editableLoad.driverFreightValuePerTon, hasIcms: editableLoad.hasIcms, icmsPercentage: editableLoad.icmsPercentage }];
             
             while (legs.length < 2) {
-                legs.push({ companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, hasIcms: false, icmsPercentage: 0 });
+                legs.push({ companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 });
             }
             
             setLoad({ 
@@ -126,12 +130,13 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
     prevIsOpen.current = isOpen;
   }, [isOpen, initialStep, currentUser]);
   
-  const { totalCompanyFreight, totalDriverFreight, netMarginPercentage } = useMemo(() => {
+  const { totalCompanyFreight, totalDriverFreightPJ, totalDriverFreightPF, netMarginPercentagePJ, netMarginPercentagePF, marginPJ, marginPF } = useMemo(() => {
     const legs = load.freightLegs || [];
     const activeLegs = hasMultiLeg ? legs.slice(0, 2) : legs.slice(0, 1);
 
     const totalCompanyFreight = activeLegs.reduce((sum, leg) => sum + leg.companyFreightValuePerTon, 0);
-    const totalDriverFreight = activeLegs.reduce((sum, leg) => sum + leg.driverFreightValuePerTon, 0);
+    const totalDriverFreightPJ = activeLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
+    const totalDriverFreightPF = activeLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
     
     const totalNetCompanyValue = activeLegs.reduce((sum, leg) => {
         const icmsRate = leg.hasIcms ? leg.icmsPercentage / 100 : 0;
@@ -139,14 +144,16 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
         return sum + netValue;
     }, 0);
 
-    const netProfit = totalNetCompanyValue - totalDriverFreight;
-    const margin = (totalNetCompanyValue > 0) ? (netProfit / totalNetCompanyValue) * 100 : 0;
-    
-    const netMarginPercentage = isNaN(margin) || !isFinite(margin)
-        ? '0,00%'
-        : `${margin.toFixed(2).replace('.', ',')}%`;
+    const calcMargin = (driverFreight: number) => {
+        const profit = totalNetCompanyValue - driverFreight;
+        return (totalNetCompanyValue > 0) ? (profit / totalNetCompanyValue) * 100 : 0;
+    };
 
-    return { totalCompanyFreight, totalDriverFreight, netMarginPercentage };
+    const marginPJ = calcMargin(totalDriverFreightPJ);
+    const marginPF = calcMargin(totalDriverFreightPF);
+    const formatMargin = (m: number) => isNaN(m) || !isFinite(m) ? '0,00%' : `${m.toFixed(2).replace('.', ',')}%`;
+
+    return { totalCompanyFreight, totalDriverFreightPJ, totalDriverFreightPF, netMarginPercentagePJ: formatMargin(marginPJ), netMarginPercentagePF: formatMargin(marginPF), marginPJ, marginPF };
   }, [load.freightLegs, hasMultiLeg]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -169,7 +176,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
         const legToUpdate = { ...newLegs[index] };
         
         let finalValue = value;
-        if (field === 'companyFreightValuePerTon' || field === 'driverFreightValuePerTon' || field === 'icmsPercentage') {
+        if (field === 'companyFreightValuePerTon' || field === 'driverFreightValuePerTon' || field === 'driverFreightValuePerTonPJ' || field === 'driverFreightValuePerTonPF' || field === 'icmsPercentage') {
             finalValue = parseFloat(value as string) || 0;
         }
 
@@ -218,11 +225,22 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
         geocodeCity(load.destination)
     ]);
 
+    const totalDriverFreightPJCalc = activeLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
+    const totalDriverFreightPFCalc = activeLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
+
+    const normalizedLegs = activeLegs.map(leg => ({
+        ...leg,
+        driverFreightValuePerTonPJ: leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon,
+        driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
+    }));
+
     const finalLoadData = {
         ...load,
         companyFreightValuePerTon: totalCompanyFreight,
-        driverFreightValuePerTon: totalDriverFreight,
-        freightLegs: activeLegs,
+        driverFreightValuePerTon: totalDriverFreightPJCalc, // legado: usa PJ como padrão
+        driverFreightValuePerTonPJ: totalDriverFreightPJCalc,
+        driverFreightValuePerTonPF: totalDriverFreightPFCalc,
+        freightLegs: normalizedLegs,
         hasIcms: activeLegs[0]?.hasIcms || false,
         icmsPercentage: activeLegs[0]?.icmsPercentage || 0,
         originCoords: originCoords || undefined,
@@ -331,9 +349,16 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
 
   if (!isOpen) return null;
 
-  const leg1 = load.freightLegs?.[0] || { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, hasIcms: false, icmsPercentage: 0 };
-  const leg2 = load.freightLegs?.[1] || { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, hasIcms: false, icmsPercentage: 0 };
+  const leg1 = load.freightLegs?.[0] || { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 };
+  const leg2 = load.freightLegs?.[1] || { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 };
 
+  const getMarginColorClass = (m: number) => {
+    if (isNaN(m) || !isFinite(m)) return 'text-gray-600 dark:text-gray-400 bg-gray-200 dark:bg-gray-700';
+    if (m < 5) return 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/50';
+    if (m < 6) return 'text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-900/50';
+    if (m < 7) return 'text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50';
+    return 'text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/50';
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
@@ -513,10 +538,29 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                                 <span className="text-sm text-gray-700 dark:text-gray-300">Incide ICMS</span>
                             </label>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <input value={leg1.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(0, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="Frete Empresa" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                            {leg1.hasIcms && <input value={leg1.icmsPercentage || ''} onChange={(e) => handleLegChange(0, 'icmsPercentage', e.target.value)} type="number" placeholder="ICMS (%)" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>}
-                            <input value={leg1.driverFreightValuePerTon || ''} onChange={(e) => handleLegChange(0, 'driverFreightValuePerTon', e.target.value)} type="number" placeholder="Frete Motorista" className={`p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 ${leg1.hasIcms ? '' : 'md:col-start-3'}`} step="0.01"/>
+                        <div className="space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Frete Empresa (R$/ton)</label>
+                                    <input value={leg1.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(0, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                                </div>
+                                {leg1.hasIcms && (
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ICMS (%)</label>
+                                        <input value={leg1.icmsPercentage || ''} onChange={(e) => handleLegChange(0, 'icmsPercentage', e.target.value)} type="number" placeholder="%" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-1">Frete Motorista PJ (R$/ton)</label>
+                                    <input value={(leg1.driverFreightValuePerTonPJ !== undefined ? leg1.driverFreightValuePerTonPJ : '') || ''} onChange={(e) => handleLegChange(0, 'driverFreightValuePerTonPJ', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-emerald-200 dark:border-emerald-800 rounded dark:bg-gray-700" step="0.01"/>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">Frete Motorista PF (R$/ton)</label>
+                                    <input value={(leg1.driverFreightValuePerTonPF !== undefined ? leg1.driverFreightValuePerTonPF : '') || ''} onChange={(e) => handleLegChange(0, 'driverFreightValuePerTonPF', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-orange-200 dark:border-orange-800 rounded dark:bg-gray-700" step="0.01"/>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     {/* Leg 2 */}
@@ -528,18 +572,52 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                                     <span className="text-sm text-gray-700 dark:text-gray-300">Incide ICMS</span>
                                 </label>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <input value={leg2.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(1, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="Frete Empresa" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                                {leg2.hasIcms && <input value={leg2.icmsPercentage || ''} onChange={(e) => handleLegChange(1, 'icmsPercentage', e.target.value)} type="number" placeholder="ICMS (%)" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>}
-                                <input value={leg2.driverFreightValuePerTon || ''} onChange={(e) => handleLegChange(1, 'driverFreightValuePerTon', e.target.value)} type="number" placeholder="Frete Motorista" className={`p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 ${leg2.hasIcms ? '' : 'md:col-start-3'}`} step="0.01"/>
+                            <div className="space-y-3">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Frete Empresa (R$/ton)</label>
+                                        <input value={leg2.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(1, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                                    </div>
+                                    {leg2.hasIcms && (
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ICMS (%)</label>
+                                            <input value={leg2.icmsPercentage || ''} onChange={(e) => handleLegChange(1, 'icmsPercentage', e.target.value)} type="number" placeholder="%" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-1">Frete Motorista PJ (R$/ton)</label>
+                                        <input value={(leg2.driverFreightValuePerTonPJ !== undefined ? leg2.driverFreightValuePerTonPJ : '') || ''} onChange={(e) => handleLegChange(1, 'driverFreightValuePerTonPJ', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-emerald-200 dark:border-emerald-800 rounded dark:bg-gray-700" step="0.01"/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">Frete Motorista PF (R$/ton)</label>
+                                        <input value={(leg2.driverFreightValuePerTonPF !== undefined ? leg2.driverFreightValuePerTonPF : '') || ''} onChange={(e) => handleLegChange(1, 'driverFreightValuePerTonPF', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-orange-200 dark:border-orange-800 rounded dark:bg-gray-700" step="0.01"/>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
                     {/* Totals */}
                     <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md"><label className="text-xs font-medium text-gray-500 dark:text-gray-400">Frete Empresa (Final)</label><p className="text-lg font-bold text-gray-800 dark:text-gray-200">{totalCompanyFreight.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</p></div>
-                        <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md"><label className="text-xs font-medium text-gray-500 dark:text-gray-400">Frete Motorista (Final)</label><p className="text-lg font-bold text-gray-800 dark:text-gray-200">{totalDriverFreight.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</p></div>
-                        <div className="p-3 bg-blue-50 dark:bg-blue-900/50 rounded-md border border-blue-200 dark:border-blue-800"><label className="text-xs font-medium text-blue-500 dark:text-blue-400">Margem Líquida (%)</label><p className="text-lg font-bold text-primary dark:text-blue-300">{netMarginPercentage}</p></div>
+                        <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
+                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Frete Empresa (Total)</label>
+                            <p className="text-lg font-bold text-gray-800 dark:text-gray-200">{totalCompanyFreight.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</p>
+                        </div>
+                        <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-md border border-emerald-200 dark:border-emerald-800">
+                            <label className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Frete PJ / Margem PJ</label>
+                            <div className="flex items-center justify-between">
+                                <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{totalDriverFreightPJ.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</p>
+                                <span className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(marginPJ)}`}>{netMarginPercentagePJ}</span>
+                            </div>
+                        </div>
+                        <div className="p-3 bg-orange-50 dark:bg-orange-900/30 rounded-md border border-orange-200 dark:border-orange-800">
+                            <label className="text-xs font-medium text-orange-600 dark:text-orange-400">Frete PF / Margem PF</label>
+                            <div className="flex items-center justify-between">
+                                <p className="text-lg font-bold text-orange-700 dark:text-orange-300">{totalDriverFreightPF.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</p>
+                                <span className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(marginPF)}`}>{netMarginPercentagePF}</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

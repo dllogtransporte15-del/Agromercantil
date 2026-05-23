@@ -20,26 +20,35 @@ const DetailItem: React.FC<{ label: string; value?: string | number | null; chil
     </div>
 );
 
-const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number }> = ({ leg, index }) => (
-    <div className="p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-        <div className="flex justify-between items-center mb-3">
-            <h4 className="font-semibold text-gray-600 dark:text-gray-300">Perna {index + 1}</h4>
-            <span className={`text-xs font-semibold px-2 py-1 rounded-full ${leg.hasIcms ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' : 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200'}`}>
-                ICMS: {leg.hasIcms ? `Sim (${leg.icmsPercentage}%)` : 'Não'}
-            </span>
-        </div>
-        <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-                <p className="text-xs text-gray-500">Frete Empresa</p>
-                <p className="font-medium text-gray-800 dark:text-gray-200">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.companyFreightValuePerTon)}</p>
+const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number }> = ({ leg, index }) => {
+    const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+    const pj = leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon;
+    const pf = leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon;
+    return (
+        <div className="p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+            <div className="flex justify-between items-center mb-3">
+                <h4 className="font-semibold text-gray-600 dark:text-gray-300">Perna {index + 1}</h4>
+                <span className={`text-xs font-semibold px-2 py-1 rounded-full ${leg.hasIcms ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' : 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200'}`}>
+                    ICMS: {leg.hasIcms ? `Sim (${leg.icmsPercentage}%)` : 'Não'}
+                </span>
             </div>
-            <div>
-                <p className="text-xs text-gray-500">Frete Motorista</p>
-                <p className="font-medium text-gray-800 dark:text-gray-200">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.driverFreightValuePerTon)}</p>
+            <div className="grid grid-cols-3 gap-4 text-sm">
+                <div>
+                    <p className="text-xs text-gray-500">Frete Empresa</p>
+                    <p className="font-medium text-gray-800 dark:text-gray-200">{fmt(leg.companyFreightValuePerTon)}</p>
+                </div>
+                <div>
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400">Frete Motor. PJ</p>
+                    <p className="font-medium text-emerald-700 dark:text-emerald-300">{fmt(pj)}</p>
+                </div>
+                <div>
+                    <p className="text-xs text-orange-600 dark:text-orange-400">Frete Motor. PF</p>
+                    <p className="font-medium text-orange-700 dark:text-orange-300">{fmt(pf)}</p>
+                </div>
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 
 const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, cargo, client, product, commercialUser }) => {
@@ -59,11 +68,12 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
         icmsPercentage: cargo.icmsPercentage,
       }];
       
-  const { totalCompanyFreight, totalDriverFreight, netMarginPercentage } = useMemo(() => {
+  const { totalCompanyFreight, totalDriverFreightPJ, totalDriverFreightPF, netMarginPercentagePJ, netMarginPercentagePF, marginPJ, marginPF } = useMemo(() => {
     const activeLegs = freightLegsToDisplay;
 
     const totalCompanyFreight = activeLegs.reduce((sum, leg) => sum + leg.companyFreightValuePerTon, 0);
-    const totalDriverFreight = activeLegs.reduce((sum, leg) => sum + leg.driverFreightValuePerTon, 0);
+    const totalDriverFreightPJ = activeLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
+    const totalDriverFreightPF = activeLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
     
     const totalNetCompanyValue = activeLegs.reduce((sum, leg) => {
         const icmsRate = leg.hasIcms ? leg.icmsPercentage / 100 : 0;
@@ -71,15 +81,25 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
         return sum + netValue;
     }, 0);
 
-    const netProfit = totalNetCompanyValue - totalDriverFreight;
-    const margin = (totalNetCompanyValue > 0) ? (netProfit / totalNetCompanyValue) * 100 : 0;
+    const calcMargin = (driverFreight: number) => {
+        const profit = totalNetCompanyValue - driverFreight;
+        return (totalNetCompanyValue > 0) ? (profit / totalNetCompanyValue) * 100 : 0;
+    };
     
-    const netMarginPercentage = isNaN(margin) || !isFinite(margin)
-        ? '0,00%'
-        : `${margin.toFixed(2).replace('.', ',')}%`;
+    const marginPJ = calcMargin(totalDriverFreightPJ);
+    const marginPF = calcMargin(totalDriverFreightPF);
+    const formatMargin = (m: number) => isNaN(m) || !isFinite(m) ? '0,00%' : `${m.toFixed(2).replace('.', ',')}%`;
 
-    return { totalCompanyFreight, totalDriverFreight, netMarginPercentage };
+    return { totalCompanyFreight, totalDriverFreightPJ, totalDriverFreightPF, netMarginPercentagePJ: formatMargin(marginPJ), netMarginPercentagePF: formatMargin(marginPF), marginPJ, marginPF };
   }, [freightLegsToDisplay]);
+
+  const getMarginColorClass = (m: number) => {
+    if (isNaN(m) || !isFinite(m)) return 'text-gray-600 dark:text-gray-400 bg-gray-200 dark:bg-gray-700';
+    if (m < 5) return 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/50';
+    if (m < 6) return 'text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-900/50';
+    if (m < 7) return 'text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50';
+    return 'text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/50';
+  };
 
 
   return (
@@ -135,16 +155,22 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                 </div>
                  <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
-                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Frete Empresa (Final)</label>
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Frete Empresa (Total)</label>
                         <p className="text-lg font-bold text-gray-800 dark:text-gray-200">{formatCurrency(totalCompanyFreight)}</p>
                     </div>
-                    <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
-                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Frete Motorista (Final)</label>
-                        <p className="text-lg font-bold text-gray-800 dark:text-gray-200">{formatCurrency(totalDriverFreight)}</p>
+                    <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-md border border-emerald-200 dark:border-emerald-800 flex flex-col justify-between">
+                        <label className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Frete PJ / Margem PJ</label>
+                        <div className="flex items-center justify-between mt-1">
+                            <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(totalDriverFreightPJ)}</p>
+                            <span className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(marginPJ)}`}>{netMarginPercentagePJ}</span>
+                        </div>
                     </div>
-                    <div className="p-3 bg-blue-50 dark:bg-blue-900/50 rounded-md border border-blue-200 dark:border-blue-800">
-                        <label className="text-xs font-medium text-blue-500 dark:text-blue-400">Margem Líquida (%)</label>
-                        <p className="text-lg font-bold text-primary dark:text-blue-300">{netMarginPercentage}</p>
+                    <div className="p-3 bg-orange-50 dark:bg-orange-900/30 rounded-md border border-orange-200 dark:border-orange-800 flex flex-col justify-between">
+                        <label className="text-xs font-medium text-orange-600 dark:text-orange-400">Frete PF / Margem PF</label>
+                        <div className="flex items-center justify-between mt-1">
+                            <p className="text-lg font-bold text-orange-700 dark:text-orange-300">{formatCurrency(totalDriverFreightPF)}</p>
+                            <span className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(marginPF)}`}>{netMarginPercentagePF}</span>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -301,31 +301,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users,
     };
   }, [cargos, shipments, currentUser]);
 
-  if (currentUser?.profile === UserProfile.Coordenador) {
-    const totalActiveLoads = cargos.filter(c => c.status === CargoStatus.EmAndamento || c.status === CargoStatus.Suspensa).length;
-    const shipmentsAwaitingLoading = shipments.filter(s => s.status === ShipmentStatus.AguardandoCarregamento);
 
-    return (
-      <>
-        <Header title="Dashboard do Coordenador" />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-           <Card
-              title="Total de Cargas Ativas"
-              value={totalActiveLoads.toString()}
-              icon={<PackageIcon className="w-6 h-6 text-white" />}
-              colorClass="bg-blue-500"
-            />
-            <div className="lg:col-span-2">
-                <ShipmentListCard 
-                    title="Embarques Aguardando Carregamento"
-                    shipments={shipmentsAwaitingLoading}
-                    users={users}
-                />
-            </div>
-        </div>
-      </>
-    );
-  }
 
   if (currentUser?.profile === UserProfile.Fiscal) {
     const shipmentsPreCadastro = shipments.filter(s => s.status === ShipmentStatus.PreCadastro);

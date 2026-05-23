@@ -43,7 +43,12 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
     if (!cargo) return 0;
     const grossRate = s.companyFreightRateSnapshot || cargo.companyFreightValuePerTon || 0;
     const driverRate = s.driverFreightRateSnapshot || (s.driverFreightValue / (s.shipmentTonnage || 1));
-    return (grossRate - driverRate) * s.shipmentTonnage;
+    
+    // Deduct ICMS if applicable
+    const icmsDeduction = cargo.hasIcms ? (grossRate * (cargo.icmsPercentage / 100)) : 0;
+    const effectiveGrossRate = grossRate - icmsDeduction;
+    
+    return (effectiveGrossRate - driverRate) * s.shipmentTonnage;
   };
 
   // Sync selected shipment with latest data from props
