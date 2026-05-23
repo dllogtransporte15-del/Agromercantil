@@ -287,6 +287,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         onUpdatePrice={onUpdatePrice}
         onUpdateShipmentData={onUpdateShipmentData}
         currentUser={currentUser}
+        profilePermissions={profilePermissions}
         activeStatus={activeStatus}
         clients={clients}
         products={products}

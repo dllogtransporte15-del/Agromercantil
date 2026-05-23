@@ -327,13 +327,14 @@ const App: React.FC = () => {
   };
 
   const handleSavePermissions = async (newPermissions: ProfilePermissions) => {
-    setProfilePermissions(newPermissions);
     try {
       await saveProfilePermissions(newPermissions);
+      setProfilePermissions(newPermissions);
+      showToast("Permissões salvas com sucesso!", 'success');
     } catch (err) {
       console.error('Erro ao salvar permissões:', err);
+      showToast("Erro ao salvar permissões. Tente novamente.", 'error');
     }
-    showToast("Permissões salvas com sucesso!", 'success');
   };
   
   const handleSaveLogo = async (logo: string) => {
@@ -1588,15 +1589,22 @@ const App: React.FC = () => {
   const handleSaveUser = async (userData: User | Omit<User, 'id'>) => {
     let saved: User;
     if ('id' in userData) {
-      saved = userData;
-      setUsers(prev => prev.map(u => u.id === userData.id ? { ...u, ...userData } : u));
+      const existingUser = users.find(u => u.id === userData.id);
+      saved = { ...existingUser, ...userData } as User;
+      setUsers(prev => prev.map(u => u.id === userData.id ? saved : u));
     } else { 
       const newId = formatId(nextIds.user, 'USR');
       saved = { ...userData, id: newId } as User;
       setUsers(prev => [saved, ...prev]);
       setNextIds((prev: any) => ({ ...prev, user: prev.user + 1 }));
     }
-    try { await upsertUser(saved); } catch(err) { console.error('Erro ao salvar usuário:', err); }
+    try { 
+      await upsertUser(saved);
+      showToast("Usuário salvo com sucesso!", "success");
+    } catch(err: any) { 
+      console.error('Erro ao salvar usuário:', err); 
+      showToast("Erro ao salvar usuário: " + (err.message || "Erro desconhecido"), "error");
+    }
   };
   
   const handleDeleteUser = async (userId: string) => {
@@ -1880,6 +1888,7 @@ const App: React.FC = () => {
                   onRevertStatus={handleRevertShipmentStatus}
                   onDeleteAttachment={handleDeleteShipmentAttachment}
                   onUpdatePrice={handleUpdateShipmentPrice}
+                  profilePermissions={profilePermissions}
                 />;
       case 'load-history':
         return <LoadHistoryPage
@@ -1891,6 +1900,7 @@ const App: React.FC = () => {
                   shipments={shipments}
                   onDeleteLoad={handleDeleteCargo}
                   onReactivateLoad={handleReactivateLoad}
+                  profilePermissions={profilePermissions}
                 />;
       case 'layover-calculator':
         return <LayoverCalculatorPage currentUser={currentUser} shipments={shipments} cargos={cargos} clients={clients} />;

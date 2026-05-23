@@ -7,7 +7,7 @@ import HistoryModal from '../components/HistoryModal';
 import AttachmentModal from '../components/AttachmentModal';
 import CargoDetailsModal from '../components/CargoDetailsModal';
 import CancellationReasonChart from '../components/CancellationReasonChart';
-import type { Shipment, Cargo, User, Product, Client, Vehicle } from '../types';
+import type { Shipment, Cargo, User, Product, Client, Vehicle, ProfilePermissions } from '../types';
 import { ShipmentStatus } from '../types';
 
 interface ShipmentHistoryPageProps {
@@ -22,9 +22,10 @@ interface ShipmentHistoryPageProps {
   onRevertStatus?: (shipmentId: string) => void;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
+  profilePermissions?: ProfilePermissions;
 }
 
-const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice }) => {
+const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice, profilePermissions }) => {
   const [activeStatus, setActiveStatus] = useState<ShipmentStatus>(ShipmentStatus.Finalizado);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);

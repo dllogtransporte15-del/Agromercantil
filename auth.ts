@@ -26,7 +26,7 @@ export const INITIAL_PERMISSIONS: ProfilePermissions = {
   [UserProfile.Embarcador]: createPermissions(['dashboard', 'reports', 'operational-loads', 'shipments', 'operational-map', 'shipment-history', 'load-history', 'layover-calculator'], true),
   [UserProfile.Cliente]: createPermissions(['dashboard', 'loads', 'shipments', 'shipment-history', 'load-history'], true),
   [UserProfile.Supervisor]: createPermissions(supervisorAndDiretorPages),
-  [UserProfile.Diretor]: createPermissions(supervisorAndDiretorPages, true),
+  [UserProfile.Diretor]: createPermissions(supervisorAndDiretorPages), // Full permissions like Supervisor
 };
 
 if (INITIAL_PERMISSIONS[UserProfile.Fiscal] && INITIAL_PERMISSIONS[UserProfile.Fiscal]!['shipments']) {
@@ -36,6 +36,16 @@ if (INITIAL_PERMISSIONS[UserProfile.Fiscal] && INITIAL_PERMISSIONS[UserProfile.F
 // Specifically grant 'create' permission for 'shipments' to 'Embarcador' profile
 if (INITIAL_PERMISSIONS[UserProfile.Embarcador] && INITIAL_PERMISSIONS[UserProfile.Embarcador]!['shipments']) {
     INITIAL_PERMISSIONS[UserProfile.Embarcador]!['shipments']!.create = true;
+}
+
+// Diretor can do everything EXCEPT delete cargas (loads) and embarques (shipments)
+if (INITIAL_PERMISSIONS[UserProfile.Diretor]) {
+    if (INITIAL_PERMISSIONS[UserProfile.Diretor]!['loads']) {
+        INITIAL_PERMISSIONS[UserProfile.Diretor]!['loads']!.delete = false;
+    }
+    if (INITIAL_PERMISSIONS[UserProfile.Diretor]!['shipments']) {
+        INITIAL_PERMISSIONS[UserProfile.Diretor]!['shipments']!.delete = false;
+    }
 }
 
 

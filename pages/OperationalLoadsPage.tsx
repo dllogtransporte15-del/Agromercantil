@@ -35,7 +35,7 @@ interface OperationalLoadsPageProps {
 
 const formatAllowedVehicleTypes = (allowed?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]): string => {
     if (!allowed || allowed.length === 0) return 'N/A';
-    const allBodyTypes = allowed.flatMap(type => type.bodyTypes);
+    const allBodyTypes = allowed.flatMap(type => type.bodyTypes || []);
     const uniqueBodyTypes = [...new Set(allBodyTypes)];
     return uniqueBodyTypes.join(';');
 };
@@ -190,6 +190,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         onShowShipments={handleShowShipments}
         onDelete={onDeleteLoad}
         currentUser={currentUser}
+        profilePermissions={profilePermissions}
       />
 
       <NewShipmentModal

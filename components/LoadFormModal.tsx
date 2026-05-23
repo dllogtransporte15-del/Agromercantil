@@ -301,7 +301,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
             // Update existing entry by merging body types
             const updatedTypes = [...allowedTypes];
             const existingEntry = updatedTypes[existingIndex];
-            const newBodyTypes = [...new Set([...existingEntry.bodyTypes, ...currentBodyTypes])];
+            const newBodyTypes = [...new Set([...(existingEntry.bodyTypes || []), ...currentBodyTypes])];
             updatedTypes[existingIndex] = { ...existingEntry, bodyTypes: newBodyTypes };
             return { ...prev, allowedVehicleTypes: updatedTypes };
         } else {
@@ -635,7 +635,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                             {load.allowedVehicleTypes.map(avt => (
                                 <div key={avt.setType} className="flex justify-between items-center p-2 bg-blue-100/50 dark:bg-blue-900/20 rounded-md">
                                     <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                                        <span className="font-bold">{avt.setType}:</span> {avt.bodyTypes.join(', ')}
+                                        <span className="font-bold">{avt.setType}:</span> {avt.bodyTypes?.join(', ') || ''}
                                     </p>
                                     <button type="button" onClick={() => handleRemoveAllowedType(avt.setType)} className="p-1 text-red-500 hover:text-red-700 dark:hover:text-red-400"><XIcon className="w-4 h-4"/></button>
                                 </div>

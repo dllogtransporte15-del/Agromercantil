@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
-import type { Cargo, Client, Product, Shipment, User } from '../types';
+import type { Cargo, Client, Product, Shipment, User, ProfilePermissions } from '../types';
 import { DailyScheduleType, CargoStatus, UserProfile } from '../types';
+import { can, INITIAL_PERMISSIONS } from '../auth';
 import VolumeBar from './VolumeBar';
 import { Trash2 } from 'lucide-react';
 import { PlusIcon } from './icons/PlusIcon';
@@ -28,10 +29,16 @@ interface LoadTableProps {
   onShowShipments?: (load: Cargo) => void;
   onDelete?: (cargoId: string) => void;
   currentUser: User;
+  profilePermissions?: ProfilePermissions;
 }
 
-const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipments, dailyBalanceDate, onDailyBalanceDateChange, onCreateShipment, onSuspend, onReactivate, onFinalize, onEdit, onClose, onShowHistory, onShowDetails, onEditSchedule, onShowShipments, onDelete, currentUser }) => {
+const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipments, dailyBalanceDate, onDailyBalanceDateChange, onCreateShipment, onSuspend, onReactivate, onFinalize, onEdit, onClose, onShowHistory, onShowDetails, onEditSchedule,  onShowShipments,
+  onDelete,
+  currentUser,
+  profilePermissions
+}) => {
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
+  const [expandedLoadId, setExpandedLoadId] = useState<string | null>(null);
   
   const [showFilters, setShowFilters] = useState(false);
   const [filterId, setFilterId] = useState<string[]>([]);
@@ -399,7 +406,7 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                               Fechar Carga
                             </button>
                           )}
-                          {onDelete && currentUser.profile === UserProfile.Admin && (
+                          {onDelete && can('delete', currentUser, 'loads', profilePermissions || INITIAL_PERMISSIONS) && (
                             <button onClick={() => { onDelete(load.id); setOpenActionMenu(null); }} className="w-full text-left px-4 py-2 text-sm text-red-700 dark:text-red-500 font-bold hover:bg-red-50 dark:hover:bg-red-900/50 flex items-center gap-2">
                               <Trash2 className="h-4 w-4" /> Excluir Carga
                             </button>

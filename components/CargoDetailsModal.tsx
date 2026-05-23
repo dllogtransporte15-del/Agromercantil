@@ -189,7 +189,7 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                         <div className="flex flex-wrap gap-2 mt-1">
                             {cargo.allowedVehicleTypes.map((vt, idx) => (
                                 <span key={idx} className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50">
-                                    {vt.setType} ({vt.bodyTypes.join('/')})
+                                    {vt.setType} ({vt.bodyTypes?.join('/') || ''})
                                 </span>
                             ))}
                         </div>

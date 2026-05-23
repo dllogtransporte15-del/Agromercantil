@@ -384,7 +384,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
   
   const formatAllowedVehicleTypes = (allowed?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]): string => {
     if (!allowed || allowed.length === 0) return 'N/A';
-    const allBodyTypes = allowed.flatMap(type => type.bodyTypes);
+    const allBodyTypes = allowed.flatMap(type => type.bodyTypes || []);
     const uniqueBodyTypes = [...new Set(allBodyTypes)];
     return uniqueBodyTypes.join(';');
   };

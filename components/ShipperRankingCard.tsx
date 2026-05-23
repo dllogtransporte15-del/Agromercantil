@@ -17,7 +17,6 @@ interface ShipperStat {
   shipmentCount: number;
   netMargin: number;
   effectiveTonnage: number;
-  commission: number;
 }
 
 const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, cargos, users, currentUser }) => {
@@ -69,16 +68,13 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
         }
       });
 
-      const commission = effectiveTonnage * 2;
-
       return {
         id: shipper.id,
         name: shipper.name,
         vehicleCount: uniqueVehicles.size,
         shipmentCount,
         netMargin: netMargin,
-        effectiveTonnage,
-        commission
+        effectiveTonnage
       };
     });
 
@@ -103,7 +99,6 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
               <th className="py-2 px-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Embarques</th>
               <th className="py-2 px-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">T. Efetivas</th>
 
-              {canViewCommission && <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Comissão</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -115,12 +110,11 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
                 <td className="py-3 px-3 text-sm text-center text-gray-500 dark:text-gray-400">{stat.shipmentCount}</td>
                 <td className="py-3 px-3 text-sm text-center font-medium text-gray-700 dark:text-gray-300">{stat.effectiveTonnage.toLocaleString('pt-BR')} t</td>
 
-                {canViewCommission && <td className="py-3 px-3 text-sm text-right font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(stat.commission)}</td>}
               </tr>
             ))}
             {shipperStats.length === 0 && (
                 <tr>
-                    <td colSpan={canViewCommission ? 6 : 5} className="py-4 px-3 text-center text-sm text-gray-500 dark:text-gray-400">Nenhum embarcador com movimentação.</td>
+                    <td colSpan={5} className="py-4 px-3 text-center text-sm text-gray-500 dark:text-gray-400">Nenhum embarcador com movimentação.</td>
                 </tr>
             )}
           </tbody>

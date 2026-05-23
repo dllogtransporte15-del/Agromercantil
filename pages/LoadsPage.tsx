@@ -134,6 +134,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
             onShowShipments={handleShowShipments}
             onDelete={onDeleteLoad}
             currentUser={currentUser}
+            profilePermissions={profilePermissions}
         />
       </div>
 

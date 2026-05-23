@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import type { Shipment, Cargo, User, Vehicle, Client, Product } from '../types';
+import type { Shipment, Cargo, User, Vehicle, Client, Product, ProfilePermissions } from '../types';
 import { ShipmentStatus, UserProfile } from '../types';
+import { can, INITIAL_PERMISSIONS } from '../auth';
 import { PaperclipIcon } from './icons/PaperclipIcon';
 import { DollarSignIcon } from './icons/DollarSignIcon';
 import { XIcon } from './icons/XIcon';
@@ -40,6 +40,7 @@ interface ShipmentTableProps {
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onOpenEditScheduledDateTime?: (shipment: Shipment) => void;
   currentUser: User;
+  profilePermissions?: ProfilePermissions;
 
   activeStatus: ShipmentStatus | 'all';
   companyLogo?: string | null;
@@ -47,7 +48,7 @@ interface ShipmentTableProps {
   onSwapCargo?: (shipment: Shipment) => void;
 }
 
-const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, companyLogo, onDeleteAttachment, onSwapCargo }) => {
+const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, companyLogo, onDeleteAttachment, onSwapCargo, profilePermissions }) => {
 
 
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
@@ -655,13 +656,13 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
                                                               icon={RotateCcw} 
                                                               text="Voltar Status Anterior" 
                                                               onClick={() => {
-                                                                  if (confirm(`Tem certeza que deseja REVERTER o status do embarque ${shipment.id} para o estado anterior? Isso também removerá os anexos adicionados no último passo.`)) {
+                                                                  if (window.confirm("Atenção: Reverter o status removerá os anexos do último passo e ajustará os volumes da carga. Deseja continuar?")) {
                                                                       onRevertStatus(shipment.id);
                                                                   }
                                                               }} 
                                                           />
                                                       )}
-                                                      {onDelete && currentUser.profile === UserProfile.Admin && <ActionMenuItem icon={Trash2} text="Excluir Embarque" onClick={() => onDelete(shipment.id)} isDestructive />}
+                                                      {onDelete && can('delete', currentUser, 'shipments', profilePermissions || INITIAL_PERMISSIONS) && <ActionMenuItem icon={Trash2} text="Excluir Embarque" onClick={() => onDelete(shipment.id)} isDestructive />}
                                                   </div>
                                               </div>,
                                               document.body

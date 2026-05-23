@@ -268,7 +268,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
 
     if (cargo?.allowedVehicleTypes && cargo.allowedVehicleTypes.length > 0 && vehicleInfo.setType && vehicleInfo.bodyType) {
         const isAllowed = cargo.allowedVehicleTypes.some(allowed => 
-            allowed.setType === vehicleInfo.setType && allowed.bodyTypes.includes(vehicleInfo.bodyType as VehicleBodyType)
+            allowed.setType === vehicleInfo.setType && (allowed.bodyTypes || []).includes(vehicleInfo.bodyType as VehicleBodyType)
         );
         if (!isAllowed) {
             showToast(`O tipo do veículo selecionado (${vehicleInfo.setType} - ${vehicleInfo.bodyType}) não é permitido para esta carga.`, 'error');
@@ -353,7 +353,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
           </div>
           {cargo.allowedVehicleTypes && cargo.allowedVehicleTypes.length > 0 && (
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Veículos Permitidos: <span className="font-semibold text-gray-800 dark:text-gray-200">{cargo.allowedVehicleTypes.map(vt => `${vt.setType} (${vt.bodyTypes.join('/')})`).join(', ')}</span>
+                Veículos Permitidos: <span className="font-semibold text-gray-800 dark:text-gray-200">{cargo.allowedVehicleTypes.map(vt => `${vt.setType} (${vt.bodyTypes?.join('/') || ''})`).join(', ')}</span>
               </p>
           )}
         </div>

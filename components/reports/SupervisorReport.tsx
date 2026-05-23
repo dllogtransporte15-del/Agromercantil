@@ -57,8 +57,6 @@ const SupervisorReport: React.FC<SupervisorReportProps> = ({ shipments, cargos, 
     return users.filter(u => u.profile === UserProfile.Supervisor);
   }, [users]);
 
-  const commissionRate = 0.015; // 1.5%
-
   return (
     <div>
       <h2 className="text-2xl font-semibold text-gray-800 dark:text-white mb-4">Relatório Supervisão</h2>
@@ -68,12 +66,6 @@ const SupervisorReport: React.FC<SupervisorReportProps> = ({ shipments, cargos, 
             title="Margem de Lucro Total (Período)" 
             value={totalProfitMargin} 
             icon={<DollarSignIcon className="w-8 h-8 text-blue-500"/>} 
-            formatAsCurrency 
-          />
-          <StatCard 
-            title="Comissão Total (1,5%)" 
-            value={totalProfitMargin * commissionRate} 
-            icon={<DollarSignIcon className="w-8 h-8 text-emerald-500"/>} 
             formatAsCurrency 
           />
       </div>
@@ -97,12 +89,7 @@ const SupervisorReport: React.FC<SupervisorReportProps> = ({ shipments, cargos, 
                         <p className="text-sm text-gray-500">Perfil: Supervisor</p>
                     </div>
                 </div>
-                <div className="text-right">
-                    <p className="text-xs text-gray-500 uppercase font-bold">Comissão (1,5%)</p>
-                    <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                        {(totalProfitMargin * commissionRate).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    </p>
-                </div>
+
               </div>
             ))}
           </div>

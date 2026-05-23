@@ -239,15 +239,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users,
       }
     });
 
-    const monthlyCommission = monthlyEffectiveTonnage * 2;
-    const canViewCommission = currentUser && [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin].includes(currentUser.profile);
-
     return {
-      monthlyEffectiveTonnage,
-      monthlyCommission,
-      canViewCommission
+      monthlyEffectiveTonnage
     };
-  }, [shipments, currentUser]);
+  }, [shipments]);
 
   const clientDashboardData = useMemo(() => {
     if (currentUser?.profile !== UserProfile.Cliente) return null;
@@ -482,21 +477,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users,
           icon={<TruckIcon className="w-6 h-6 text-white" />}
           colorClass="bg-green-500"
         />
-        {dashboardStats.canViewCommission ? (
-          <Card
-            title="Comissão (Mês)"
-            value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardStats.monthlyCommission)}
-            icon={<DollarSignIcon className="w-6 h-6 text-white" />}
-            colorClass="bg-accent"
-          />
-        ) : (
-          <Card
-            title="Clientes Ativos"
-            value="0"
-            icon={<ClientsIcon className="w-6 h-6 text-white" />}
-            colorClass="bg-gray-400"
-          />
-        )}
+        <Card
+          title="Clientes Ativos"
+          value={clients.length.toString()}
+          icon={<ClientsIcon className="w-6 h-6 text-white" />}
+          colorClass="bg-gray-400"
+        />
       </div>
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-6">

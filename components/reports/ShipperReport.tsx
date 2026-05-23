@@ -22,7 +22,6 @@ interface OperatorStats {
   emAndamento: number;
   cancelado: number;
   effectiveTonnage: number;
-  commission: number;
 }
 
 const StatCard: React.FC<{ title: string, value: string | number, icon: React.ReactElement }> = ({ title, value, icon }) => {
@@ -72,9 +71,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, users, current
                 }
 
                 return acc;
-            }, { finalizado: 0, cancelado: 0, emAndamento: 0, effectiveTonnage: 0, commission: 0 });
-            
-            stats.commission = stats.effectiveTonnage * 2;
+            }, { finalizado: 0, cancelado: 0, emAndamento: 0, effectiveTonnage: 0 });
     
             return {
                 id: creatorId,
@@ -97,19 +94,12 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, users, current
                 {operatorStats.map(stats => (
                     <div key={stats.id} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                     <h3 className="text-xl font-bold text-primary dark:text-blue-400 mb-4">{stats.name}</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                         <StatCard title="Total Embarques" value={stats.total} icon={<TruckIcon className="w-8 h-8 text-blue-500"/>} />
                         <StatCard title="Finalizados" value={stats.finalizado} icon={<CheckCircleIcon className="w-8 h-8 text-gray-500"/>} />
                         <StatCard title="Em Andamento" value={stats.emAndamento} icon={<ClockIcon className="w-8 h-8 text-blue-400"/>} />
                         <StatCard title="Cancelados" value={stats.cancelado} icon={<XCircleIcon className="w-8 h-8 text-black"/>} />
                         <StatCard title="Toneladas Efetivadas" value={`${stats.effectiveTonnage.toLocaleString('pt-BR')} t`} icon={<TruckIcon className="w-8 h-8 text-green-500"/>} />
-                        {canViewCommission && (
-                            <StatCard 
-                                title="Comissão (R$ 2/t)" 
-                                value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.commission)} 
-                                icon={<DollarSignIcon className="w-8 h-8 text-emerald-500"/>} 
-                            />
-                        )}
                     </div>
                     </div>
                 ))}
