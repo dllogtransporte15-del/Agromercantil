@@ -40,6 +40,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const [filesToAttach, setFilesToAttach] = useState<File[]>([]);
   const [driverReferences, setDriverReferences] = useState('');
   const [isScanning, setIsScanning] = useState(false);
+  const [freightType, setFreightType] = useState<'PJ' | 'PF' | null>(null);
   const { showToast } = useToast();
 
   const handleScanDocument = async (files: File[]) => {
@@ -119,6 +120,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setVehicleTag('');
       setFilesToAttach([]);
       setDriverReferences('');
+      setFreightType(null);
       setEmbarcadorId(
           currentUser?.profile === UserProfile.Embarcador
               ? currentUser.id
@@ -227,7 +229,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     if (!cargo || shipmentTonnage <= 0) return 0;
     return (cargo?.driverFreightValuePerTonPF ?? cargo?.driverFreightValuePerTon ?? 0) * shipmentTonnage;
   }, [cargo, shipmentTonnage]);
-  const calculatedFreight = calculatedFreightPJ; // legado: usa PJ como padrão
+  const calculatedFreight = freightType === 'PF' ? calculatedFreightPF : calculatedFreightPJ;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -250,6 +252,11 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
 
     if (!driverName || !horsePlate || shipmentTonnage <= 0 || !scheduledDate || !embarcadorId || !scheduledTime) {
         showToast('Por favor, preencha todos os campos obrigatórios do formulário.', 'warning');
+        return;
+    }
+
+    if (!freightType) {
+        showToast('Selecione o tipo de frete do motorista: PJ ou PF.', 'warning');
         return;
     }
     
@@ -329,6 +336,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       trailer3Plate,
       shipmentTonnage,
       driverFreightValue: calculatedFreight,
+      freightType: freightType,
       embarcadorId: embarcadorId,
       scheduledDate,
       scheduledTime,
@@ -463,20 +471,77 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             </div>
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 bg-gray-100 dark:bg-gray-900/50 rounded-lg">
-                <p className="text-xs font-bold text-gray-500 uppercase mb-3">Valor do Frete (por TON)</p>
-                <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">PJ</span>
-                        <span className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(cargo?.driverFreightValuePerTonPJ ?? cargo?.driverFreightValuePerTon ?? 0)}<span className="text-xs font-normal text-gray-500"> / ton</span></span>
-                    </div>
-                    <div className="text-xs text-gray-400 text-right">Total: {formatCurrency(calculatedFreightPJ)}</div>
-                    <div className="flex items-center justify-between mt-1 pt-1 border-t dark:border-gray-700">
-                        <span className="text-sm font-bold text-orange-600 dark:text-orange-400">PF</span>
-                        <span className="text-lg font-bold text-orange-700 dark:text-orange-300">{formatCurrency(cargo?.driverFreightValuePerTonPF ?? cargo?.driverFreightValuePerTon ?? 0)}<span className="text-xs font-normal text-gray-500"> / ton</span></span>
-                    </div>
-                    <div className="text-xs text-gray-400 text-right">Total: {formatCurrency(calculatedFreightPF)}</div>
+              {/* Freight Type Selector */}
+              <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700">
+                <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Tipo de Embarque <span className="text-red-500">*</span></p>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* PJ Button */}
+                  <button
+                    type="button"
+                    onClick={() => setFreightType('PJ')}
+                    className={`relative flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all duration-200 ${
+                      freightType === 'PJ'
+                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30 shadow-md shadow-emerald-100 dark:shadow-none scale-[1.02]'
+                        : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:border-emerald-300 hover:bg-emerald-50/50 dark:hover:border-emerald-700'
+                    }`}
+                  >
+                    {freightType === 'PJ' && (
+                      <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
+                        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                      </span>
+                    )}
+                    <span className={`text-xl font-black tracking-tight ${
+                      freightType === 'PJ' ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'
+                    }`}>PJ</span>
+                    <span className={`text-[10px] font-semibold mt-0.5 ${
+                      freightType === 'PJ' ? 'text-emerald-500' : 'text-gray-400'
+                    }`}>Pessoa Jurídica</span>
+                    <span className={`text-sm font-bold mt-2 ${
+                      freightType === 'PJ' ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-600 dark:text-gray-400'
+                    }`}>{formatCurrency(cargo?.driverFreightValuePerTonPJ ?? cargo?.driverFreightValuePerTon ?? 0)}</span>
+                    <span className="text-[9px] text-gray-400">/ton</span>
+                    {freightType === 'PJ' && shipmentTonnage > 0 && (
+                      <span className="mt-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 rounded-full">
+                        Total: {formatCurrency(calculatedFreightPJ)}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* PF Button */}
+                  <button
+                    type="button"
+                    onClick={() => setFreightType('PF')}
+                    className={`relative flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all duration-200 ${
+                      freightType === 'PF'
+                        ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/30 shadow-md shadow-orange-100 dark:shadow-none scale-[1.02]'
+                        : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:border-orange-300 hover:bg-orange-50/50 dark:hover:border-orange-700'
+                    }`}
+                  >
+                    {freightType === 'PF' && (
+                      <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-orange-500 flex items-center justify-center">
+                        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                      </span>
+                    )}
+                    <span className={`text-xl font-black tracking-tight ${
+                      freightType === 'PF' ? 'text-orange-600 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400'
+                    }`}>PF</span>
+                    <span className={`text-[10px] font-semibold mt-0.5 ${
+                      freightType === 'PF' ? 'text-orange-500' : 'text-gray-400'
+                    }`}>Pessoa Física</span>
+                    <span className={`text-sm font-bold mt-2 ${
+                      freightType === 'PF' ? 'text-orange-700 dark:text-orange-300' : 'text-gray-600 dark:text-gray-400'
+                    }`}>{formatCurrency(cargo?.driverFreightValuePerTonPF ?? cargo?.driverFreightValuePerTon ?? 0)}</span>
+                    <span className="text-[9px] text-gray-400">/ton</span>
+                    {freightType === 'PF' && shipmentTonnage > 0 && (
+                      <span className="mt-1.5 text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/50 px-2 py-0.5 rounded-full">
+                        Total: {formatCurrency(calculatedFreightPF)}
+                      </span>
+                    )}
+                  </button>
                 </div>
+                {!freightType && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 text-center font-medium">⚠ Selecione o tipo antes de solicitar</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Referências do Motorista</label>
