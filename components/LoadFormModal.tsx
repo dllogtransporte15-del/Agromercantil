@@ -234,6 +234,21 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
         driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
     }));
 
+    // Auto-merge unadded vehicle types before saving
+    let finalAllowedVehicleTypes = load.allowedVehicleTypes || [];
+    if (currentBodyTypes.length > 0) {
+        const existingIndex = finalAllowedVehicleTypes.findIndex(avt => avt.setType === currentSetType);
+        if (existingIndex !== -1) {
+            const updatedTypes = [...finalAllowedVehicleTypes];
+            const existingEntry = updatedTypes[existingIndex];
+            const newBodyTypes = [...new Set([...(existingEntry.bodyTypes || []), ...currentBodyTypes])];
+            updatedTypes[existingIndex] = { ...existingEntry, bodyTypes: newBodyTypes };
+            finalAllowedVehicleTypes = updatedTypes;
+        } else {
+            finalAllowedVehicleTypes = [...finalAllowedVehicleTypes, { setType: currentSetType, bodyTypes: currentBodyTypes }];
+        }
+    }
+
     const finalLoadData = {
         ...load,
         companyFreightValuePerTon: totalCompanyFreight,
@@ -245,6 +260,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
         icmsPercentage: activeLegs[0]?.icmsPercentage || 0,
         originCoords: originCoords || undefined,
         destinationCoords: destinationCoords || undefined,
+        allowedVehicleTypes: finalAllowedVehicleTypes,
     };
 
     if (loadToEdit) {

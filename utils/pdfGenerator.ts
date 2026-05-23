@@ -28,7 +28,7 @@ export const generateLoadingOrderPDF = (
 
   // Draw Header background for branding
   doc.setFillColor(248, 250, 252); // light slate
-  doc.rect(0, 0, pageWidth, 40, 'F');
+  doc.rect(0, 0, pageWidth, 45, 'F');
   
   // Logo
   if (companyLogo) {
@@ -44,9 +44,10 @@ export const generateLoadingOrderPDF = (
   doc.setFontSize(8);
   doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
   doc.setFont("helvetica", "normal");
-  doc.text("CNPJ: 57.359.600/0001-68", margin, 28);
-  doc.text("Rua Monteiro Lobato, 325 - Vila Nova - Poços de Caldas/MG - 37701-110", margin, 32);
-  doc.text("Autorização de Carregamento de Transportes", margin, 36);
+  doc.text("CNPJ: 20.439.095/0001-51", margin, 28);
+  doc.text("Logradouro: Rua Beijos Brancos, 374 - Bairro: Cidade Jardim - CEP: 38412-204", margin, 32);
+  doc.text("Município: Uberlândia - Estado: Minas Gerais", margin, 36);
+  doc.text("Autorização de Carregamento", margin, 40);
 
   // Document ID & Date (Top Right)
   doc.setFontSize(10);
@@ -60,13 +61,13 @@ export const generateLoadingOrderPDF = (
   // Divider
   doc.setDrawColor(accentOrange[0], accentOrange[1], accentOrange[2]);
   doc.setLineWidth(1.5);
-  doc.line(margin, 40, pageWidth - margin, 40);
+  doc.line(margin, 45, pageWidth - margin, 45);
 
   // Title Section
   doc.setFontSize(16);
   doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
   doc.setFont("helvetica", "bold");
-  doc.text("ORDEM DE CARREGAMENTO", pageWidth / 2, 53, { align: 'center' });
+  doc.text("ORDEM DE CARREGAMENTO", pageWidth / 2, 58, { align: 'center' });
 
   // --- Carga Info ---
   doc.setFontSize(11);
@@ -140,14 +141,14 @@ export const generateLoadingOrderPDF = (
   // Authority signature
   doc.line(pageWidth - margin - 80, footerY, pageWidth - margin, footerY);
   doc.setFontSize(8);
-  doc.text("RODO CHAGAS - LOGÍSTICA", pageWidth - margin - 40, footerY + 5, { align: 'center' });
+  doc.text("AGROMERCANTIL - TRANSPORTES", pageWidth - margin - 40, footerY + 5, { align: 'center' });
   doc.setFontSize(7);
   doc.text("AUTORIZAÇÃO DE CARREGAMENTO", pageWidth - margin - 40, footerY + 9, { align: 'center' });
 
   // Final Footer Note
   doc.setFontSize(7);
   doc.setTextColor(150);
-  const footerText = "Este documento é exclusivo para controle interno de carregamento da RODO CHAGAS LOGÍSTICA. As informações aqui contidas são confidenciais.";
+  const footerText = "Este documento é exclusivo para controle interno de carregamento da AGROMERCANTIL - TRANSPORTES. As informações aqui contidas são confidenciais.";
   doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
 
   // Save PDF

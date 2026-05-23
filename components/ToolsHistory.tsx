@@ -116,7 +116,7 @@ export default function History({ companyId, companyLogo }: HistoryProps) {
     doc.setFontSize(20);
     doc.setTextColor(40, 40, 40);
     doc.setFont('helvetica', 'bold');
-    doc.text('RODO CHAGAS', hasLogo ? 30 : 14, 19);
+    doc.text('AGROMERCANTIL - TRANSPORTES', hasLogo ? 30 : 14, 19);
 
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
@@ -165,7 +165,7 @@ export default function History({ companyId, companyLogo }: HistoryProps) {
     doc.setTextColor(40, 40, 40);
     doc.setFont('helvetica', 'bold');
     // x=28 se tiver logo (14+12+2 de respiro); y=19 para alinhar com o centro vertical da logo de 12mm
-    doc.text('RODO CHAGAS', hasLogo ? 30 : 14, 19);
+    doc.text('AGROMERCANTIL - TRANSPORTES', hasLogo ? 30 : 14, 19);
 
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
