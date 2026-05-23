@@ -182,6 +182,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
         companyLogo={null} // History doesn't typically need PDF generation but the prop is required
         onDeleteAttachment={onDeleteAttachment}
         onUpdatePrice={onUpdatePrice}
+        activeLocks={[]}
       />
       {selectedShipment && (
         <HistoryModal
