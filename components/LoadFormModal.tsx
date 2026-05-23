@@ -437,7 +437,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Volume Total (ton)</label>
-                            <input name="totalVolume" value={load.totalVolume} onChange={handleChange} type="number" placeholder="Ex: 5000" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                            <input name="totalVolume" value={load.totalVolume || ''} onChange={handleChange} type="number" placeholder="Ex: 5000" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Volume total contratado para a carga.</p>
                         </div>
                         <div>
@@ -514,9 +514,9 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                             </label>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <input value={leg1.companyFreightValuePerTon} onChange={(e) => handleLegChange(0, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="Frete Empresa" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                            {leg1.hasIcms && <input value={leg1.icmsPercentage} onChange={(e) => handleLegChange(0, 'icmsPercentage', e.target.value)} type="number" placeholder="ICMS (%)" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>}
-                            <input value={leg1.driverFreightValuePerTon} onChange={(e) => handleLegChange(0, 'driverFreightValuePerTon', e.target.value)} type="number" placeholder="Frete Motorista" className={`p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 ${leg1.hasIcms ? '' : 'md:col-start-3'}`} step="0.01"/>
+                            <input value={leg1.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(0, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="Frete Empresa" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                            {leg1.hasIcms && <input value={leg1.icmsPercentage || ''} onChange={(e) => handleLegChange(0, 'icmsPercentage', e.target.value)} type="number" placeholder="ICMS (%)" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>}
+                            <input value={leg1.driverFreightValuePerTon || ''} onChange={(e) => handleLegChange(0, 'driverFreightValuePerTon', e.target.value)} type="number" placeholder="Frete Motorista" className={`p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 ${leg1.hasIcms ? '' : 'md:col-start-3'}`} step="0.01"/>
                         </div>
                     </div>
                     {/* Leg 2 */}
@@ -529,9 +529,9 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                                 </label>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <input value={leg2.companyFreightValuePerTon} onChange={(e) => handleLegChange(1, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="Frete Empresa" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                                {leg2.hasIcms && <input value={leg2.icmsPercentage} onChange={(e) => handleLegChange(1, 'icmsPercentage', e.target.value)} type="number" placeholder="ICMS (%)" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>}
-                                <input value={leg2.driverFreightValuePerTon} onChange={(e) => handleLegChange(1, 'driverFreightValuePerTon', e.target.value)} type="number" placeholder="Frete Motorista" className={`p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 ${leg2.hasIcms ? '' : 'md:col-start-3'}`} step="0.01"/>
+                                <input value={leg2.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(1, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="Frete Empresa" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                                {leg2.hasIcms && <input value={leg2.icmsPercentage || ''} onChange={(e) => handleLegChange(1, 'icmsPercentage', e.target.value)} type="number" placeholder="ICMS (%)" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>}
+                                <input value={leg2.driverFreightValuePerTon || ''} onChange={(e) => handleLegChange(1, 'driverFreightValuePerTon', e.target.value)} type="number" placeholder="Frete Motorista" className={`p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 ${leg2.hasIcms ? '' : 'md:col-start-3'}`} step="0.01"/>
                             </div>
                         </div>
                     )}

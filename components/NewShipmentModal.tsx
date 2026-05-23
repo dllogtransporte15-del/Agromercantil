@@ -434,55 +434,16 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
               <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Placa Carreta 3</label><input type="text" value={trailer3Plate} onChange={(e) => setTrailer3Plate(e.target.value.toUpperCase())} placeholder="Opcional" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" /></div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-               <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Dados Bancários</label>
-                  <textarea 
-                    value={bankDetails} 
-                    onChange={(e) => setBankDetails(e.target.value)} 
-                    placeholder="Banco, Agência, Conta, PIX, etc." 
-                    className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 resize-y" 
-                    rows={2} 
-                    required
-                  />
-              </div>
-              
-              <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Anexar Documentos</label>
-                  <div className="mt-1 flex items-center h-full">
-                      <label className="cursor-pointer bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 py-2 px-4 rounded-lg inline-flex items-center transition-colors">
-                          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
-                          Anexar
-                          <input type="file" multiple className="hidden" onChange={(e) => {
-                              if (e.target.files) {
-                                  setFilesToAttach(Array.from(e.target.files));
-                              }
-                          }} />
-                      </label>
-                      <span className="ml-3 text-sm text-gray-600 dark:text-gray-400">
-                          {filesToAttach.length > 0 ? `${filesToAttach.length} arquivo(s) selecionado(s)` : 'Nenhum'}
-                      </span>
-                      {filesToAttach.length > 0 && (
-                          <button
-                              type="button"
-                              onClick={() => handleScanDocument(filesToAttach)}
-                              disabled={isScanning}
-                              className={`ml-4 text-xs font-bold uppercase py-1 px-3 rounded border transition-all ${
-                                  isScanning 
-                                  ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
-                                  : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-600 hover:text-white'
-                              }`}
-                          >
-                              {isScanning ? (
-                                  <span className="flex items-center">
-                                      <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                      Processando...
-                                  </span>
-                              ) : 'Digitalizar com IA'}
-                          </button>
-                      )}
-                  </div>
-              </div>
+            <div>
+               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Dados Bancários</label>
+               <textarea 
+                 value={bankDetails} 
+                 onChange={(e) => setBankDetails(e.target.value)} 
+                 placeholder="Banco, Agência, Conta, PIX, etc." 
+                 className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 resize-y" 
+                 rows={2} 
+                 required
+               />
             </div>
           
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

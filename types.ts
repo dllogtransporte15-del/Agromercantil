@@ -5,7 +5,7 @@ export type Page = 'dashboard' | 'clients' | 'owners' | 'embarcadores' | 'driver
 
 export enum UserProfile {
   Embarcador = "Embarcador",
-  Supervisor = "Supervisor",
+  Coordenador = "Coordenador",
   Comercial = "Comercial",
   Diretor = "Diretor",
   Fiscal = "Fiscal",
@@ -224,8 +224,8 @@ export interface LoadingOrder {
 }
 
 export enum ShipmentStatus {
-  AguardandoSeguradora = "Ag. Seguradora",
   PreCadastro = "Pré-cadastro",
+  AguardandoSeguradora = "Ag. Seguradora",
   AguardandoCarregamento = "Ag. Carregamento",
   AguardandoNota = "Ag. Nota",
   AguardandoAdiantamento = "Ag. Adiantamento",

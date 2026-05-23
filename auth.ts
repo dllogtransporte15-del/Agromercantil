@@ -18,15 +18,15 @@ const createPermissions = (pages: Page[], readOnly = false): { [key in Page]?: C
   return permissions;
 };
 
-const supervisorAndDiretorPages = allPages.filter(p => p !== 'appearance');
+const coordenadorAndDiretorPages = allPages.filter(p => p !== 'appearance');
 export const INITIAL_PERMISSIONS: ProfilePermissions = {
   [UserProfile.Comercial]: createPermissions(['dashboard', 'clients', 'owners', 'drivers', 'vehicles', 'loads', 'shipments', 'reports', 'operational-loads', 'financial', 'operational-map', 'commissions', 'shipment-history', 'load-history', 'layover-calculator', 'freight-quote']),
   [UserProfile.Fiscal]: createPermissions(['dashboard', 'shipments', 'reports', 'shipment-history', 'load-history'], true),
   [UserProfile.Financeiro]: createPermissions(['dashboard', 'shipments', 'reports', 'financial', 'commissions', 'shipment-history', 'load-history'], true),
   [UserProfile.Embarcador]: createPermissions(['dashboard', 'reports', 'operational-loads', 'shipments', 'operational-map', 'shipment-history', 'load-history', 'layover-calculator'], true),
   [UserProfile.Cliente]: createPermissions(['dashboard', 'loads', 'shipments', 'shipment-history', 'load-history'], true),
-  [UserProfile.Supervisor]: createPermissions(supervisorAndDiretorPages),
-  [UserProfile.Diretor]: createPermissions(supervisorAndDiretorPages), // Full permissions like Supervisor
+  [UserProfile.Coordenador]: createPermissions(coordenadorAndDiretorPages),
+  [UserProfile.Diretor]: createPermissions(coordenadorAndDiretorPages), // Full permissions like Coordenador
 };
 
 if (INITIAL_PERMISSIONS[UserProfile.Fiscal] && INITIAL_PERMISSIONS[UserProfile.Fiscal]!['shipments']) {

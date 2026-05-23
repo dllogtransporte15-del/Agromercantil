@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import type { Shipment, Cargo, User, Vehicle, Client, Product, ProfilePermissions } from '../types';
+import type { Shipment, Cargo, User, Vehicle, Client, Product, ProfilePermissions, ShipmentLock } from '../types';
 import { ShipmentStatus, UserProfile } from '../types';
 import { can, INITIAL_PERMISSIONS } from '../auth';
 import { PaperclipIcon } from './icons/PaperclipIcon';
@@ -12,7 +12,8 @@ import { ExternalLinkIcon } from './icons/ExternalLinkIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
-import { Search, Filter, X, Trash2, RotateCcw, Clock, Package } from 'lucide-react';
+import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, Lock } from 'lucide-react';
+import { tryAcquireShipmentLock } from '../lib/db';
 
 import MultiSelectDropdown from './MultiSelectDropdown';
 import ShipmentDetailsModal from './ShipmentDetailsModal';
@@ -46,9 +47,10 @@ interface ShipmentTableProps {
   companyLogo?: string | null;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onSwapCargo?: (shipment: Shipment) => void;
+  activeLocks: ShipmentLock[];
 }
 
-const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, companyLogo, onDeleteAttachment, onSwapCargo, profilePermissions }) => {
+const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, companyLogo, onDeleteAttachment, onSwapCargo, profilePermissions, activeLocks }) => {
 
 
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
@@ -111,6 +113,21 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
   };
 
   const getClientName = (clientId: string) => clients.find(c => c.id === clientId)?.nomeFantasia || 'N/A';
+
+  const handleFazerCadastroClick = async (shipment: Shipment) => {
+    setOpenActionMenu(null);
+    try {
+      const res = await tryAcquireShipmentLock(shipment.id, currentUser.id, currentUser.name);
+      if (res.success) {
+        window.open("https://agromercantil.atua.com.br/adm/", "_blank");
+      } else {
+        alert(`Este embarque está bloqueado por ${res.lockedBy || 'outro usuário'} que está realizando o cadastro no momento.`);
+      }
+    } catch (err) {
+      console.error('Erro ao adquirir bloqueio:', err);
+      alert('Erro ao tentar bloquear o embarque para cadastro. Verifique sua conexão.');
+    }
+  };
 
   // Filter options
   const plateOptions = useMemo(() => Array.from(new Set(shipments.map(s => s.horsePlate))).filter(Boolean).sort(), [shipments]);
@@ -609,13 +626,32 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
                                       <span className="text-xs text-gray-400 dark:text-gray-500 italic px-2">Cancelado</span>
                                   ) : (
                                       <div className="relative">
-                                          <button
-                                              onClick={(e) => toggleActionMenu(shipment.id, e)}
-                                              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400"
-                                              title="Mais ações"
-                                          >
-                                              <MoreVerticalIcon className="h-5 w-5" />
-                                          </button>
+                                          {(() => {
+                                              const lock = activeLocks?.find(l => l.shipmentId === shipment.id);
+                                              const isLockedByOther = lock && lock.userId !== currentUser.id;
+                                              
+                                              if (isLockedByOther) {
+                                                  return (
+                                                      <button
+                                                          className="p-2 rounded-full text-amber-500 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 cursor-not-allowed border border-amber-200 dark:border-amber-900/50 hover:bg-amber-100 transition-colors"
+                                                          title={`Bloqueado: ${lock.userName} está realizando o cadastro`}
+                                                          disabled
+                                                      >
+                                                          <Lock className="h-5 w-5 animate-pulse" />
+                                                      </button>
+                                                  );
+                                              }
+                                              
+                                              return (
+                                                  <button
+                                                      onClick={(e) => toggleActionMenu(shipment.id, e)}
+                                                      className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400"
+                                                      title="Mais ações"
+                                                  >
+                                                      <MoreVerticalIcon className="h-5 w-5" />
+                                                  </button>
+                                              );
+                                          })()}
                                           
                                           {openActionMenu === shipment.id && menuPosition && createPortal(
                                               <div 
@@ -642,7 +678,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
                                                                     title={(!canAdvance && shipment.status !== ShipmentStatus.AguardandoAdiantamento) ? disabledReason : undefined} 
                                                                 />
                                                               )}
-                                                              {shipment.status === ShipmentStatus.PreCadastro && onOpenCadastroAntt && <ActionMenuItem icon={ExternalLinkIcon} text="Fazer Cadastro" onClick={() => onOpenCadastroAntt(shipment)} />}
+                                                              {shipment.status === ShipmentStatus.PreCadastro && <ActionMenuItem icon={ExternalLinkIcon} text="Fazer Cadastro" onClick={() => handleFazerCadastroClick(shipment)} />}
                                                               {isActionable && onEditPrice && <ActionMenuItem icon={DollarSignIcon} text="Alterar Preço" onClick={() => onEditPrice(shipment)} />}
                                                               {isActionable && onTransfer && <ActionMenuItem icon={TransferIcon} text="Transferir Embarque" onClick={() => onTransfer(shipment)} />}
                                                               {isActionable && (shipment.status === ShipmentStatus.PreCadastro || shipment.status === ShipmentStatus.AguardandoSeguradora) && onSwapCargo && <ActionMenuItem icon={Package} text="Trocar Carga" onClick={() => onSwapCargo(shipment)} />}

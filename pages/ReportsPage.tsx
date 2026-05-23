@@ -8,7 +8,7 @@ import { UsersIcon } from '../components/icons/UsersIcon';
 import { ClockIcon } from '../components/icons/ClockIcon';
 import { Filter, X, Calendar, DollarSign, Package, CheckCircle, Building2 } from 'lucide-react';
 import SalespersonReport from '../components/reports/SalespersonReport';
-import SupervisorReport from '../components/reports/SupervisorReport';
+import CoordenadorReport from '../components/reports/CoordenadorReport';
 import ShipperReport from '../components/reports/ShipperReport';
 import ClientReport from '../components/reports/ClientReport';
 import OperationalTimingReport from '../components/reports/OperationalTimingReport';
@@ -58,7 +58,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       setLoadingStays(true);
       try {
         // Fetch stays for the report - respect permissions
-        const isAdmin = [UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile);
+        const isAdmin = [UserProfile.Admin, UserProfile.Diretor, UserProfile.Coordenador].includes(currentUser.profile);
         const allStays = isAdmin ? await getAllToolStays() : await getToolStays(currentUser.id);
         setStays(allStays);
       } catch (err) {
@@ -129,8 +129,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
     let totalEfetivado = 0;
 
     const programmedStatuses = [
-      ShipmentStatus.AguardandoSeguradora,
       ShipmentStatus.PreCadastro,
+      ShipmentStatus.AguardandoSeguradora,
       ShipmentStatus.AguardandoCarregamento
     ];
 
@@ -161,8 +161,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
     let totalProfitMargin = 0; // This will represent "Margem de Lucro Total" (Ag. Nota onwards)
 
     const profitMarginStatuses = [
-        ShipmentStatus.AguardandoSeguradora,
         ShipmentStatus.PreCadastro,
+        ShipmentStatus.AguardandoSeguradora,
         ShipmentStatus.AguardandoCarregamento,
         ShipmentStatus.AguardandoNota,
         ShipmentStatus.AguardandoAdiantamento,
@@ -204,13 +204,13 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
 
   const canViewCommercialReport = useMemo(() => {
     if (!currentUser) return false;
-    return [UserProfile.Comercial, UserProfile.Admin, UserProfile.Supervisor, UserProfile.Diretor].includes(currentUser.profile);
+    return [UserProfile.Comercial, UserProfile.Admin, UserProfile.Coordenador, UserProfile.Diretor].includes(currentUser.profile);
   }, [currentUser]);
 
   const renderReport = () => {
     switch(activeReport) {
       case 'comercial':
-        return <SupervisorReport shipments={filteredShipments} cargos={cargos} users={users} />;
+        return <CoordenadorReport shipments={filteredShipments} cargos={cargos} users={users} />;
       case 'embarcadores':
         return <ShipperReport shipments={filteredShipments} users={users} currentUser={currentUser} />;
       case 'clientes':
@@ -239,7 +239,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
   const isEmbarcador = currentUser?.profile === UserProfile.Embarcador;
 
   const navItems = [
-      ...(canViewCommercialReport ? [{ id: 'comercial', label: 'Relatório Supervisão', icon: BriefcaseIcon }] : []),
+      ...(canViewCommercialReport ? [{ id: 'comercial', label: 'Relatório Coordenação', icon: BriefcaseIcon }] : []),
       { id: 'embarcadores', label: 'Embarcadores', icon: ShipIcon },
       ...(!isEmbarcador ? [
         { id: 'clientes', label: 'Clientes', icon: UsersIcon },

@@ -598,7 +598,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                                                 <FileTextIcon size={14} className="mr-2 flex-shrink-0" />
                                                                 <span className="truncate">{fileName}</span>
                                                             </a>
-                                                            {onDeleteAttachment && (currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Supervisor) && (
+                                                            {onDeleteAttachment && (currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Coordenador) && (
                                                                 <button
                                                                     onClick={() => {
                                                                         if (confirm(`Tem certeza que deseja excluir o anexo "${fileName}"?`)) {

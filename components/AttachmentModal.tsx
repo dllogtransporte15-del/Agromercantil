@@ -420,7 +420,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                             <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
                             <div>
                                 <label className="block text-sm font-medium mb-1">Toneladas Carregadas</label>
-                                <input type="number" step="0.01" value={loadedTonnage} onChange={(e) => setLoadedTonnage(e.target.value === '' ? '' : Number(e.target.value))} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
+                                <input type="number" step="0.01" value={loadedTonnage || ''} onChange={(e) => setLoadedTonnage(e.target.value === '' ? '' : Number(e.target.value))} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
                             </div>
                         </div>
 
@@ -432,7 +432,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                             <label className="block text-sm font-medium mb-1">Valor pago no tag</label>
                             <input 
                                 type="number" 
-                                value={tollValue} 
+                                value={tollValue || ''} 
                                 onChange={(e) => setTollValue(e.target.value === '' ? '' : Number(e.target.value))} 
                                 className={`w-full p-2 border rounded dark:bg-gray-700 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`}
                                 disabled={!canSave}
@@ -442,7 +442,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                             <label className="block text-sm font-medium mb-1">(%) do adiantamento</label>
                             <input 
                                 type="number" 
-                                value={advancePercentage} 
+                                value={advancePercentage || ''} 
                                 onChange={(e) => setAdvancePercentage(e.target.value === '' ? '' : Number(e.target.value))} 
                                 className={`w-full p-2 border rounded dark:bg-gray-700 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`} 
                                 disabled={!canSave}
@@ -452,7 +452,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                             <label className="block text-sm font-medium mb-1">Valor pago na conta</label>
                             <input 
                                 type="number" 
-                                value={advanceValue} 
+                                value={advanceValue || ''} 
                                 onChange={(e) => setAdvanceValue(e.target.value === '' ? '' : Number(e.target.value))} 
                                 className={`w-full p-2 border rounded dark:bg-gray-700 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`} 
                                 disabled={!canSave}
@@ -467,7 +467,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                             <input 
                                 type="number" 
                                 step="0.01" 
-                                value={unloadedTonnage} 
+                                value={unloadedTonnage || ''} 
                                 onChange={(e) => setUnloadedTonnage(e.target.value === '' ? '' : Number(e.target.value))} 
                                 className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
                                 placeholder="Informe o peso conforme ticket"
@@ -504,7 +504,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                                 <label className="block text-sm font-medium mb-1">Saldo estimado</label>
                                 <input 
                                     type="number" 
-                                    value={balanceToReceiveValue} 
+                                    value={balanceToReceiveValue || ''} 
                                     onChange={(e) => setBalanceToReceiveValue(e.target.value === '' ? '' : Number(e.target.value))} 
                                     className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
                                 />
@@ -513,7 +513,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                                 <label className="block text-sm font-medium mb-1">Valor a Descontar</label>
                                 <input 
                                     type="number" 
-                                    value={discountValue} 
+                                    value={discountValue || ''} 
                                     onChange={(e) => setDiscountValue(e.target.value === '' ? '' : Number(e.target.value))} 
                                     className={`w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 ${(shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001 && !discountValue) ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : ''}`}
                                 />
@@ -522,7 +522,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                                 <label className="block text-sm font-medium mb-1">Valor Líquido de Saldo</label>
                                 <input 
                                     type="number" 
-                                    value={netBalanceValue} 
+                                    value={netBalanceValue || ''} 
                                     onChange={(e) => setNetBalanceValue(e.target.value === '' ? '' : Number(e.target.value))} 
                                     className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 font-bold text-primary"
                                 />

@@ -219,7 +219,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users,
 
   const canViewRanking = useMemo(() => {
     if (!currentUser) return false;
-    return [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor].includes(currentUser.profile);
+    return [UserProfile.Comercial, UserProfile.Coordenador, UserProfile.Admin, UserProfile.Diretor].includes(currentUser.profile);
   }, [currentUser]);
 
   const dashboardStats = useMemo(() => {
@@ -301,13 +301,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users,
     };
   }, [cargos, shipments, currentUser]);
 
-  if (currentUser?.profile === UserProfile.Supervisor) {
+  if (currentUser?.profile === UserProfile.Coordenador) {
     const totalActiveLoads = cargos.filter(c => c.status === CargoStatus.EmAndamento || c.status === CargoStatus.Suspensa).length;
     const shipmentsAwaitingLoading = shipments.filter(s => s.status === ShipmentStatus.AguardandoCarregamento);
 
     return (
       <>
-        <Header title="Dashboard do Supervisor" />
+        <Header title="Dashboard do Coordenador" />
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
            <Card
               title="Total de Cargas Ativas"
@@ -336,8 +336,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users,
       <>
         <Header title="Dashboard Fiscal" />
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <ShipmentListCard title="Aguardando Seguradora" shipments={shipmentsAwaitingInsurance} users={users} thresholds={{ yellow: 30, red: 50 }} onShowDetails={setDetailsModalShipment} />
           <ShipmentListCard title="Aguardando Cadastro" shipments={shipmentsPreCadastro} users={users} thresholds={{ yellow: 60, red: 90 }} onShowDetails={setDetailsModalShipment} />
+          <ShipmentListCard title="Aguardando Seguradora" shipments={shipmentsAwaitingInsurance} users={users} thresholds={{ yellow: 30, red: 50 }} onShowDetails={setDetailsModalShipment} />
           <ShipmentListCard title="Aguardando Nota" shipments={shipmentsAwaitingNote} users={users} thresholds={{ yellow: 120, red: 240 }} onShowDetails={setDetailsModalShipment} />
         </div>
         <ShipmentDetailsModal

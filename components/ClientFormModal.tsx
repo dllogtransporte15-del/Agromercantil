@@ -91,7 +91,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
             <select name="paymentMethod" value={client.paymentMethod} onChange={handleChange} className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600">
               {Object.values(PaymentMethod).map(method => <option key={method} value={method}>{method}</option>)}
             </select>
-            <input name="paymentTerm" value={client.paymentTerm} onChange={handleChange} type="number" placeholder="Prazo Pagamento (dias)" className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
+            <input name="paymentTerm" value={client.paymentTerm || ''} onChange={handleChange} type="number" placeholder="Prazo Pagamento (dias)" className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
 
             <div className="col-span-1 md:col-span-2 flex items-center space-x-6 mt-2">
                 <label className="flex items-center space-x-2 cursor-pointer">

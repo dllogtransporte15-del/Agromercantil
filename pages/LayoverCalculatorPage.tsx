@@ -41,7 +41,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
 
   const loadClients = useCallback(async () => {
     if (!currentUser) return;
-    const isAdmin = [UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile);
+    const isAdmin = [UserProfile.Admin, UserProfile.Diretor, UserProfile.Coordenador].includes(currentUser.profile);
     const data = await (isAdmin ? getAllToolClients() : getToolClients(currentUser.id));
     setClients(data);
   }, [currentUser]);

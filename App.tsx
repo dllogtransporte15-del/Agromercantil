@@ -251,8 +251,8 @@ const App: React.FC = () => {
   }, [verifySession]);
 
   const nextStatusMap: Partial<Record<ShipmentStatus, ShipmentStatus>> = {
-    [ShipmentStatus.AguardandoSeguradora]: ShipmentStatus.PreCadastro,
-    [ShipmentStatus.PreCadastro]: ShipmentStatus.AguardandoCarregamento,
+    [ShipmentStatus.PreCadastro]: ShipmentStatus.AguardandoSeguradora,
+    [ShipmentStatus.AguardandoSeguradora]: ShipmentStatus.AguardandoCarregamento,
     [ShipmentStatus.AguardandoCarregamento]: ShipmentStatus.AguardandoNota,
     [ShipmentStatus.AguardandoNota]: ShipmentStatus.AguardandoAdiantamento,
     // AguardandoAdiantamento is now handled conditionally
@@ -612,7 +612,7 @@ const App: React.FC = () => {
       driverFreightValue: data.driverFreightValue,
       driverFreightRateSnapshot: cargos.find(c => c.id === data.cargoId)?.driverFreightValuePerTon,
       companyFreightRateSnapshot: cargos.find(c => c.id === data.cargoId)?.companyFreightValuePerTon,
-      status: ShipmentStatus.AguardandoSeguradora,
+      status: ShipmentStatus.PreCadastro,
       scheduledDate: data.scheduledDate,
       scheduledTime: data.scheduledTime,
       bankDetails: data.bankDetails,
@@ -623,7 +623,7 @@ const App: React.FC = () => {
       driverReferences: data.driverReferences,
       ownerContact: data.ownerContact,
       statusHistory: [{
-        status: ShipmentStatus.AguardandoSeguradora,
+        status: ShipmentStatus.PreCadastro,
         timestamp: new Date().toISOString(),
         userId: currentUser.id,
       }],
@@ -850,11 +850,11 @@ const App: React.FC = () => {
 
     // Check permissions based on the current status
     if (currentStatus === ShipmentStatus.PreCadastro || currentStatus === ShipmentStatus.AguardandoSeguradora) {
-        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Admin].includes(currentUser.profile);
-        alertMessage = 'Apenas os perfis Fiscal, Diretor, Supervisor ou Administrador podem realizar esta ação.';
+        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Coordenador, UserProfile.Admin].includes(currentUser.profile);
+        alertMessage = 'Apenas os perfis Fiscal, Diretor, Coordenador ou Administrador podem realizar esta ação.';
     } else if (currentStatus === ShipmentStatus.AguardandoAdiantamento || currentStatus === ShipmentStatus.AguardandoPagamentoSaldo) {
-        isUserAllowed = [UserProfile.Financeiro, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Admin].includes(currentUser.profile);
-        alertMessage = 'Apenas os perfis Financeiro, Diretor, Supervisor ou Administrador do Sistema podem realizar esta ação.';
+        isUserAllowed = [UserProfile.Financeiro, UserProfile.Diretor, UserProfile.Coordenador, UserProfile.Admin].includes(currentUser.profile);
+        alertMessage = 'Apenas os perfis Financeiro, Diretor, Coordenador ou Administrador do Sistema podem realizar esta ação.';
     }
 
     if (!isUserAllowed) {
@@ -962,7 +962,7 @@ const App: React.FC = () => {
 
     // 3. Prepare Cargo Update (if applicable)
     const statusOrder = [
-        ShipmentStatus.AguardandoSeguradora, ShipmentStatus.PreCadastro,
+        ShipmentStatus.PreCadastro, ShipmentStatus.AguardandoSeguradora,
         ShipmentStatus.AguardandoCarregamento, ShipmentStatus.AguardandoNota,
         ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento,
         ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo,
@@ -997,6 +997,16 @@ const App: React.FC = () => {
       if (updatedCargo) {
         const cargoToUpdate = updatedCargo; // capture for closure
         setCargos(prev => prev.map(c => c.id === cargoToUpdate.id ? cargoToUpdate : c));
+      }
+
+      // 6. Release lock if moving from PreCadastro to AguardandoSeguradora
+      if (originalShipment.status === ShipmentStatus.PreCadastro && nextStatus === ShipmentStatus.AguardandoSeguradora) {
+        try {
+          await releaseShipmentLock(shipmentId, currentUser.id);
+          setActiveLocks((prev: ShipmentLock[]) => prev.filter(l => !(l.shipmentId === shipmentId && l.userId === currentUser.id)));
+        } catch (lockErr) {
+          console.error('Erro ao liberar o bloqueio do embarque:', lockErr);
+        }
       }
       
       showToast('Embarque atualizado com sucesso!', 'success');
@@ -1204,6 +1214,16 @@ const App: React.FC = () => {
     try {
       await upsertShipment(cancelledShipment);
       if (updatedCargo) await upsertCargo(updatedCargo);
+      
+      // Release lock on cancel if it was locked
+      if (shipmentToCancel.status === ShipmentStatus.PreCadastro) {
+        try {
+          await releaseShipmentLock(shipmentId, currentUser.id);
+          setActiveLocks((prev: ShipmentLock[]) => prev.filter(l => !(l.shipmentId === shipmentId && l.userId === currentUser.id)));
+        } catch (lockErr) {
+          console.error('Erro ao liberar o bloqueio do embarque no cancelamento:', lockErr);
+        }
+      }
     } catch (err) {
       console.error('Erro ao cancelar embarque:', err);
     }
@@ -1353,6 +1373,14 @@ const App: React.FC = () => {
         try {
             await deleteShipment(shipmentId);
             setShipments(prev => prev.filter(s => s.id !== shipmentId));
+
+            // Release lock if it existed
+            try {
+              await releaseShipmentLock(shipmentId, currentUser.id);
+              setActiveLocks((prev: ShipmentLock[]) => prev.filter(l => l.shipmentId !== shipmentId));
+            } catch (lockErr) {
+              console.warn('Erro ao liberar bloqueio do embarque excluído:', lockErr);
+            }
 
             // Atualizar volumes da carga
             const wasLoaded = Object.values(ShipmentStatus).indexOf(shipmentToDelete.status) >= Object.values(ShipmentStatus).indexOf(ShipmentStatus.AguardandoDescarga);
