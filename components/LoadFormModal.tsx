@@ -659,7 +659,45 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                     </div>
                  </div>
                  
-                 <div>
+                 <div className="border-t dark:border-gray-600 pt-4 mt-4">
+                     <label className="flex items-center space-x-2 cursor-pointer w-fit">
+                         <input type="checkbox" name="requiresScheduling" checked={load.requiresScheduling} onChange={handleChange} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                         <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Exige Agendamento</span>
+                     </label>
+                     {load.requiresScheduling && (
+                         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                             <div>
+                                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Link do Sistema Externo</label>
+                                 <input
+                                     value={load.externalOrder?.link || ''}
+                                     onChange={(e) => setLoad(prev => ({ ...prev, externalOrder: { ...prev.externalOrder!, link: e.target.value } }))}
+                                     className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
+                                     placeholder="https://..."
+                                 />
+                             </div>
+                             <div>
+                                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Usuário</label>
+                                 <input
+                                     value={load.externalOrder?.user || ''}
+                                     onChange={(e) => setLoad(prev => ({ ...prev, externalOrder: { ...prev.externalOrder!, user: e.target.value } }))}
+                                     className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
+                                     placeholder="Login do sistema"
+                                 />
+                             </div>
+                             <div>
+                                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Senha</label>
+                                 <input
+                                     value={load.externalOrder?.password || ''}
+                                     onChange={(e) => setLoad(prev => ({ ...prev, externalOrder: { ...prev.externalOrder!, password: e.target.value } }))}
+                                     className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
+                                     placeholder="Senha"
+                                 />
+                             </div>
+                         </div>
+                     )}
+                 </div>
+
+                 <div className="border-t dark:border-gray-600 pt-4 mt-4">
                     <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Timeline de Programação</h3>
                     <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
                         {(load.dailySchedule || []).length > 0 ? (
@@ -922,42 +960,6 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status da Carga</label>
                         <select name="status" value={load.status} onChange={handleChange} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600">{Object.values(CargoStatus).map(s => <option key={s} value={s}>{s}</option>)}</select>
                     </div>
-                    <div className="col-span-1 md:col-span-2 flex flex-col space-y-4">
-                        <label className="flex items-center space-x-2 cursor-pointer w-fit">
-                            <input type="checkbox" name="requiresScheduling" checked={load.requiresScheduling} onChange={handleChange} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
-                            <span className="text-sm text-gray-700 dark:text-gray-300">Exige Agendamento</span>
-                        </label>
-                        {load.requiresScheduling && (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Link do Sistema Externo</label>
-                                    <input
-                                        value={load.externalOrder?.link || ''}
-                                        onChange={(e) => setLoad(prev => ({ ...prev, externalOrder: { ...prev.externalOrder!, link: e.target.value } }))}
-                                        className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
-                                        placeholder="https://..."
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Usuário</label>
-                                    <input
-                                        value={load.externalOrder?.user || ''}
-                                        onChange={(e) => setLoad(prev => ({ ...prev, externalOrder: { ...prev.externalOrder!, user: e.target.value } }))}
-                                        className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
-                                        placeholder="Login do sistema"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Senha</label>
-                                    <input
-                                        value={load.externalOrder?.password || ''}
-                                        onChange={(e) => setLoad(prev => ({ ...prev, externalOrder: { ...prev.externalOrder!, password: e.target.value } }))}
-                                        className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
-                                        placeholder="Senha"
-                                    />
-                                </div>
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>

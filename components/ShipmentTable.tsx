@@ -65,6 +65,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
   const [filterOrigin, setFilterOrigin] = useState<string[]>([]);
   const [filterDest, setFilterDest] = useState<string[]>([]);
   const [filterClient, setFilterClient] = useState<string[]>([]);
+  const [filterDate, setFilterDate] = useState<'all' | 'today' | 'yesterday'>('all');
   
   // Sync modal shipment with latest data from props
   useEffect(() => {
@@ -137,6 +138,11 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
   const clientOptions = useMemo(() => Array.from(new Set(shipments.map(s => getClientName(getCargoInfo(s.cargoId)?.clientId || '')))).filter(Boolean).sort(), [shipments, cargos, clients]);
 
   const filteredShipments = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
     return shipments.filter(shipment => {
         const cargo = getCargoInfo(shipment.cargoId);
         if (filterPlate.length > 0 && !filterPlate.includes(shipment.horsePlate)) return false;
@@ -144,11 +150,23 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
         if (filterOrigin.length > 0 && !filterOrigin.includes(cargo?.origin || '')) return false;
         if (filterDest.length > 0 && !filterDest.includes(cargo?.destination || '')) return false;
         if (filterClient.length > 0 && !filterClient.includes(getClientName(cargo?.clientId || ''))) return false;
+        
+        if (filterDate === 'today') {
+            const created = new Date(shipment.createdAt);
+            if (created < today) return false;
+        } else if (filterDate === 'yesterday') {
+            const created = new Date(shipment.createdAt);
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            // created yesterday: >= yesterday and < today
+            if (created < yesterday || created >= today) return false;
+        }
+
         return true;
     });
-  }, [shipments, filterPlate, filterName, filterOrigin, filterDest, filterClient, cargos, clients]);
+  }, [shipments, filterPlate, filterName, filterOrigin, filterDest, filterClient, filterDate, cargos, clients]);
 
-  const activeFiltersCount = (filterPlate.length > 0 ? 1 : 0) + (filterName.length > 0 ? 1 : 0) + (filterOrigin.length > 0 ? 1 : 0) + (filterDest.length > 0 ? 1 : 0) + (filterClient.length > 0 ? 1 : 0);
+  const activeFiltersCount = (filterPlate.length > 0 ? 1 : 0) + (filterName.length > 0 ? 1 : 0) + (filterOrigin.length > 0 ? 1 : 0) + (filterDest.length > 0 ? 1 : 0) + (filterClient.length > 0 ? 1 : 0) + (filterDate !== 'all' ? 1 : 0);
 
   const clearFilters = () => {
     setFilterPlate([]);
@@ -156,7 +174,24 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
     setFilterOrigin([]);
     setFilterDest([]);
     setFilterClient([]);
+    setFilterDate('all');
   };
+
+  const shipperSummary = useMemo(() => {
+    const summary: Record<string, { count: number, revenue: number }> = {};
+    filteredShipments.forEach(s => {
+        const shipperId = s.embarcadorId;
+        if (!shipperId) return;
+        const cargo = getCargoInfo(s.cargoId);
+        const rate = s.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
+        const revenue = rate * (s.shipmentTonnage || 1);
+        
+        if (!summary[shipperId]) summary[shipperId] = { count: 0, revenue: 0 };
+        summary[shipperId].count += 1;
+        summary[shipperId].revenue += revenue;
+    });
+    return summary;
+  }, [filteredShipments, cargos]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -237,6 +272,11 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
 
         {showFilters && (
             <div className="p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
+                <div className="flex gap-2 mb-4">
+                    <button onClick={() => setFilterDate('all')} className={`px-3 py-1 text-sm rounded-full ${filterDate === 'all' ? 'bg-primary text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}>Qualquer Data</button>
+                    <button onClick={() => setFilterDate('today')} className={`px-3 py-1 text-sm rounded-full ${filterDate === 'today' ? 'bg-primary text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}>Hoje</button>
+                    <button onClick={() => setFilterDate('yesterday')} className={`px-3 py-1 text-sm rounded-full ${filterDate === 'yesterday' ? 'bg-primary text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}>Ontem</button>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     <MultiSelectDropdown label="Placa" options={plateOptions} selectedValues={filterPlate} onChange={setFilterPlate} placeholder="Todas as Placas..." />
                     <MultiSelectDropdown label="Motorista" options={nameOptions} selectedValues={filterName} onChange={setFilterName} placeholder="Todos os Motoristas..." />
@@ -251,6 +291,23 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
                         </button>
                     </div>
                 )}
+                
+                <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Faturamento Bruto por Embarcador</h4>
+                    <div className="flex flex-wrap gap-4">
+                        {Object.entries(shipperSummary).length > 0 ? Object.entries(shipperSummary).map(([shipperId, data]) => (
+                            <div key={shipperId} className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-600 min-w-[200px]">
+                                <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">{getEmbarcadorName(shipperId)}</p>
+                                <div className="mt-1 flex justify-between items-end">
+                                    <span className="text-lg font-bold text-gray-800 dark:text-white">{data.count} <span className="text-xs font-normal text-gray-500">emb.</span></span>
+                                    <span className="text-sm font-medium text-green-600 dark:text-green-400">{formatCurrency(data.revenue)}</span>
+                                </div>
+                            </div>
+                        )) : (
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Nenhum dado encontrado para os filtros atuais.</p>
+                        )}
+                    </div>
+                </div>
             </div>
         )}
       </div>

@@ -213,6 +213,20 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                 <DetailItem label="Data de Criação" value={formatDate(cargo.createdAt)} />
             </div>
 
+            {cargo.requiresScheduling && cargo.externalOrder && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t dark:border-gray-700 pt-4">
+                    <DetailItem label="Link do Sistema Externo">
+                        {cargo.externalOrder.link ? (
+                            <a href={cargo.externalOrder.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
+                                {cargo.externalOrder.link}
+                            </a>
+                        ) : 'N/A'}
+                    </DetailItem>
+                    <DetailItem label="Usuário" value={cargo.externalOrder.user || 'N/A'} />
+                    <DetailItem label="Senha" value={cargo.externalOrder.password || 'N/A'} />
+                </div>
+            )}
+
             {cargo.observations && (
                 <div className="border-t dark:border-gray-700 pt-4">
                     <DetailItem label="Observações">
