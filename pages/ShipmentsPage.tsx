@@ -16,7 +16,7 @@ import type { Shipment, Cargo, Client, Driver, User, ProfilePermissions, Product
 
 import { ShipmentStatus, UserProfile, REQUIRED_DOCUMENT_MAP } from '../types';
 import { can } from '../auth';
-import { tryAcquireShipmentLock, releaseShipmentLock } from '../lib/db';
+import { tryAcquireShipmentLock, releaseShipmentLock } from '../services/api/db';
 import { useEffect, useRef } from 'react';
 
 interface ShipmentsPageProps {

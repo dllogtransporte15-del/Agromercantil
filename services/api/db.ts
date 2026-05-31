@@ -1,7 +1,7 @@
-import { supabase } from '../supabase';
+import { supabase } from '../../supabase';
 import type {
   Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch
-} from '../types';
+} from '../../types';
 
 // ─────────────────────────────────────────────
 // HELPERS: Map DB rows (snake_case) ↔ App types (camelCase)
@@ -419,7 +419,7 @@ export async function fetchBranches(): Promise<Branch[]> {
 export async function fetchShipmentLocks(): Promise<ShipmentLock[]> {
   const { data, error } = await supabase.from('shipment_locks').select('*');
   if (error) return handleAuthError(error, []);
-  return (data || []).map(row => ({
+  return (data || []).map((row: any) => ({
     id: row.id,
     shipmentId: row.shipment_id,
     userId: row.user_id,

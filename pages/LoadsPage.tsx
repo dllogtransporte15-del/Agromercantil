@@ -63,6 +63,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
   const canCreate = can('create', currentUser, 'loads', profilePermissions);
   const canUpdate = can('update', currentUser, 'loads', profilePermissions);
   const canDelete = can('delete', currentUser, 'loads', profilePermissions);
+  const canCloseLoad = [UserProfile.Diretor, UserProfile.Coordenador, UserProfile.Comercial].includes(currentUser.profile as UserProfile) || canDelete;
 
   const handleOpenModal = () => {
     setLoadToEdit(null);
@@ -87,7 +88,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
   };
 
   const handleCloseLoad = (cargoToClose: Cargo) => {
-    if (window.confirm(`Tem certeza que deseja fechar a carga ${cargoToClose.id}? Essa ação mudará o status para "Fechada".`)) {
+    if (window.confirm(`Tem certeza que deseja fechar a carga ${cargoToClose.sequenceId}? Essa ação mudará o status para "Fechada".`)) {
         onSaveLoad({ ...cargoToClose, status: CargoStatus.Fechada });
     }
   };
@@ -125,7 +126,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
             dailyBalanceDate={dailyBalanceDate}
             onDailyBalanceDateChange={setDailyBalanceDate}
             onEdit={canUpdate ? handleEditLoad : undefined}
-            onClose={canDelete ? handleCloseLoad : undefined}
+            onClose={canCloseLoad ? handleCloseLoad : undefined}
             onShowHistory={handleShowHistory}
             onReactivate={currentUser.profile !== UserProfile.Embarcador ? onReactivateLoad : undefined}
             onSuspend={currentUser.profile !== UserProfile.Embarcador ? onSuspendLoad : undefined}

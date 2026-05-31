@@ -59,14 +59,16 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
   const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   const formatDate = (dateString: string) => new Date(dateString).toLocaleString('pt-BR');
 
-  const freightLegsToDisplay = (cargo.freightLegs && cargo.freightLegs.length > 0)
-    ? cargo.freightLegs
-    : [{
-        companyFreightValuePerTon: cargo.companyFreightValuePerTon,
-        driverFreightValuePerTon: cargo.driverFreightValuePerTon,
-        hasIcms: cargo.hasIcms,
-        icmsPercentage: cargo.icmsPercentage,
-      }];
+  const freightLegsToDisplay = (cargo.destinations && cargo.destinations.length > 0 && cargo.destinations[0].freightLegs?.length > 0)
+    ? cargo.destinations[0].freightLegs
+    : (cargo.freightLegs && cargo.freightLegs.length > 0)
+      ? cargo.freightLegs
+      : [{
+          companyFreightValuePerTon: cargo.companyFreightValuePerTon,
+          driverFreightValuePerTon: cargo.driverFreightValuePerTon,
+          hasIcms: cargo.hasIcms,
+          icmsPercentage: cargo.icmsPercentage,
+        }];
       
   const { totalCompanyFreight, totalDriverFreightPJ, totalDriverFreightPF, netMarginPercentagePJ, netMarginPercentagePF, marginPJ, marginPF } = useMemo(() => {
     const activeLegs = freightLegsToDisplay;
@@ -118,9 +120,24 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                 <DetailItem label="Cliente" value={client?.nomeFantasia} />
                 <DetailItem label="Produto" value={product?.name} />
                 <DetailItem label="Origem" value={cargo.origin} />
-                <DetailItem label="Destino" value={cargo.destination} />
                 {cargo.originMapLink && <DetailItem label="Link Mapa (Origem)"><a href={cargo.originMapLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 underline truncate">Abrir link</a></DetailItem>}
-                {cargo.destinationMapLink && <DetailItem label="Link Mapa (Destino)"><a href={cargo.destinationMapLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 underline truncate">Abrir link</a></DetailItem>}
+                <div className="col-span-1 md:col-span-2 mt-2">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Destinos</p>
+                    <div className="space-y-2">
+                        {cargo.destinations?.map((dest, idx) => (
+                            <div key={dest.id || idx} className="flex flex-col sm:flex-row gap-2 text-sm text-gray-800 dark:text-gray-200">
+                                <span className="font-medium">- {dest.city}</span>
+                                {dest.location && <span className="text-gray-500">({dest.location})</span>}
+                                {dest.mapLink && <a href={dest.mapLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 underline ml-2">Mapa</a>}
+                            </div>
+                        )) || (
+                            <div className="flex flex-col sm:flex-row gap-2 text-sm text-gray-800 dark:text-gray-200">
+                                <span className="font-medium">- {cargo.destination}</span>
+                                {cargo.destinationMapLink && <a href={cargo.destinationMapLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 underline ml-2">Mapa</a>}
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
 
             <div className="border-t dark:border-gray-700 pt-4">
@@ -148,25 +165,37 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
 
             <div className="border-t dark:border-gray-700 pt-4">
                 <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Valores de Frete (por Tonelada)</h3>
-                <div className="space-y-3">
-                    {freightLegsToDisplay.map((leg, index) => (
-                        <FreightLegDetail key={index} leg={leg} index={index} />
-                    ))}
-                </div>
+                {(cargo.destinations || []).map((dest, destIdx) => (
+                    <div key={dest.id || destIdx} className="mb-6">
+                        <h4 className="font-bold text-gray-800 dark:text-gray-200 mb-2">Destino: {dest.city}</h4>
+                        <div className="space-y-3">
+                            {dest.freightLegs?.map((leg, index) => (
+                                <FreightLegDetail key={index} leg={leg} index={index} />
+                            ))}
+                        </div>
+                    </div>
+                ))}
+                {(!cargo.destinations || cargo.destinations.length === 0) && (
+                    <div className="space-y-3">
+                        {freightLegsToDisplay.map((leg, index) => (
+                            <FreightLegDetail key={index} leg={leg} index={index} />
+                        ))}
+                    </div>
+                )}
                  <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
-                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Frete Empresa (Total)</label>
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Frete Empresa (1º Destino)</label>
                         <p className="text-lg font-bold text-gray-800 dark:text-gray-200">{formatCurrency(totalCompanyFreight)}</p>
                     </div>
                     <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-md border border-emerald-200 dark:border-emerald-800 flex flex-col justify-between">
-                        <label className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Frete PJ / Margem PJ</label>
+                        <label className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Frete PJ / Margem PJ (1º Destino)</label>
                         <div className="flex items-center justify-between mt-1">
                             <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(totalDriverFreightPJ)}</p>
                             <span className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(marginPJ)}`}>{netMarginPercentagePJ}</span>
                         </div>
                     </div>
                     <div className="p-3 bg-orange-50 dark:bg-orange-900/30 rounded-md border border-orange-200 dark:border-orange-800 flex flex-col justify-between">
-                        <label className="text-xs font-medium text-orange-600 dark:text-orange-400">Frete PF / Margem PF</label>
+                        <label className="text-xs font-medium text-orange-600 dark:text-orange-400">Frete PF / Margem PF (1º Destino)</label>
                         <div className="flex items-center justify-between mt-1">
                             <p className="text-lg font-bold text-orange-700 dark:text-orange-300">{formatCurrency(totalDriverFreightPF)}</p>
                             <span className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(marginPF)}`}>{netMarginPercentagePF}</span>
@@ -223,15 +252,30 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                 </div>
             )}
 
-
-
-
+            {cargo.requiresScheduling && (
+                <div className="border-t dark:border-gray-700 pt-4">
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Ordem Externa / Agendamento</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <DetailItem label="Link do Sistema Externo">
+                            {cargo.externalOrder?.link ? (
+                                <a href={cargo.externalOrder.link.startsWith('http') ? cargo.externalOrder.link : `https://${cargo.externalOrder.link}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 hover:underline break-all">
+                                    {cargo.externalOrder.link}
+                                </a>
+                            ) : (
+                                <span className="text-sm text-gray-800 dark:text-gray-200">N/A</span>
+                            )}
+                        </DetailItem>
+                        <DetailItem label="Usuário" value={cargo.externalOrder?.user || 'N/A'} />
+                        <DetailItem label="Senha" value={cargo.externalOrder?.password || 'N/A'} />
+                    </div>
+                </div>
+            )}
         </div>
         
         <div className="mt-6 flex justify-end border-t dark:border-gray-700 pt-4">
-          <button type="button" onClick={onClose} className="py-2 px-4 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">
-            Fechar
-          </button>
+            <button type="button" onClick={onClose} className="py-2 px-4 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">
+                Fechar
+            </button>
         </div>
       </div>
     </div>

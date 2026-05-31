@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import type { Cargo, Client, Product, Shipment, User, ProfilePermissions } from '../types';
-import { DailyScheduleType, CargoStatus, UserProfile } from '../types';
+import { DailyScheduleType, CargoStatus, UserProfile, ShipmentStatus } from '../types';
 import { can, INITIAL_PERMISSIONS } from '../auth';
 import VolumeBar from './VolumeBar';
 import { Trash2 } from 'lucide-react';
@@ -30,12 +30,14 @@ interface LoadTableProps {
   onDelete?: (cargoId: string) => void;
   currentUser: User;
   profilePermissions?: ProfilePermissions;
+  onFilteredLoadsChange?: (loads: Cargo[]) => void;
 }
 
 const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipments, dailyBalanceDate, onDailyBalanceDateChange, onCreateShipment, onSuspend, onReactivate, onFinalize, onEdit, onClose, onShowHistory, onShowDetails, onEditSchedule,  onShowShipments,
   onDelete,
   currentUser,
-  profilePermissions
+  profilePermissions,
+  onFilteredLoadsChange
 }) => {
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
   const [expandedLoadId, setExpandedLoadId] = useState<string | null>(null);
@@ -55,16 +57,23 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
   const clientOptions = Array.from(new Set(loads.map(l => getClientName(l.clientId)))).filter(Boolean).sort();
   const productOptions = Array.from(new Set(loads.map(l => getProductName(l.productId)))).filter(Boolean).sort();
   const originOptions = Array.from(new Set(loads.map(l => l.origin))).filter(Boolean).sort();
-  const destOptions = Array.from(new Set(loads.map(l => l.destination))).filter(Boolean).sort();
+  const destOptions = Array.from(new Set(loads.flatMap(l => (l.destinations || []).map(d => d.city).concat(l.destination)))).filter(Boolean).sort();
 
   const filteredLoads = loads.filter(load => {
     if (filterId.length > 0 && !filterId.includes(load.sequenceId?.toString() || '')) return false;
     if (filterClient.length > 0 && !filterClient.includes(getClientName(load.clientId))) return false;
     if (filterProduct.length > 0 && !filterProduct.includes(getProductName(load.productId))) return false;
     if (filterOrigin.length > 0 && !filterOrigin.includes(load.origin)) return false;
-    if (filterDest.length > 0 && !filterDest.includes(load.destination)) return false;
+    if (filterDest.length > 0) {
+      const loadDests = (load.destinations || []).map(d => d.city).concat(load.destination);
+      if (!filterDest.some(fd => loadDests.includes(fd))) return false;
+    }
     return true;
   });
+
+  React.useEffect(() => {
+    onFilteredLoadsChange?.(filteredLoads);
+  }, [filteredLoads.map(l => l.id).join(','), filterId, filterClient, filterProduct, filterOrigin, filterDest]);
 
   const activeFiltersCount = (filterId.length > 0 ? 1 : 0) + (filterClient.length > 0 ? 1 : 0) + (filterProduct.length > 0 ? 1 : 0) + (filterOrigin.length > 0 ? 1 : 0) + (filterDest.length > 0 ? 1 : 0);
 
@@ -157,14 +166,16 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
             .reduce((sum, s) => sum + s.shipmentTonnage, 0);
           const dailyScheduleInfo = load.dailySchedule?.find(ds => ds.date === dailyBalanceDate);
 
-          const freightLegsToDisplay = (load.freightLegs && load.freightLegs.length > 0)
-            ? load.freightLegs
-            : [{
-                companyFreightValuePerTon: load.companyFreightValuePerTon,
-                driverFreightValuePerTon: load.driverFreightValuePerTon,
-                hasIcms: load.hasIcms,
-                icmsPercentage: load.icmsPercentage,
-              }];
+          const freightLegsToDisplay = (load.destinations && load.destinations.length > 0 && load.destinations[0].freightLegs.length > 0)
+            ? load.destinations[0].freightLegs
+            : (load.freightLegs && load.freightLegs.length > 0)
+              ? load.freightLegs
+              : [{
+                  companyFreightValuePerTon: load.companyFreightValuePerTon,
+                  driverFreightValuePerTon: load.driverFreightValuePerTon,
+                  hasIcms: load.hasIcms,
+                  icmsPercentage: load.icmsPercentage,
+                }];
               
           const totalDriverFreightPJ = freightLegsToDisplay.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
           const totalDriverFreightPF = freightLegsToDisplay.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
@@ -173,7 +184,12 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
               return sum + (leg.companyFreightValuePerTon * (1 - icmsRate));
           }, 0);
 
-          const calcMarginVal = (driver: number) => (totalNetCompanyValue > 0) ? ((totalNetCompanyValue - driver) / totalNetCompanyValue) * 100 : 0;
+          const commission = load.salespersonCommissionPerTon || 0;
+
+          const calcMarginVal = (driverCost: number) =>
+            (totalNetCompanyValue > 0)
+              ? ((totalNetCompanyValue - driverCost - commission) / totalNetCompanyValue) * 100
+              : 0;
           const marginPJ = calcMarginVal(totalDriverFreightPJ);
           const marginPF = calcMarginVal(totalDriverFreightPF);
           const netMarginPercentagePJ = isNaN(marginPJ) || !isFinite(marginPJ) ? '0,00%' : `${marginPJ.toFixed(2).replace('.', ',')}%`;
@@ -306,12 +322,27 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                 <div className="flex items-center gap-2 min-w-[180px] text-xs py-2 lg:py-0 border-t border-gray-50 lg:border-t-0 dark:border-gray-700/50">
                   <div className="text-left lg:text-right flex-1">
                     <div className="text-gray-400 text-[9px] uppercase font-bold">Origem</div>
-                    <div className="font-medium text-gray-700 dark:text-gray-300 truncate">{load.origin}</div>
+                    <div className="font-medium text-gray-700 dark:text-gray-300 truncate" title={load.origin}>{load.origin}</div>
                   </div>
                   <div className="text-gray-300">→</div>
                   <div className="flex-1">
-                    <div className="text-gray-400 text-[9px] uppercase font-bold">Destino</div>
-                    <div className="font-medium text-gray-700 dark:text-gray-300 truncate">{load.destination}</div>
+                    <div className="flex items-center gap-1">
+                      <div className="text-gray-400 text-[9px] uppercase font-bold">Destino</div>
+                      {(load.destinations && load.destinations.length > 1) && (
+                        <button 
+                          onClick={() => setExpandedLoadId(expandedLoadId === load.id ? null : load.id)}
+                          className="flex items-center justify-center bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 rounded text-gray-500 p-0.5 cursor-pointer"
+                          title="Ver outros destinos"
+                        >
+                          <span className={`text-[10px] transform transition-transform ${expandedLoadId === load.id ? 'rotate-180' : ''}`}>⬇️</span>
+                        </button>
+                      )}
+                    </div>
+                    <div className="font-medium text-gray-700 dark:text-gray-300 line-clamp-2" title={(load.destinations || []).map(d => d.city).join(', ') || load.destination}>
+                      {(load.destinations && load.destinations.length > 1) 
+                        ? `${load.destinations[0].city} (+${load.destinations.length - 1})` 
+                        : ((load.destinations && load.destinations.length === 1) ? load.destinations[0].city : load.destination)}
+                    </div>
                   </div>
                 </div>
 
@@ -356,14 +387,26 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                       <div className="flex flex-col items-end gap-0.5">
                         <div className="flex items-center gap-1">
                           <span className="text-[8px] font-bold text-emerald-500 uppercase">PJ</span>
-                          <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(totalDriverFreightPJ)}</span>
-                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${marginColorClassPJ}`} title="Margem PJ">{netMarginPercentagePJ}</span>
+                          <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300" title={(load.destinations && load.destinations.length > 1) ? 'Valor do primeiro destino' : ''}>{formatCurrency(totalDriverFreightPJ)}{(load.destinations && load.destinations.length > 1) ? '*' : ''}</span>
+                          <span
+                            className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${marginColorClassPJ}`}
+                            title={commission > 0 ? `Margem PJ (inclui comissão de ${formatCurrency(commission)}/ton)` : 'Margem PJ'}
+                          >{netMarginPercentagePJ}</span>
                         </div>
                         <div className="flex items-center gap-1">
                           <span className="text-[8px] font-bold text-orange-500 uppercase">PF</span>
-                          <span className="text-xs font-bold text-orange-700 dark:text-orange-300">{formatCurrency(totalDriverFreightPF)}</span>
-                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${marginColorClassPF}`} title="Margem PF">{netMarginPercentagePF}</span>
+                          <span className="text-xs font-bold text-orange-700 dark:text-orange-300" title={(load.destinations && load.destinations.length > 1) ? 'Valor do primeiro destino' : ''}>{formatCurrency(totalDriverFreightPF)}{(load.destinations && load.destinations.length > 1) ? '*' : ''}</span>
+                          <span
+                            className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${marginColorClassPF}`}
+                            title={commission > 0 ? `Margem PF (inclui comissão de ${formatCurrency(commission)}/ton)` : 'Margem PF'}
+                          >{netMarginPercentagePF}</span>
                         </div>
+                        {commission > 0 && (
+                          <div className="flex items-center gap-1 mt-0.5" title={`Comissão Vendedor: ${formatCurrency(commission)}/ton deduzida da margem`}>
+                            <span className="text-[8px] font-bold text-purple-500 uppercase">Com.</span>
+                            <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/30 px-1.5 py-0.5 rounded">- {formatCurrency(commission)}/ton</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -430,6 +473,90 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                   </div>
                 </div>
               </div>
+
+              {expandedLoadId === load.id && load.destinations && load.destinations.length > 1 && (
+                 <div className="p-2 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 rounded-b-lg">
+                    <h4 className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">Outros Destinos</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                        {load.destinations.map((dest, idx) => {
+                             const leg = dest.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: 0, companyFreightValuePerTon: 0 };
+                             const pj = leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon;
+                             const pf = leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon;
+                             
+                             const destShipments = shipments.filter(s => s.cargoId === load.id && s.route === dest.city && s.status !== ShipmentStatus.Cancelado);
+                             const scheduledDest = destShipments.filter(s => [ShipmentStatus.PreCadastro, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoSeguradora, ShipmentStatus.AguardandoCarregamento].includes(s.status)).reduce((sum, s) => sum + (s.shipmentTonnage || 0), 0);
+                             const actuallyLoadedDest = destShipments.reduce((sum, s) => sum + (s.unloadedTonnage || s.shipmentTonnage || 0), 0) - scheduledDest;
+
+                             const destNetCompanyValue = (leg.companyFreightValuePerTon || 0) * (1 - (leg.hasIcms ? (leg.icmsPercentage || 0) / 100 : 0));
+                             const destMarginPJVal = destNetCompanyValue > 0 ? ((destNetCompanyValue - pj - commission) / destNetCompanyValue) * 100 : 0;
+                             const destMarginPFVal = destNetCompanyValue > 0 ? ((destNetCompanyValue - pf - commission) / destNetCompanyValue) * 100 : 0;
+                             
+                             const destMarginColorPJ = getMarginColorClass(destMarginPJVal);
+                             const destMarginColorPF = getMarginColorClass(destMarginPFVal);
+                             const destMarginStrPJ = isNaN(destMarginPJVal) || !isFinite(destMarginPJVal) ? '0,00%' : `${destMarginPJVal.toFixed(2).replace('.', ',')}%`;
+                             const destMarginStrPF = isNaN(destMarginPFVal) || !isFinite(destMarginPFVal) ? '0,00%' : `${destMarginPFVal.toFixed(2).replace('.', ',')}%`;
+
+                             return (
+                                 <div key={dest.id || idx} className="p-1.5 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded flex flex-col shadow-sm gap-1.5">
+                                     <div className="flex justify-between items-start">
+                                         <div>
+                                             <p className="font-bold text-xs text-gray-800 dark:text-gray-200">{dest.city}</p>
+                                             <div className="flex flex-col gap-0.5 mt-0.5">
+                                                 <div className="flex items-center gap-1">
+                                                     <span className="text-[7px] font-bold text-emerald-500 uppercase">PJ</span>
+                                                     <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(pj)}</span>
+                                                     <span className={`text-[8px] font-medium px-1 py-0.5 rounded ${destMarginColorPJ}`}>{destMarginStrPJ}</span>
+                                                 </div>
+                                                 <div className="flex items-center gap-1">
+                                                     <span className="text-[7px] font-bold text-orange-500 uppercase">PF</span>
+                                                     <span className="text-[10px] font-bold text-orange-700 dark:text-orange-300">{formatCurrency(pf)}</span>
+                                                     <span className={`text-[8px] font-medium px-1 py-0.5 rounded ${destMarginColorPF}`}>{destMarginStrPF}</span>
+                                                 </div>
+                                             </div>
+                                         </div>
+                                         <div>
+                                             {onCreateShipment && load.status === CargoStatus.EmAndamento && (
+                                                <button 
+                                                    onClick={() => {
+                                                        const modifiedCargo = {
+                                                            ...load,
+                                                            destination: dest.city,
+                                                            destinationMapLink: dest.mapLink || load.destinationMapLink,
+                                                            driverFreightValuePerTon: leg?.driverFreightValuePerTon ?? load.driverFreightValuePerTon,
+                                                            driverFreightValuePerTonPJ: leg?.driverFreightValuePerTonPJ ?? load.driverFreightValuePerTonPJ,
+                                                            driverFreightValuePerTonPF: leg?.driverFreightValuePerTonPF ?? load.driverFreightValuePerTonPF,
+                                                            companyFreightValuePerTon: leg?.companyFreightValuePerTon ?? load.companyFreightValuePerTon,
+                                                        };
+                                                        onCreateShipment(modifiedCargo);
+                                                    }} 
+                                                    className="p-1.5 bg-primary text-white hover:bg-primary-dark rounded transition-colors shadow-sm"
+                                                    title="Novo Embarque para este destino"
+                                                >
+                                                    <PlusIcon className="w-3 h-3" />
+                                                </button>
+                                             )}
+                                         </div>
+                                     </div>
+                                     
+                                     {dest.targetTonnage && dest.targetTonnage > 0 && (
+                                         <div className="mt-0.5">
+                                             <div className="flex justify-between text-[8px] font-bold text-gray-500 mb-0.5">
+                                                 <span>Saldo</span>
+                                                 <span>{formatNumber(actuallyLoadedDest + scheduledDest)} / {formatNumber(dest.targetTonnage)} t</span>
+                                             </div>
+                                             <VolumeBar
+                                                loaded={actuallyLoadedDest}
+                                                scheduled={scheduledDest}
+                                                total={dest.targetTonnage}
+                                             />
+                                         </div>
+                                     )}
+                                 </div>
+                             );
+                        })}
+                    </div>
+                 </div>
+              )}
             </div>
           );
         })}

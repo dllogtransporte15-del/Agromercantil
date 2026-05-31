@@ -44,6 +44,16 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
     destination: '',
     destinationLocation: '',
     destinationMapLink: '',
+    destinations: [{
+      id: Math.random().toString(36).substr(2, 9),
+      city: '',
+      location: '',
+      mapLink: '',
+      freightLegs: [
+        { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 },
+        { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 }
+      ]
+    }],
     totalVolume: 0,
     scheduledVolume: 0,
     loadedVolume: 0,
@@ -93,21 +103,42 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
         setStep(initialStep);
         if (loadToEdit) {
             const { history, createdAt, id, scheduledVolume, loadedVolume, ...editableLoad } = loadToEdit;
-            const legs = editableLoad.freightLegs && editableLoad.freightLegs.length > 0
-                ? editableLoad.freightLegs.map(leg => ({
-                    ...leg,
-                    driverFreightValuePerTonPJ: leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon,
-                    driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
-                  }))
-                : [{ companyFreightValuePerTon: editableLoad.companyFreightValuePerTon, driverFreightValuePerTon: editableLoad.driverFreightValuePerTon, driverFreightValuePerTonPJ: editableLoad.driverFreightValuePerTonPJ ?? editableLoad.driverFreightValuePerTon, driverFreightValuePerTonPF: editableLoad.driverFreightValuePerTonPF ?? editableLoad.driverFreightValuePerTon, hasIcms: editableLoad.hasIcms, icmsPercentage: editableLoad.icmsPercentage }];
-            
-            while (legs.length < 2) {
-                legs.push({ companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 });
+            let initialDestinations = editableLoad.destinations;
+            if (!initialDestinations || initialDestinations.length === 0) {
+                const legs = editableLoad.freightLegs && editableLoad.freightLegs.length > 0
+                    ? editableLoad.freightLegs.map(leg => ({
+                        ...leg,
+                        driverFreightValuePerTonPJ: leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon,
+                        driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
+                      }))
+                    : [{ companyFreightValuePerTon: editableLoad.companyFreightValuePerTon, driverFreightValuePerTon: editableLoad.driverFreightValuePerTon, driverFreightValuePerTonPJ: editableLoad.driverFreightValuePerTonPJ ?? editableLoad.driverFreightValuePerTon, driverFreightValuePerTonPF: editableLoad.driverFreightValuePerTonPF ?? editableLoad.driverFreightValuePerTon, hasIcms: editableLoad.hasIcms, icmsPercentage: editableLoad.icmsPercentage }];
+                while (legs.length < 2) {
+                    legs.push({ companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 });
+                }
+                initialDestinations = [{
+                    id: Math.random().toString(36).substr(2, 9),
+                    city: editableLoad.destination || '',
+                    location: editableLoad.destinationLocation || '',
+                    mapLink: editableLoad.destinationMapLink || '',
+                    freightLegs: legs
+                }];
+            } else {
+                initialDestinations = initialDestinations.map(d => {
+                    const legs = d.freightLegs && d.freightLegs.length > 0 ? d.freightLegs.map(leg => ({
+                        ...leg,
+                        driverFreightValuePerTonPJ: leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon,
+                        driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
+                    })) : [{ companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 }];
+                    while (legs.length < 2) {
+                        legs.push({ companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 });
+                    }
+                    return { ...d, freightLegs: legs };
+                });
             }
             
             setLoad({ 
                 ...editableLoad, 
-                freightLegs: legs, 
+                destinations: initialDestinations,
                 dailySchedule: editableLoad.dailySchedule || [],
                 observations: editableLoad.observations || '',
                 attachments: editableLoad.attachments || [],
@@ -115,37 +146,76 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                 salespersonName: editableLoad.salespersonName || '',
                 salespersonCommissionPerTon: editableLoad.salespersonCommissionPerTon || 0,
                 originLocation: editableLoad.originLocation || '',
-                destinationLocation: editableLoad.destinationLocation || '',
                 branchId: editableLoad.branchId,
             });
-            setHasMultiLeg(editableLoad.freightLegs ? editableLoad.freightLegs.length > 1 : false);
+            setHasMultiLeg(initialDestinations[0].freightLegs.length > 1 && initialDestinations[0].freightLegs[1].companyFreightValuePerTon > 0);
             setShowSalesperson(!!editableLoad.salespersonName);
         } else {
             const { scheduledVolume, loadedVolume, ...initialState } = getInitialState();
-            setLoad({ ...initialState, createdById: currentUser.id });
-            setHasMultiLeg(false);
-            setShowSalesperson(false);
+            let baseState = { ...initialState };
+            
+            if (loads && loads.length > 0) {
+                const lastLoad = loads.reduce((prev, current) => (prev.sequenceId > current.sequenceId) ? prev : current);
+                baseState = {
+                    ...baseState,
+                    clientId: lastLoad.clientId,
+                    productId: lastLoad.productId,
+                    origin: lastLoad.origin,
+                    originLocation: lastLoad.originLocation,
+                    originMapLink: lastLoad.originMapLink,
+                    destination: lastLoad.destination,
+                    destinationLocation: lastLoad.destinationLocation,
+                    destinationMapLink: lastLoad.destinationMapLink,
+                    destinations: lastLoad.destinations ? JSON.parse(JSON.stringify(lastLoad.destinations)) : baseState.destinations,
+                    totalVolume: lastLoad.totalVolume,
+                    companyFreightValuePerTon: lastLoad.companyFreightValuePerTon,
+                    driverFreightValuePerTon: lastLoad.driverFreightValuePerTon,
+                    driverFreightValuePerTonPJ: lastLoad.driverFreightValuePerTonPJ,
+                    driverFreightValuePerTonPF: lastLoad.driverFreightValuePerTonPF,
+                    hasIcms: lastLoad.hasIcms,
+                    icmsPercentage: lastLoad.icmsPercentage,
+                    requiresScheduling: lastLoad.requiresScheduling,
+                    type: lastLoad.type,
+                    allowedVehicleTypes: lastLoad.allowedVehicleTypes ? JSON.parse(JSON.stringify(lastLoad.allowedVehicleTypes)) : baseState.allowedVehicleTypes,
+                    freightLegs: lastLoad.freightLegs ? JSON.parse(JSON.stringify(lastLoad.freightLegs)) : baseState.freightLegs,
+                    salespersonName: lastLoad.salespersonName,
+                    salespersonCommissionPerTon: lastLoad.salespersonCommissionPerTon,
+                    branchId: lastLoad.branchId || currentUser.branchId,
+                    externalOrder: lastLoad.externalOrder ? JSON.parse(JSON.stringify(lastLoad.externalOrder)) : baseState.externalOrder,
+                };
+            }
+            
+            setLoad({ ...baseState, createdById: currentUser.id });
+            
+            if (baseState.destinations && baseState.destinations[0]?.freightLegs) {
+                 setHasMultiLeg(baseState.destinations[0].freightLegs.length > 1 && baseState.destinations[0].freightLegs[1].companyFreightValuePerTon > 0);
+            } else {
+                 setHasMultiLeg(false);
+            }
+            setShowSalesperson(!!baseState.salespersonName);
         }
     }
     prevIsOpen.current = isOpen;
   }, [isOpen, initialStep, currentUser]);
   
-  const { totalCompanyFreight, totalDriverFreightPJ, totalDriverFreightPF, netMarginPercentagePJ, netMarginPercentagePF, marginPJ, marginPF } = useMemo(() => {
-    const legs = load.freightLegs || [];
+  const calculateDestinationTotals = (destination: any) => {
+    const legs = destination?.freightLegs || [];
     const activeLegs = hasMultiLeg ? legs.slice(0, 2) : legs.slice(0, 1);
 
-    const totalCompanyFreight = activeLegs.reduce((sum, leg) => sum + leg.companyFreightValuePerTon, 0);
-    const totalDriverFreightPJ = activeLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
-    const totalDriverFreightPF = activeLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
+    const totalCompanyFreight = activeLegs.reduce((sum: number, leg: any) => sum + (leg.companyFreightValuePerTon || 0), 0);
+    const totalDriverFreightPJ = activeLegs.reduce((sum: number, leg: any) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon ?? 0), 0);
+    const totalDriverFreightPF = activeLegs.reduce((sum: number, leg: any) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon ?? 0), 0);
     
-    const totalNetCompanyValue = activeLegs.reduce((sum, leg) => {
-        const icmsRate = leg.hasIcms ? leg.icmsPercentage / 100 : 0;
-        const netValue = leg.companyFreightValuePerTon * (1 - icmsRate);
+    const totalNetCompanyValue = activeLegs.reduce((sum: number, leg: any) => {
+        const icmsRate = leg.hasIcms ? (leg.icmsPercentage || 0) / 100 : 0;
+        const netValue = (leg.companyFreightValuePerTon || 0) * (1 - icmsRate);
         return sum + netValue;
     }, 0);
 
+    const commission = load.salespersonCommissionPerTon || 0;
+
     const calcMargin = (driverFreight: number) => {
-        const profit = totalNetCompanyValue - driverFreight;
+        const profit = totalNetCompanyValue - driverFreight - commission;
         return (totalNetCompanyValue > 0) ? (profit / totalNetCompanyValue) * 100 : 0;
     };
 
@@ -154,7 +224,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
     const formatMargin = (m: number) => isNaN(m) || !isFinite(m) ? '0,00%' : `${m.toFixed(2).replace('.', ',')}%`;
 
     return { totalCompanyFreight, totalDriverFreightPJ, totalDriverFreightPF, netMarginPercentagePJ: formatMargin(marginPJ), netMarginPercentagePF: formatMargin(marginPF), marginPJ, marginPF };
-  }, [load.freightLegs, hasMultiLeg]);
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
@@ -170,10 +240,48 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
     }
   };
 
-  const handleLegChange = (index: number, field: keyof FreightLeg, value: string | number | boolean) => {
+  const handleDestinationChange = (destIndex: number, field: string, value: string) => {
+      setLoad(prev => {
+          const newDests = [...(prev.destinations || [])];
+          const finalValue = field === 'targetTonnage' ? (parseFloat(value) || undefined) : value;
+          newDests[destIndex] = { ...newDests[destIndex], [field]: finalValue };
+          return { ...prev, destinations: newDests };
+      });
+  };
+
+  const handleAddDestination = () => {
+      setLoad(prev => ({
+          ...prev,
+          destinations: [
+              ...(prev.destinations || []),
+              {
+                  id: Math.random().toString(36).substr(2, 9),
+                  city: '',
+                  location: '',
+                  mapLink: '',
+                  targetTonnage: undefined,
+                  freightLegs: [
+                      { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 },
+                      { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 }
+                  ]
+              }
+          ]
+      }));
+  };
+
+  const handleRemoveDestination = (destIndex: number) => {
+      setLoad(prev => ({
+          ...prev,
+          destinations: (prev.destinations || []).filter((_, i) => i !== destIndex)
+      }));
+  };
+
+  const handleLegChange = (destIndex: number, legIndex: number, field: keyof FreightLeg, value: string | number | boolean) => {
     setLoad(prev => {
-        const newLegs = [...(prev.freightLegs || [])];
-        const legToUpdate = { ...newLegs[index] };
+        const newDests = [...(prev.destinations || [])];
+        const destToUpdate = { ...newDests[destIndex] };
+        const newLegs = [...destToUpdate.freightLegs];
+        const legToUpdate = { ...newLegs[legIndex] };
         
         let finalValue = value;
         if (field === 'companyFreightValuePerTon' || field === 'driverFreightValuePerTon' || field === 'driverFreightValuePerTonPJ' || field === 'driverFreightValuePerTonPF' || field === 'icmsPercentage') {
@@ -186,8 +294,10 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
             legToUpdate.icmsPercentage = 0;
         }
         
-        newLegs[index] = legToUpdate;
-        return { ...prev, freightLegs: newLegs };
+        newLegs[legIndex] = legToUpdate;
+        destToUpdate.freightLegs = newLegs;
+        newDests[destIndex] = destToUpdate;
+        return { ...prev, destinations: newDests };
     });
   };
   
@@ -217,22 +327,29 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const activeLegs = hasMultiLeg ? (load.freightLegs || []).slice(0, 2) : (load.freightLegs || []).slice(0, 1);
+    const normalizedDestinations = (load.destinations || []).map(dest => {
+        const activeLegs = hasMultiLeg ? dest.freightLegs.slice(0, 2) : dest.freightLegs.slice(0, 1);
+        return {
+            ...dest,
+            freightLegs: activeLegs.map(leg => ({
+                ...leg,
+                driverFreightValuePerTonPJ: leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon,
+                driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
+            }))
+        };
+    });
 
-    // Geocode origin and destination
+    const firstDest = normalizedDestinations[0] || { city: '', location: '', mapLink: '', freightLegs: [] };
+    const firstDestLegs = firstDest.freightLegs;
+    const totalCompanyFreightCalc = firstDestLegs.reduce((sum, leg) => sum + leg.companyFreightValuePerTon, 0);
+    const totalDriverFreightPJCalc = firstDestLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
+    const totalDriverFreightPFCalc = firstDestLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
+
+    // Geocode origin and FIRST destination
     const [originCoords, destinationCoords] = await Promise.all([
         geocodeCity(load.origin),
-        geocodeCity(load.destination)
+        geocodeCity(firstDest.city)
     ]);
-
-    const totalDriverFreightPJCalc = activeLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
-    const totalDriverFreightPFCalc = activeLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
-
-    const normalizedLegs = activeLegs.map(leg => ({
-        ...leg,
-        driverFreightValuePerTonPJ: leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon,
-        driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
-    }));
 
     // Auto-merge unadded vehicle types before saving
     let finalAllowedVehicleTypes = load.allowedVehicleTypes || [];
@@ -251,13 +368,17 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
 
     const finalLoadData = {
         ...load,
-        companyFreightValuePerTon: totalCompanyFreight,
+        destinations: normalizedDestinations,
+        destination: firstDest.city,
+        destinationLocation: firstDest.location,
+        destinationMapLink: firstDest.mapLink,
+        companyFreightValuePerTon: totalCompanyFreightCalc,
         driverFreightValuePerTon: totalDriverFreightPJCalc, // legado: usa PJ como padrão
         driverFreightValuePerTonPJ: totalDriverFreightPJCalc,
         driverFreightValuePerTonPF: totalDriverFreightPFCalc,
-        freightLegs: normalizedLegs,
-        hasIcms: activeLegs[0]?.hasIcms || false,
-        icmsPercentage: activeLegs[0]?.icmsPercentage || 0,
+        freightLegs: firstDestLegs,
+        hasIcms: firstDestLegs[0]?.hasIcms || false,
+        icmsPercentage: firstDestLegs[0]?.icmsPercentage || 0,
         originCoords: originCoords || undefined,
         destinationCoords: destinationCoords || undefined,
         allowedVehicleTypes: finalAllowedVehicleTypes,
@@ -415,11 +536,33 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                         <input name="originMapLink" value={load.originMapLink ?? ''} onChange={handleChange} placeholder="Link do Google Maps (Origem)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
                     </div>
                     
-                    <div className="space-y-4">
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Destino (Cidade e Local)</label>
-                        <input name="destination" value={load.destination} onChange={handleChange} placeholder="Cidade de Destino" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 mb-2" required list="cities-list" />
-                        <input name="destinationLocation" value={load.destinationLocation ?? ''} onChange={handleChange} placeholder="Nome do Local (Ex: Porto...)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 mb-2" />
-                        <input name="destinationMapLink" value={load.destinationMapLink ?? ''} onChange={handleChange} placeholder="Link do Google Maps (Destino)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
+                    <div className="space-y-4 col-span-1 md:col-span-2">
+                        <div className="flex items-center gap-2 mb-1">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Destino (Cidade e Local)</label>
+                            <button 
+                                type="button" 
+                                onClick={handleAddDestination} 
+                                className="flex items-center justify-center p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-800/50 transition-colors"
+                                title="Adicionar Destino"
+                            >
+                                <PlusIcon className="h-4 w-4" />
+                            </button>
+                        </div>
+                        {(load.destinations || []).map((dest, idx) => (
+                            <div key={dest.id} className="p-4 border rounded dark:border-gray-600 bg-gray-50 dark:bg-gray-900/30 relative">
+                                {idx > 0 && (
+                                    <button type="button" onClick={() => handleRemoveDestination(idx)} className="absolute top-2 right-2 text-red-500 hover:text-red-700">
+                                        <XIcon className="h-4 w-4" />
+                                    </button>
+                                )}
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                                    <input value={dest.city} onChange={(e) => handleDestinationChange(idx, 'city', e.target.value)} placeholder="Cidade de Destino" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" required list="cities-list" />
+                                    <input value={dest.location ?? ''} onChange={(e) => handleDestinationChange(idx, 'location', e.target.value)} placeholder="Nome do Local (Ex: Porto...)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
+                                    <input value={dest.mapLink ?? ''} onChange={(e) => handleDestinationChange(idx, 'mapLink', e.target.value)} placeholder="Link do Google Maps" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
+                                    <input type="number" step="0.1" value={dest.targetTonnage ?? ''} onChange={(e) => handleDestinationChange(idx, 'targetTonnage', e.target.value)} placeholder="Saldo Entrega (ton)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
+                                </div>
+                            </div>
+                        ))}
                     </div>
 
                     <datalist id="cities-list">
@@ -545,96 +688,119 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                             {hasMultiLeg ? (<><XIcon className="h-4 w-4" /><span>Remover Perna</span></>) : (<><PlusIcon className="h-4 w-4" /><span>Adicionar Perna</span></>)}
                         </button>
                     </div>
-                    {/* Leg 1 */}
-                    <div className="p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-                        <div className="flex justify-between items-center mb-3">
-                            <h4 className="font-semibold text-gray-600 dark:text-gray-300">Perna 1</h4>
-                            <label className="flex items-center space-x-2 cursor-pointer">
-                                <input type="checkbox" checked={leg1.hasIcms} onChange={(e) => handleLegChange(0, 'hasIcms', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
-                                <span className="text-sm text-gray-700 dark:text-gray-300">Incide ICMS</span>
-                            </label>
-                        </div>
-                        <div className="space-y-3">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Frete Empresa (R$/ton)</label>
-                                    <input value={leg1.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(0, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                    {/* Loop through destinations */}
+                    {(load.destinations || []).map((dest, destIdx) => {
+                        const leg1 = dest.freightLegs?.[0] || { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 };
+                        const leg2 = dest.freightLegs?.[1] || { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 };
+                        return (
+                            <div key={dest.id} className="mt-6 border-t dark:border-gray-700 pt-4">
+                                <h4 className="font-bold text-gray-800 dark:text-gray-200 mb-2">Destino: {dest.city || `Destino ${destIdx + 1}`}</h4>
+                                {/* Leg 1 */}
+                                <div className="p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h4 className="font-semibold text-gray-600 dark:text-gray-300">Perna 1</h4>
+                                        <label className="flex items-center space-x-2 cursor-pointer">
+                                            <input type="checkbox" checked={leg1.hasIcms} onChange={(e) => handleLegChange(destIdx, 0, 'hasIcms', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                                            <span className="text-sm text-gray-700 dark:text-gray-300">Incide ICMS</span>
+                                        </label>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Frete Empresa (R$/ton)</label>
+                                                <input value={leg1.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(destIdx, 0, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                                            </div>
+                                            {leg1.hasIcms && (
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ICMS (%)</label>
+                                                    <input value={leg1.icmsPercentage || ''} onChange={(e) => handleLegChange(destIdx, 0, 'icmsPercentage', e.target.value)} type="number" placeholder="%" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-1">Frete Motorista PJ (R$/ton)</label>
+                                                <input value={(leg1.driverFreightValuePerTonPJ !== undefined ? leg1.driverFreightValuePerTonPJ : '') || ''} onChange={(e) => handleLegChange(destIdx, 0, 'driverFreightValuePerTonPJ', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-emerald-200 dark:border-emerald-800 rounded dark:bg-gray-700" step="0.01"/>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">Frete Motorista PF (R$/ton)</label>
+                                                <input value={(leg1.driverFreightValuePerTonPF !== undefined ? leg1.driverFreightValuePerTonPF : '') || ''} onChange={(e) => handleLegChange(destIdx, 0, 'driverFreightValuePerTonPF', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-orange-200 dark:border-orange-800 rounded dark:bg-gray-700" step="0.01"/>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                {leg1.hasIcms && (
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ICMS (%)</label>
-                                        <input value={leg1.icmsPercentage || ''} onChange={(e) => handleLegChange(0, 'icmsPercentage', e.target.value)} type="number" placeholder="%" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                                {/* Leg 2 */}
+                                {hasMultiLeg && (
+                                    <div className="mt-4 p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                                        <div className="flex justify-between items-center mb-3"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Perna 2</h4>
+                                            <label className="flex items-center space-x-2 cursor-pointer">
+                                                <input type="checkbox" checked={leg2.hasIcms} onChange={(e) => handleLegChange(destIdx, 1, 'hasIcms', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                                                <span className="text-sm text-gray-700 dark:text-gray-300">Incide ICMS</span>
+                                            </label>
+                                        </div>
+                                        <div className="space-y-3">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Frete Empresa (R$/ton)</label>
+                                                    <input value={leg2.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(destIdx, 1, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                                                </div>
+                                                {leg2.hasIcms && (
+                                                    <div>
+                                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ICMS (%)</label>
+                                                        <input value={leg2.icmsPercentage || ''} onChange={(e) => handleLegChange(destIdx, 1, 'icmsPercentage', e.target.value)} type="number" placeholder="%" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-1">Frete Motorista PJ (R$/ton)</label>
+                                                    <input value={(leg2.driverFreightValuePerTonPJ !== undefined ? leg2.driverFreightValuePerTonPJ : '') || ''} onChange={(e) => handleLegChange(destIdx, 1, 'driverFreightValuePerTonPJ', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-emerald-200 dark:border-emerald-800 rounded dark:bg-gray-700" step="0.01"/>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">Frete Motorista PF (R$/ton)</label>
+                                                    <input value={(leg2.driverFreightValuePerTonPF !== undefined ? leg2.driverFreightValuePerTonPF : '') || ''} onChange={(e) => handleLegChange(destIdx, 1, 'driverFreightValuePerTonPF', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-orange-200 dark:border-orange-800 rounded dark:bg-gray-700" step="0.01"/>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
+                        {/* Totals */}
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
+                                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Frete Empresa (Total)</label>
+                                <p className="text-lg font-bold text-gray-800 dark:text-gray-200">{calculateDestinationTotals(dest).totalCompanyFreight.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</p>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-1">Frete Motorista PJ (R$/ton)</label>
-                                    <input value={(leg1.driverFreightValuePerTonPJ !== undefined ? leg1.driverFreightValuePerTonPJ : '') || ''} onChange={(e) => handleLegChange(0, 'driverFreightValuePerTonPJ', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-emerald-200 dark:border-emerald-800 rounded dark:bg-gray-700" step="0.01"/>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">Frete Motorista PF (R$/ton)</label>
-                                    <input value={(leg1.driverFreightValuePerTonPF !== undefined ? leg1.driverFreightValuePerTonPF : '') || ''} onChange={(e) => handleLegChange(0, 'driverFreightValuePerTonPF', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-orange-200 dark:border-orange-800 rounded dark:bg-gray-700" step="0.01"/>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {/* Leg 2 */}
-                    {hasMultiLeg && (
-                        <div className="mt-4 p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-                            <div className="flex justify-between items-center mb-3"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Perna 2</h4>
-                                <label className="flex items-center space-x-2 cursor-pointer">
-                                    <input type="checkbox" checked={leg2.hasIcms} onChange={(e) => handleLegChange(1, 'hasIcms', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
-                                    <span className="text-sm text-gray-700 dark:text-gray-300">Incide ICMS</span>
-                                </label>
-                            </div>
-                            <div className="space-y-3">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Frete Empresa (R$/ton)</label>
-                                        <input value={leg2.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(1, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                                    </div>
-                                    {leg2.hasIcms && (
-                                        <div>
-                                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ICMS (%)</label>
-                                            <input value={leg2.icmsPercentage || ''} onChange={(e) => handleLegChange(1, 'icmsPercentage', e.target.value)} type="number" placeholder="%" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-1">Frete Motorista PJ (R$/ton)</label>
-                                        <input value={(leg2.driverFreightValuePerTonPJ !== undefined ? leg2.driverFreightValuePerTonPJ : '') || ''} onChange={(e) => handleLegChange(1, 'driverFreightValuePerTonPJ', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-emerald-200 dark:border-emerald-800 rounded dark:bg-gray-700" step="0.01"/>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">Frete Motorista PF (R$/ton)</label>
-                                        <input value={(leg2.driverFreightValuePerTonPF !== undefined ? leg2.driverFreightValuePerTonPF : '') || ''} onChange={(e) => handleLegChange(1, 'driverFreightValuePerTonPF', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-orange-200 dark:border-orange-800 rounded dark:bg-gray-700" step="0.01"/>
-                                    </div>
+                            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-md border border-emerald-200 dark:border-emerald-800">
+                                <label className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Frete PJ / Margem PJ</label>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{calculateDestinationTotals(dest).totalDriverFreightPJ.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</p>
+                                    <span
+                                      className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(calculateDestinationTotals(dest).marginPJ)}`}
+                                      title={(load.salespersonCommissionPerTon || 0) > 0 ? `Margem já deduz comissão de R$ ${(load.salespersonCommissionPerTon || 0).toFixed(2)}/ton` : 'Margem PJ'}
+                                    >{calculateDestinationTotals(dest).netMarginPercentagePJ}</span>
                                 </div>
                             </div>
-                        </div>
-                    )}
-                    {/* Totals */}
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
-                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Frete Empresa (Total)</label>
-                            <p className="text-lg font-bold text-gray-800 dark:text-gray-200">{totalCompanyFreight.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</p>
-                        </div>
-                        <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-md border border-emerald-200 dark:border-emerald-800">
-                            <label className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Frete PJ / Margem PJ</label>
-                            <div className="flex items-center justify-between">
-                                <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{totalDriverFreightPJ.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</p>
-                                <span className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(marginPJ)}`}>{netMarginPercentagePJ}</span>
+                            <div className="p-3 bg-orange-50 dark:bg-orange-900/30 rounded-md border border-orange-200 dark:border-orange-800">
+                                <label className="text-xs font-medium text-orange-600 dark:text-orange-400">Frete PF / Margem PF</label>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-lg font-bold text-orange-700 dark:text-orange-300">{calculateDestinationTotals(dest).totalDriverFreightPF.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</p>
+                                    <span
+                                      className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(calculateDestinationTotals(dest).marginPF)}`}
+                                      title={(load.salespersonCommissionPerTon || 0) > 0 ? `Margem já deduz comissão de R$ ${(load.salespersonCommissionPerTon || 0).toFixed(2)}/ton` : 'Margem PF'}
+                                    >{calculateDestinationTotals(dest).netMarginPercentagePF}</span>
+                                </div>
                             </div>
+                            {(load.salespersonCommissionPerTon || 0) > 0 && (
+                                <div className="md:col-span-3 flex items-center gap-2 px-3 py-2 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-md">
+                                    <span className="text-xs font-bold text-purple-600 dark:text-purple-400">Com. Vendedor Externo:</span>
+                                    <span className="text-xs font-bold text-purple-700 dark:text-purple-300">- {(load.salespersonCommissionPerTon || 0).toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}/ton</span>
+                                    <span className="text-[10px] text-purple-500 dark:text-purple-400 ml-1">(deduzida das margens acima)</span>
+                                </div>
+                            )}
                         </div>
-                        <div className="p-3 bg-orange-50 dark:bg-orange-900/30 rounded-md border border-orange-200 dark:border-orange-800">
-                            <label className="text-xs font-medium text-orange-600 dark:text-orange-400">Frete PF / Margem PF</label>
-                            <div className="flex items-center justify-between">
-                                <p className="text-lg font-bold text-orange-700 dark:text-orange-300">{totalDriverFreightPF.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</p>
-                                <span className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(marginPF)}`}>{netMarginPercentagePF}</span>
                             </div>
-                        </div>
-                    </div>
+                        );
+                    })}
                 </div>
 
                 {/* Vendedor Externo Section */}
@@ -692,8 +858,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                                     />
                                 </div>
                             </div>
-                            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 italic">
-                                * A comissão será calculada automaticamente com base na tonelagem carregada nos embarques desta carga.
+                            <p className="mt-2 text-xs text-purple-600 dark:text-purple-400 font-medium italic bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800 rounded px-2 py-1">
+                                ⚠️ A comissão é deduzida diretamente das margens de lucro (PJ e PF) e tratada como custo do frete.
                             </p>
                         </div>
                     )}
@@ -756,7 +922,43 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status da Carga</label>
                         <select name="status" value={load.status} onChange={handleChange} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600">{Object.values(CargoStatus).map(s => <option key={s} value={s}>{s}</option>)}</select>
                     </div>
-                    <div className="col-span-1 md:col-span-2 flex items-center space-x-6"><label className="flex items-center space-x-2 cursor-pointer"><input type="checkbox" name="requiresScheduling" checked={load.requiresScheduling} onChange={handleChange} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" /><span className="text-sm text-gray-700 dark:text-gray-300">Exige Agendamento</span></label></div>
+                    <div className="col-span-1 md:col-span-2 flex flex-col space-y-4">
+                        <label className="flex items-center space-x-2 cursor-pointer w-fit">
+                            <input type="checkbox" name="requiresScheduling" checked={load.requiresScheduling} onChange={handleChange} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                            <span className="text-sm text-gray-700 dark:text-gray-300">Exige Agendamento</span>
+                        </label>
+                        {load.requiresScheduling && (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Link do Sistema Externo</label>
+                                    <input
+                                        value={load.externalOrder?.link || ''}
+                                        onChange={(e) => setLoad(prev => ({ ...prev, externalOrder: { ...prev.externalOrder!, link: e.target.value } }))}
+                                        className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
+                                        placeholder="https://..."
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Usuário</label>
+                                    <input
+                                        value={load.externalOrder?.user || ''}
+                                        onChange={(e) => setLoad(prev => ({ ...prev, externalOrder: { ...prev.externalOrder!, user: e.target.value } }))}
+                                        className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
+                                        placeholder="Login do sistema"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Senha</label>
+                                    <input
+                                        value={load.externalOrder?.password || ''}
+                                        onChange={(e) => setLoad(prev => ({ ...prev, externalOrder: { ...prev.externalOrder!, password: e.target.value } }))}
+                                        className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
+                                        placeholder="Senha"
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
           )}

@@ -14,7 +14,7 @@ import {
   FileCode, Clock, Search
 } from 'lucide-react';
 import Header from '../components/Header';
-import { saveToolQuote, getToolClients, saveToolClient, ToolClient } from '../utils/toolStorage';
+import { saveToolQuote, getToolClients, saveToolClient, ToolClient } from '../services/api/toolsApi';
 import type { User as AppUser } from '../types';
 
 // Fix Leaflet icon issue by using CDN directly to prevent webpack/vite breaking the image paths
@@ -99,7 +99,7 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
 
   const loadClients = useCallback(async () => {
     if (!currentUser) return;
-    const data = await getToolClients(currentUser.id);
+    const data = await getToolClients(currentUser.authId || currentUser.id);
     setClients(data);
   }, [currentUser]);
 
@@ -267,11 +267,11 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
       if (!currentUser) throw new Error('Usuário não autenticado');
 
       if (formData.clientName) {
-        await saveToolClient(currentUser.id, formData.clientName);
+        await saveToolClient(currentUser.authId || currentUser.id, formData.clientName);
         await loadClients();
       }
 
-      const saved = await saveToolQuote(currentUser.id, {
+      const saved = await saveToolQuote(currentUser.authId || currentUser.id, {
         clientName: formData.clientName || 'Não Informado',
         origin: formData.origin,
         destination: formData.destination,

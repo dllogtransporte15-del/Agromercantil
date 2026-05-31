@@ -8,7 +8,7 @@ import { CopyIcon } from '../components/icons/CopyIcon';
 
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { geocodeCity, getCoordsSync } from '../utils/geocoding';
-import { upsertManyCargos } from '../lib/db';
+import { upsertManyCargos } from '../services/api/db';
 
 // Declare Leaflet globally since it's loaded via script tag in index.html
 declare const L: any;
@@ -254,17 +254,35 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
 
     mapInstanceRef.current.on('popupopen', (e: any) => {
         const popupNode = e.popup.getElement();
-        const createBtn = popupNode.querySelector('[id^="create-shipment-btn-"]');
-        if (createBtn) {
-            const loadId = createBtn.id.replace('create-shipment-btn-', '');
+        const buttons = popupNode.querySelectorAll('[id^="create-shipment-btn-"]');
+        buttons.forEach((btn: any) => {
+            const rawId = btn.id.replace('create-shipment-btn-', '');
+            const idParts = rawId.split('_idx_');
+            const loadId = idParts[0];
+            const destIndexStr = idParts[1];
+            
             const cargoToShip = loadsWithCoordsRef.current.find(l => l.id === loadId);
             if (cargoToShip) {
-                L.DomEvent.disableClickPropagation(createBtn);
-                createBtn.onclick = () => {
-                    handleOpenNewShipmentModal(cargoToShip);
+                L.DomEvent.disableClickPropagation(btn);
+                btn.onclick = () => {
+                    let finalCargo = cargoToShip;
+                    if (destIndexStr !== undefined && cargoToShip.destinations && cargoToShip.destinations.length > parseInt(destIndexStr)) {
+                         const dest = cargoToShip.destinations[parseInt(destIndexStr)];
+                         const leg = dest.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: 0, companyFreightValuePerTon: 0 };
+                         finalCargo = {
+                             ...cargoToShip,
+                             destination: dest.city,
+                             destinationMapLink: dest.mapLink || cargoToShip.destinationMapLink,
+                             driverFreightValuePerTon: leg?.driverFreightValuePerTon ?? cargoToShip.driverFreightValuePerTon,
+                             driverFreightValuePerTonPJ: leg?.driverFreightValuePerTonPJ ?? cargoToShip.driverFreightValuePerTonPJ,
+                             driverFreightValuePerTonPF: leg?.driverFreightValuePerTonPF ?? cargoToShip.driverFreightValuePerTonPF,
+                             companyFreightValuePerTon: leg?.companyFreightValuePerTon ?? cargoToShip.companyFreightValuePerTon,
+                         };
+                    }
+                    handleOpenNewShipmentModal(finalCargo);
                 };
             }
-        }
+        });
     });
     
     // Forçar re-cálculo do tamanho após o mount para evitar partes cinzas em layouts dinâmicos
@@ -312,14 +330,34 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
         const client = clients.find(cl => cl.id === load.clientId);
         const product = products.find(p => p.id === load.productId);
         const remainingVolume = load.totalVolume - load.loadedVolume;
+        const destinationsList = load.destinations && load.destinations.length > 0 
+            ? load.destinations.map(d => {
+                const leg = d.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: load.driverFreightValuePerTon };
+                const pj = leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon;
+                return `<li>${d.city} (R$ ${pj.toFixed(2)})</li>`;
+              }).join('')
+            : `<li>${load.destination} (R$ ${load.driverFreightValuePerTon.toFixed(2)})</li>`;
+
+        const actionButtons = load.destinations && load.destinations.length > 0 
+            ? `<div class="mt-2 space-y-1">
+                 <p class="text-[10px] font-bold text-gray-500 uppercase">Criar Embarque para:</p>
+                 <div class="grid grid-cols-2 gap-1">
+                 ${load.destinations.map((d, i) => `<button id="create-shipment-btn-${load.id}_idx_${i}" class="w-full py-1 bg-primary text-white text-[9px] font-semibold rounded hover:bg-primary-dark truncate px-1">${d.city}</button>`).join('')}
+                 </div>
+               </div>`
+            : `<button id="create-shipment-btn-${load.id}" class="w-full mt-3 py-1.5 bg-primary text-white text-sm font-semibold rounded hover:bg-primary-dark">Criar Embarque</button>`;
+
         const popupContent = `
-            <div class="p-1" style="min-width: 220px;">
+            <div class="p-1" style="min-width: 240px;">
                 <h4 class="font-bold text-md text-primary">Carga ${load.sequenceId}</h4>
                 <p class="text-xs text-gray-500 mb-2">${client?.nomeFantasia || 'N/A'} - ${product?.name || 'N/A'}</p>
-                <p class="text-sm"><b>Rota:</b> ${load.origin} &rarr; ${load.destination}</p>
-                <p class="text-sm"><b>Valor:</b> R$ ${load.driverFreightValuePerTon.toFixed(2)}/ton</p>
-                <p class="text-sm"><b>Volume Disp.:</b> ${remainingVolume.toFixed(1)} ton</p>
-                <button id="create-shipment-btn-${load.id}" class="w-full mt-3 py-1.5 bg-primary text-white text-sm font-semibold rounded hover:bg-primary-dark">Criar Embarque</button>
+                <p class="text-sm"><b>Origem:</b> ${load.origin}</p>
+                <p class="text-sm font-bold mt-1">Destinos:</p>
+                <ul class="text-xs ml-3 list-disc list-outside mb-1 text-gray-700">
+                    ${destinationsList}
+                </ul>
+                <p class="text-sm mt-1"><b>Volume Disp.:</b> ${remainingVolume.toFixed(1)} ton</p>
+                ${actionButtons}
             </div>
         `;
         const marker = L.marker([load.originCoords.lat, load.originCoords.lng]);
@@ -394,20 +432,33 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
       alert('Nenhuma carga no resultado para divulgar.');
       return;
     }
-    const header = '🌽 *LIBERADOS AGROMARCANTIL* 🌽\n';
+    const header = '🌽 *LIBERADOS AGROMERCANTIL* 🌽\n';
     const loadsText = filteredLoads.map(load => {
-      const product = products.find(p => p.id === load.productId)?.name?.toUpperCase() || 'N/A';
-      const origin = load.origin.toUpperCase();
-      const destination = load.destination.toUpperCase();
-      const price = load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const product = products.find(p => p.id === load.productId)?.name || 'N/A';
+      const origin = load.origin;
       const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
-      let text = `📍 ${origin} x ${destination} \n🌾 ${product} - 💲 R$ ${price}\t\n🚛 ${bodyTypes} 🚛`;
       
-      if (load.originLocation) text += `\n🏢 Coleta: ${load.originLocation}`;
-      if (load.originMapLink) text += `\n📍Mapa Coleta: ${load.originMapLink}`;
+      let text = `📍 *Origem* - ${origin}\n🚩 *Destinos*`;
       
-      if (load.destinationLocation) text += `\n🏢 Entrega: ${load.destinationLocation}`;
-      if (load.destinationMapLink) text += `\n📍Mapa Entrega: ${load.destinationMapLink}`;
+      if (load.destinations && load.destinations.length > 0) {
+        load.destinations.forEach(dest => {
+            const leg = dest.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: load.driverFreightValuePerTon };
+            const pj = (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const pf = (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            text += `\n- ${dest.city} 💲 PJ ${pj} - PF ${pf}`;
+            if (dest.mapLink) text += `\n${dest.mapLink}`;
+        });
+      } else {
+        const pj = (load.driverFreightValuePerTonPJ ?? load.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const pf = (load.driverFreightValuePerTonPF ?? load.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        text += `\n- ${load.destination} 💲 PJ ${pj} - PF ${pf}`;
+        if (load.destinationMapLink) text += `\n${load.destinationMapLink}`;
+      }
+
+      text += `\n🌾 ${product}\n🚛 ${bodyTypes} 🚛`;
+      if (load.originLocation) text += `\n📍 Coleta - ${load.originLocation}`;
+      if (load.originMapLink && !load.originLocation) text += `\n📍 Coleta - ${load.originMapLink}`;
+      else if (load.originMapLink) text += `\n${load.originMapLink}`;
       
       return text;
     }).join('\n\n');
@@ -584,14 +635,37 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
                           <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-2"></div>
                           <span>{load.origin}</span>
                         </div>
-                        <div className="flex items-center text-[10px] font-bold text-gray-700 dark:text-gray-200">
-                          <div className="w-1.5 h-1.5 rounded-full bg-red-500 mr-2"></div>
-                          <span>{load.destination}</span>
-                        </div>
+                        {load.destinations && load.destinations.length > 0 ? (
+                            load.destinations.map((d, i) => {
+                                const leg = d.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: load.driverFreightValuePerTon };
+                                const pj = leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon;
+                                return (
+                                    <div key={i} className="flex justify-between items-center text-[10px] font-bold text-gray-700 dark:text-gray-200 ml-1">
+                                      <div className="flex items-center">
+                                          <div className="w-1.5 h-1.5 rounded-full bg-red-500 mr-2"></div>
+                                          <span className="truncate max-w-[120px]">{d.city}</span>
+                                      </div>
+                                      <span className="text-[10px] text-green-600 dark:text-green-400">R$ {pj.toFixed(2)}</span>
+                                    </div>
+                                )
+                            })
+                        ) : (
+                            <div className="flex justify-between items-center text-[10px] font-bold text-gray-700 dark:text-gray-200">
+                              <div className="flex items-center">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 mr-2"></div>
+                                  <span>{load.destination}</span>
+                              </div>
+                              <span className="text-[10px] text-green-600 dark:text-green-400">R$ {load.driverFreightValuePerTon.toFixed(2)}</span>
+                            </div>
+                        )}
                       </div>
 
                       <div className="flex justify-between mt-4 pt-3 border-t border-dashed border-gray-200 dark:border-gray-600">
-                        <span className="text-[11px] font-black text-green-600 dark:text-green-400">R$ {load.driverFreightValuePerTon.toFixed(2)}</span>
+                        {load.destinations && load.destinations.length > 0 ? 
+                           <span className="text-[10px] text-gray-500 italic">Múltiplos Destinos</span>
+                           : 
+                           <span className="text-[11px] font-black text-green-600 dark:text-green-400">R$ {load.driverFreightValuePerTon.toFixed(2)}</span>
+                        }
                         <span className="text-[11px] font-black text-gray-700 dark:text-gray-200">{(load.totalVolume - load.loadedVolume).toFixed(1)} <span className="text-[9px] text-gray-400 font-normal">ton</span></span>
                       </div>
                     </div>

@@ -63,6 +63,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   const [isShipmentModalOpen, setIsShipmentModalOpen] = useState(false);
   const [selectedCargo, setSelectedCargo] = useState<Cargo | null>(null);
   const [copyButtonText, setCopyButtonText] = useState('Divulgar Cargas');
+  const [visibleLoads, setVisibleLoads] = useState<Cargo[]>([]);
   const [dailyBalanceDate, setDailyBalanceDate] = useState(new Date().toISOString().split('T')[0]);
   const canCreateShipment = can('create', currentUser, 'shipments', profilePermissions);
 
@@ -99,6 +100,14 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
     setSelectedCargo(null);
   };
 
+  const handleCloseLoad = (cargoToClose: Cargo) => {
+    if (window.confirm(`Tem certeza que deseja fechar a carga ${cargoToClose.sequenceId}? Essa ação mudará o status para "Fechada".`)) {
+        onSaveLoad({ ...cargoToClose, status: CargoStatus.Fechada });
+    }
+  };
+
+  const canCloseLoad = [UserProfile.Diretor, UserProfile.Coordenador, UserProfile.Comercial].includes(currentUser.profile as UserProfile) || can('delete', currentUser, 'loads', profilePermissions);
+
   const handleCloseLoadFormModal = () => {
     setIsLoadFormModalOpen(false);
     setLoadToEdit(null);
@@ -125,29 +134,48 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   };
   
   const handleShareLoads = () => {
-    const activeLoads = loads.filter(load => load.status === CargoStatus.EmAndamento);
-    if (activeLoads.length === 0) {
-      alert('Nenhuma carga em andamento para divulgar.');
+    // Usa as cargas visíveis (com filtros aplicados), excluindo Suspensas
+    const loadsToShare = visibleLoads.filter(load => load.status !== CargoStatus.Suspensa);
+    if (loadsToShare.length === 0) {
+      alert('Nenhuma carga disponível para divulgar (verifique os filtros e se há cargas suspensas).');
       return;
     }
 
-    const header = '🌽 *LIBERADOS AGROMARCANTIL* 🌽\n';
+    const header = '🌽 *LIBERADOS AGROMERCANTIL* 🌽\n';
 
-    const loadsText = activeLoads.map(load => {
-      const product = products.find(p => p.id === load.productId)?.name?.toUpperCase() || 'N/A';
-      const origin = load.origin.toUpperCase();
-      const destination = load.destination.toUpperCase();
-      const price = load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const loadsText = loadsToShare.map(load => {
+      const product = products.find(p => p.id === load.productId)?.name || 'Produto Não Informado';
+      const origin = load.origin;
       const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
 
-      let text = `📍 ${origin} x ${destination} \n🌾 ${product} - 💲 R$ ${price}\t\n🚛 ${bodyTypes} 🚛`;
+      let text = `📍 *Origem* - ${origin} \n🚩 *Destinos*`;
       
+      const dests = (load.destinations && load.destinations.length > 0) 
+        ? load.destinations 
+        : [{ city: load.destination, mapLink: load.destinationMapLink, freightLegs: load.freightLegs }];
+
+      dests.forEach(dest => {
+          const legs = (dest.freightLegs && dest.freightLegs.length > 0) 
+            ? dest.freightLegs 
+            : [{ driverFreightValuePerTon: load.driverFreightValuePerTon, driverFreightValuePerTonPJ: load.driverFreightValuePerTonPJ, driverFreightValuePerTonPF: load.driverFreightValuePerTonPF }];
+          
+          const totalPJ = legs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
+          const totalPF = legs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
+
+          const pricePJ = totalPJ.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const pricePF = totalPF.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+          text += `\n- ${dest.city} 💲 PJ ${pricePJ} - PF ${pricePF}`;
+          if (dest.mapLink) {
+             text += `\n${dest.mapLink}`;
+          }
+      });
+
+      text += `\n🌾 ${product}`;
       if (load.originMapLink) {
         text += `\n📍Coleta - ${load.originMapLink}`;
       }
-      if (load.destinationMapLink) {
-        text += `\n📍Entrega - ${load.destinationMapLink}`;
-      }
+      text += `\n🚛 ${bodyTypes} 🚛`;
       return text;
     }).join('\n\n');
 
@@ -184,6 +212,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         onDailyBalanceDateChange={setDailyBalanceDate}
         onCreateShipment={canCreateShipment ? handleOpenNewShipmentModal : undefined} 
         onShowHistory={handleShowHistory}
+        onClose={canCloseLoad ? handleCloseLoad : undefined}
         onReactivate={currentUser.profile !== UserProfile.Embarcador ? onReactivateLoad : undefined}
         onSuspend={currentUser.profile !== UserProfile.Embarcador ? onSuspendLoad : undefined}
         onShowDetails={handleShowCargoDetails}
@@ -191,6 +220,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         onDelete={onDeleteLoad}
         currentUser={currentUser}
         profilePermissions={profilePermissions}
+        onFilteredLoadsChange={setVisibleLoads}
       />
 
       <NewShipmentModal

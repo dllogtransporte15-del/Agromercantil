@@ -158,6 +158,15 @@ export interface FreightLeg {
   icmsPercentage: number;
 }
 
+export interface CargoDestination {
+  id: string;
+  city: string;
+  location?: string;
+  mapLink?: string;
+  targetTonnage?: number;
+  freightLegs: FreightLeg[];
+}
+
 export enum DailyScheduleType {
   Livre = "Demanda Livre",
   Fixo = "Demanda Fixa",
@@ -208,6 +217,13 @@ export interface Cargo {
   originCoords?: { lat: number; lng: number };
   destinationCoords?: { lat: number; lng: number };
   branchId?: string;
+  destinations?: CargoDestination[];
+  externalOrder?: {
+    required: boolean;
+    link?: string;
+    user?: string;
+    password?: string;
+  };
 }
 
 

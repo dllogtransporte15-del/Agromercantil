@@ -1,6 +1,6 @@
 
 import React, { useMemo } from 'react';
-import type { Shipment, User } from '../../types';
+import type { Shipment, User, Cargo } from '../../types';
 import { ShipmentStatus, UserProfile } from '../../types';
 import { TruckIcon } from '../icons/TruckIcon';
 import { ClockIcon } from '../icons/ClockIcon';
@@ -10,6 +10,7 @@ import { DollarSignIcon } from '../icons/DollarSignIcon';
 
 interface ShipperReportProps {
   shipments: Shipment[];
+  cargos: Cargo[];
   users: User[];
   currentUser: User | null;
 }
@@ -22,6 +23,7 @@ interface OperatorStats {
   emAndamento: number;
   cancelado: number;
   effectiveTonnage: number;
+  grossBilled: number;
 }
 
 const StatCard: React.FC<{ title: string, value: string | number, icon: React.ReactElement }> = ({ title, value, icon }) => {
@@ -36,7 +38,7 @@ const StatCard: React.FC<{ title: string, value: string | number, icon: React.Re
     );
 };
 
-const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, users, currentUser }) => {
+const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, users, currentUser }) => {
     const canViewCommission = React.useMemo(() => {
         if (!currentUser) return false;
         return [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin].includes(currentUser.profile);
@@ -68,10 +70,16 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, users, current
                 ].includes(shipment.status);
                 if (isEffective) {
                     acc.effectiveTonnage += shipment.shipmentTonnage || 0;
+                    
+                    const cargo = cargos.find(c => c.id === shipment.cargoId);
+                    if (cargo) {
+                       const grossRate = shipment.companyFreightRateSnapshot || cargo.companyFreightValuePerTon || 0;
+                       acc.grossBilled += grossRate * (shipment.shipmentTonnage || 0);
+                    }
                 }
 
                 return acc;
-            }, { finalizado: 0, cancelado: 0, emAndamento: 0, effectiveTonnage: 0 });
+            }, { finalizado: 0, cancelado: 0, emAndamento: 0, effectiveTonnage: 0, grossBilled: 0 });
     
             return {
                 id: creatorId,
@@ -94,8 +102,9 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, users, current
                 {operatorStats.map(stats => (
                     <div key={stats.id} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                     <h3 className="text-xl font-bold text-primary dark:text-blue-400 mb-4">{stats.name}</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
                         <StatCard title="Total Embarques" value={stats.total} icon={<TruckIcon className="w-8 h-8 text-blue-500"/>} />
+                        <StatCard title="Faturamento Bruto" value={stats.grossBilled.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={<DollarSignIcon className="w-8 h-8 text-green-600"/>} />
                         <StatCard title="Finalizados" value={stats.finalizado} icon={<CheckCircleIcon className="w-8 h-8 text-gray-500"/>} />
                         <StatCard title="Em Andamento" value={stats.emAndamento} icon={<ClockIcon className="w-8 h-8 text-blue-400"/>} />
                         <StatCard title="Cancelados" value={stats.cancelado} icon={<XCircleIcon className="w-8 h-8 text-black"/>} />

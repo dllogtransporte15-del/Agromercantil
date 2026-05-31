@@ -14,8 +14,8 @@ import {
   getToolStays, getToolQuotes, StayRecord, QuoteRecord, 
   getToolClients, ToolClient, deleteToolStay, deleteToolQuote, updateToolStay, uploadStayAttachment,
   getAllToolStays, getAllToolQuotes, getAllToolClients
-} from '../utils/toolStorage';
-import { getShipmentAttachmentUrl } from '../lib/db';
+} from '../services/api/toolsApi';
+import { getShipmentAttachmentUrl } from '../services/api/db';
 import type { User as AppUser, Shipment, Cargo, Client as AppClient } from '../types';
 import { UserProfile, ShipmentStatus } from '../types';
 
@@ -76,9 +76,9 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     const isAdmin = [UserProfile.Admin, UserProfile.Diretor, UserProfile.Coordenador].includes(currentUser.profile);
     
     const [staysData, quotesData, clientsData] = await Promise.all([
-      isAdmin ? getAllToolStays() : getToolStays(currentUser.id),
-      isAdmin ? getAllToolQuotes() : getToolQuotes(currentUser.id),
-      isAdmin ? getAllToolClients() : getToolClients(currentUser.id),
+      isAdmin ? getAllToolStays() : getToolStays(currentUser.authId || currentUser.id),
+      isAdmin ? getAllToolQuotes() : getToolQuotes(currentUser.authId || currentUser.id),
+      isAdmin ? getAllToolClients() : getToolClients(currentUser.authId || currentUser.id),
     ]);
     
     setStays(staysData);

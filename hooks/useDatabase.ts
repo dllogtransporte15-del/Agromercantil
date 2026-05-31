@@ -11,7 +11,10 @@ import {
   fetchClients, fetchOwners, fetchDrivers, fetchVehicles, fetchProducts,
   fetchCargos, fetchShipments, fetchUsers, fetchTickets, fetchProfilePermissions,
   fetchAppSettings, fetchShipmentLocks, fetchBranches
-} from '../lib/db';
+} from '../services/api/db';
+import { useShipmentStore } from './store/useShipmentStore';
+import { useCargoStore } from './store/useCargoStore';
+import { useGeneralStore } from './store/useGeneralStore';
 
 // ─── Module-level helpers (accessible from both loadAllData and realtime handler) ───
 
@@ -57,16 +60,23 @@ function calculateNextIds(
 // ─────────────────────────────────────────────
 
 export function useDatabase(currentUser: User | null) {
-  const [clients, setClients] = useState<Client[]>([]);
+  const setShipments = useShipmentStore(state => state.setShipments);
+  const shipments = useShipmentStore(state => state.shipments);
+  
+  const setCargos = useCargoStore(state => state.setCargos);
+  const cargos = useCargoStore(state => state.cargos);
+
+  const {
+    clients, setClients,
+    vehicles, setVehicles,
+    drivers, setDrivers,
+    products, setProducts,
+    users, setUsers,
+    branches, setBranches
+  } = useGeneralStore();
+
   const [owners, setOwners] = useState<Owner[]>([]);
-  const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [cargos, setCargos] = useState<Cargo[]>([]);
-  const [shipments, setShipments] = useState<Shipment[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
   const [activeLocks, setActiveLocks] = useState<ShipmentLock[]>([]);
   const [profilePermissions, setProfilePermissions] = useState<ProfilePermissions>(INITIAL_PERMISSIONS);
   const [isLoading, setIsLoading] = useState(true);

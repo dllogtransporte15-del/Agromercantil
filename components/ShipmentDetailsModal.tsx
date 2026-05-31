@@ -3,8 +3,8 @@ import type { Shipment, Cargo, User, Client, Product, Vehicle } from '../types';
 import { UserProfile, ShipmentStatus, VehicleSetType, VehicleBodyType } from '../types';
 import { generateLoadingOrderPDF } from '../utils/pdfGenerator';
 import { FileTextIcon, Trash2 } from 'lucide-react';
-import { getToolStaysByShipment, StayRecord } from '../utils/toolStorage';
-import { getShipmentAttachmentUrl } from '../lib/db';
+import { getToolStaysByShipment, StayRecord } from '../services/api/toolsApi';
+import { getShipmentAttachmentUrl } from '../services/api/db';
 
 
 interface ShipmentDetailsModalProps {

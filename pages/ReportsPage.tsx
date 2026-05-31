@@ -16,7 +16,7 @@ import ExternalSalespersonReport from '../components/reports/ExternalSalesperson
 import BranchReport from '../components/reports/BranchReport';
 import StayFinancialReport from '../components/reports/StayFinancialReport';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
-import { getAllToolStays, getToolStays, StayRecord } from '../utils/toolStorage';
+import { getAllToolStays, getToolStays, StayRecord } from '../services/api/toolsApi';
 
 interface ReportsPageProps {
   shipments: Shipment[];
@@ -59,7 +59,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       try {
         // Fetch stays for the report - respect permissions
         const isAdmin = [UserProfile.Admin, UserProfile.Diretor, UserProfile.Coordenador].includes(currentUser.profile);
-        const allStays = isAdmin ? await getAllToolStays() : await getToolStays(currentUser.id);
+        const allStays = isAdmin ? await getAllToolStays() : await getToolStays(currentUser.authId || currentUser.id);
         setStays(allStays);
       } catch (err) {
         console.error('Error fetching stays for report:', err);
@@ -217,7 +217,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       case 'comercial':
         return <CoordenadorReport shipments={filteredShipments} cargos={cargos} users={users} />;
       case 'embarcadores':
-        return <ShipperReport shipments={filteredShipments} users={users} currentUser={currentUser} />;
+        return <ShipperReport shipments={filteredShipments} cargos={cargos} users={users} currentUser={currentUser} />;
       case 'clientes':
         return <ClientReport shipments={filteredShipments} cargos={cargos} clients={clients} />;
       case 'vendedores':
@@ -282,11 +282,15 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 mb-6">
         <div className="flex flex-col md:flex-row items-center justify-between p-4 gap-4">
           <div className="flex items-center gap-4 w-full md:w-auto">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Calendar className="w-5 h-5 text-gray-500" />
               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm focus:ring-2 focus:ring-primary outline-none" title="Data Inicial" />
               <span className="text-gray-500">até</span>
               <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm focus:ring-2 focus:ring-primary outline-none" title="Data Final" />
+              <div className="flex items-center gap-1 ml-2">
+                 <button onClick={() => { const today = new Date().toISOString().split('T')[0]; setStartDate(today); setEndDate(today); }} className="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors">Hoje</button>
+                 <button onClick={() => { const d = new Date(); d.setDate(d.getDate() - 1); const yesterday = d.toISOString().split('T')[0]; setStartDate(yesterday); setEndDate(yesterday); }} className="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors">Ontem</button>
+              </div>
             </div>
             <button 
                 onClick={() => setShowFilters(!showFilters)}

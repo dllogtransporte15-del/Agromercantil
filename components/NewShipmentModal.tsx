@@ -346,6 +346,9 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       vehicleTag: vehicleTag || undefined,
       filesToAttach: filesToAttach.length > 0 ? filesToAttach : undefined,
       driverReferences: driverReferences || undefined,
+      destination: cargo.destination,
+      companyFreightRateSnapshot: cargo.companyFreightValuePerTon,
+      driverFreightRateSnapshot: freightType === 'PJ' ? cargo.driverFreightValuePerTonPJ : cargo.driverFreightValuePerTonPF,
     });
   };
 

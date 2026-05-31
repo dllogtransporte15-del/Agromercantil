@@ -1,4 +1,5 @@
-import { supabase } from '../supabase';
+import { supabase } from '../../supabase';
+
 
 // =============================================
 // Types
@@ -75,7 +76,7 @@ export async function getToolClients(userId: string): Promise<ToolClient[]> {
     return [];
   }
 
-  return (data ?? []).map(row => ({ id: row.id, name: row.name }));
+  return (data ?? []).map((row: any) => ({ id: row.id, name: row.name }));
 }
 
 export async function getAllToolClients(): Promise<ToolClient[]> {
@@ -93,7 +94,7 @@ export async function getAllToolClients(): Promise<ToolClient[]> {
   const uniqueNames = new Set<string>();
   const uniqueClients: ToolClient[] = [];
   
-  (data ?? []).forEach(row => {
+  (data ?? []).forEach((row: any) => {
     if (!uniqueNames.has(row.name.toLowerCase())) {
       uniqueNames.add(row.name.toLowerCase());
       uniqueClients.push({ id: row.id, name: row.name });
@@ -138,7 +139,7 @@ export async function getToolStays(userId: string): Promise<StayRecord[]> {
     return [];
   }
 
-  return (data ?? []).map(row => ({
+  return (data ?? []).map((row: any) => ({
     id: row.id,
     clientName: row.client_name ?? undefined,
     driver: row.driver,
@@ -175,7 +176,7 @@ export async function getAllToolStays(): Promise<StayRecord[]> {
     return [];
   }
 
-  return (data ?? []).map(row => ({
+  return (data ?? []).map((row: any) => ({
     id: row.id,
     clientName: row.client_name ?? undefined,
     driver: row.driver,
@@ -214,7 +215,7 @@ export async function getToolStaysByShipment(shipmentId: string): Promise<StayRe
     return [];
   }
 
-  return (data ?? []).map(row => ({
+  return (data ?? []).map((row: any) => ({
     id: row.id,
     clientName: row.client_name ?? undefined,
     driver: row.driver,
@@ -246,36 +247,55 @@ export async function saveToolStay(
 ): Promise<StayRecord | null> {
   if (!userId) return null;
 
-  const { data, error } = await supabase
+  const payload: any = {
+    user_id: userId,
+    client_name: stay.clientName ?? null,
+    driver: stay.driver,
+    plate: stay.plate,
+    invoice: stay.invoice ?? null,
+    origin: stay.origin,
+    destination: stay.destination,
+    location: stay.location,
+    entry_date: stay.entryDate,
+    exit_date: stay.exitDate,
+    total_hours: stay.totalHours,
+    weight: stay.weight,
+    value_per_hour: stay.valuePerHour,
+    tolerance: stay.tolerance,
+    total_value: stay.totalValue,
+    approved_value: stay.approvedValue ?? null,
+    driver_paid_value: stay.driverPaidValue ?? null,
+    cte_url: stay.cteUrl ?? null,
+    payment_proof_url: stay.paymentProofUrl ?? null,
+    status: stay.status ?? null,
+    shipment_id: stay.shipmentId ?? null,
+  };
+
+  let { data, error } = await supabase
     .from('tool_stays')
-    .insert({
-      user_id: userId,
-      client_name: stay.clientName ?? null,
-      driver: stay.driver,
-      plate: stay.plate,
-      invoice: stay.invoice ?? null,
-      origin: stay.origin,
-      destination: stay.destination,
-      location: stay.location,
-      entry_date: stay.entryDate,
-      exit_date: stay.exitDate,
-      total_hours: stay.totalHours,
-      weight: stay.weight,
-      value_per_hour: stay.valuePerHour,
-      tolerance: stay.tolerance,
-      total_value: stay.totalValue,
-      approved_value: stay.approvedValue ?? null,
-      driver_paid_value: stay.driverPaidValue ?? null,
-      cte_url: stay.cteUrl ?? null,
-      payment_proof_url: stay.paymentProofUrl ?? null,
-      status: stay.status ?? null,
-      shipment_id: stay.shipmentId ?? null,
-    })
+    .insert(payload)
     .select('*')
     .single();
 
+  let retryCount = 0;
+  while (error && error.code === '42703' && retryCount < 5) {
+    const match = error.message.match(/column "(.*?)" of relation/);
+    if (match && match[1]) {
+      delete payload[match[1]];
+      const retry = await supabase.from('tool_stays').insert(payload).select('*').single();
+      data = retry.data;
+      error = retry.error;
+      retryCount++;
+    } else {
+      break;
+    }
+  }
+
   if (error) {
     console.error('Erro ao salvar estadia:', error);
+    if (typeof window !== 'undefined') {
+      alert(`Erro no banco de dados (Estadia): ${error.message || JSON.stringify(error)}`);
+    }
     return null;
   }
 
@@ -415,7 +435,7 @@ export async function getToolQuotes(userId: string): Promise<QuoteRecord[]> {
     return [];
   }
 
-  return (data ?? []).map(row => ({
+  return (data ?? []).map((row: any) => ({
     id: row.id,
     clientName: row.client_name ?? undefined,
     date: row.created_at,
@@ -450,7 +470,7 @@ export async function getAllToolQuotes(): Promise<QuoteRecord[]> {
     return [];
   }
 
-  return (data ?? []).map(row => ({
+  return (data ?? []).map((row: any) => ({
     id: row.id,
     clientName: row.client_name ?? undefined,
     date: row.created_at,
@@ -480,34 +500,53 @@ export async function saveToolQuote(
 ): Promise<QuoteRecord | null> {
   if (!userId) return null;
 
-  const { data, error } = await supabase
+  const payload: any = {
+    user_id: userId,
+    client_name: quote.clientName ?? null,
+    origin: quote.origin,
+    destination: quote.destination,
+    distance: quote.distance,
+    axes: quote.axes,
+    cargo_type: quote.cargoType,
+    input_mode: quote.inputMode,
+    value_per_km: quote.valuePerKm,
+    driver_total_value: quote.driverTotalValue,
+    toll_value: quote.tollValue,
+    antt_value: quote.anttValue,
+    weight: quote.weight,
+    margin: quote.margin,
+    driver_freight_per_ton: quote.driverFreightPerTon,
+    company_freight_per_ton: quote.companyFreightPerTon,
+    company_total_freight: quote.companyTotalFreight,
+    carrier_net_profit: quote.carrierNetProfit,
+    carrier_profit_margin: quote.carrierProfitMargin,
+  };
+
+  let { data, error } = await supabase
     .from('tool_quotes')
-    .insert({
-      user_id: userId,
-      client_name: quote.clientName ?? null,
-      origin: quote.origin,
-      destination: quote.destination,
-      distance: quote.distance,
-      axes: quote.axes,
-      cargo_type: quote.cargoType,
-      input_mode: quote.inputMode,
-      value_per_km: quote.valuePerKm,
-      driver_total_value: quote.driverTotalValue,
-      toll_value: quote.tollValue,
-      antt_value: quote.anttValue,
-      weight: quote.weight,
-      margin: quote.margin,
-      driver_freight_per_ton: quote.driverFreightPerTon,
-      company_freight_per_ton: quote.companyFreightPerTon,
-      company_total_freight: quote.companyTotalFreight,
-      carrier_net_profit: quote.carrierNetProfit,
-      carrier_profit_margin: quote.carrierProfitMargin,
-    })
+    .insert(payload)
     .select('*')
     .single();
 
+  let retryCount = 0;
+  while (error && error.code === '42703' && retryCount < 5) {
+    const match = error.message.match(/column "(.*?)" of relation/);
+    if (match && match[1]) {
+      delete payload[match[1]];
+      const retry = await supabase.from('tool_quotes').insert(payload).select('*').single();
+      data = retry.data;
+      error = retry.error;
+      retryCount++;
+    } else {
+      break;
+    }
+  }
+
   if (error) {
     console.error('Erro ao salvar cotação:', error);
+    if (typeof window !== 'undefined') {
+      alert(`Erro no banco de dados (Cotação): ${error.message || JSON.stringify(error)}`);
+    }
     return null;
   }
 

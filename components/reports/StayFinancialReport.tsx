@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import type { StayRecord } from '../../utils/toolStorage';
+import type { StayRecord } from '../../services/api/toolsApi';
 import { DollarSign, TrendingUp, TrendingDown, Scale, FileText, CheckCircle } from 'lucide-react';
 
 interface StayFinancialReportProps {

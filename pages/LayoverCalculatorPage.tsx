@@ -9,7 +9,7 @@ import {
   Save, Trash2, CheckCircle2, Building2, Loader2 
 } from 'lucide-react';
 import Header from '../components/Header';
-import { saveToolStay, getToolClients, saveToolClient, ToolClient, getAllToolClients } from '../utils/toolStorage';
+import { saveToolStay, getToolClients, saveToolClient, ToolClient, getAllToolClients } from '../services/api/toolsApi';
 import { User as AppUser, Shipment, Cargo, Client as AppClient, ShipmentStatus, UserProfile } from '../types';
 
 interface StayData {
@@ -42,7 +42,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
   const loadClients = useCallback(async () => {
     if (!currentUser) return;
     const isAdmin = [UserProfile.Admin, UserProfile.Diretor, UserProfile.Coordenador].includes(currentUser.profile);
-    const data = await (isAdmin ? getAllToolClients() : getToolClients(currentUser.id));
+    const data = await (isAdmin ? getAllToolClients() : getToolClients(currentUser.authId || currentUser.id));
     setClients(data);
   }, [currentUser]);
 
@@ -174,11 +174,11 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
     setIsSaving(true);
     try {
       if (formData.clientName) {
-        await saveToolClient(currentUser.id, formData.clientName);
+        await saveToolClient(currentUser.authId || currentUser.id, formData.clientName);
         await loadClients();
       }
 
-      const saved = await saveToolStay(currentUser.id, {
+      const saved = await saveToolStay(currentUser.authId || currentUser.id, {
         clientName: formData.clientName || 'Não Informado',
         driver: formData.driver,
         plate: formData.plate,
