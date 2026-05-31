@@ -960,7 +960,6 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status da Carga</label>
                         <select name="status" value={load.status} onChange={handleChange} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600">{Object.values(CargoStatus).map(s => <option key={s} value={s}>{s}</option>)}</select>
                     </div>
-                    </div>
                 </div>
             </div>
           )}
