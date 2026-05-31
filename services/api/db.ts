@@ -144,6 +144,8 @@ const toCargo = (row: any): Cargo => ({
   salespersonName: row.salesperson_name,
   salespersonCommissionPerTon: Number(row.salesperson_commission_per_ton),
   branchId: row.branch_id,
+  destinations: row.destinations,
+  externalOrder: row.external_order,
 });
 
 const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => ({
@@ -183,6 +185,8 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => ({
   salesperson_name: c.salespersonName,
   salesperson_commission_per_ton: c.salespersonCommissionPerTon,
   branch_id: c.branchId || null,
+  destinations: c.destinations || null,
+  external_order: c.externalOrder || null,
 });
 
 const toShipment = (row: any): Shipment => ({
