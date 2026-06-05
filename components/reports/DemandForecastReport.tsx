@@ -94,7 +94,7 @@ const DemandForecastReport: React.FC<DemandForecastReportProps> = ({ cargos, shi
            }
         } else {
            // Fallback to previous logic se faltarem datas: só aplica se houver alguma entrada explícita na semana
-           const hasScheduleInFilter = cargo.dailySchedule.some(s => 
+           const hasScheduleInFilter = (cargo.dailySchedule || []).some(s => 
              s.date >= startDate && s.date <= endDate && (s.type === 'Demanda Livre' || s.type === 'Demanda a Verificar')
            );
 
@@ -152,7 +152,7 @@ const DemandForecastReport: React.FC<DemandForecastReportProps> = ({ cargos, shi
           if (cargo) {
             const clientName = getClientName(cargo.clientId);
             if (!dataByClient[clientName]) {
-              dataByClient[clientName] = { planned: 0, actual: 0 };
+              dataByClient[clientName] = { summaryPlanned: 0, detailedPlanned: 0, actual: 0, dailyPlanned: [0, 0, 0, 0, 0, 0, 0] };
             }
             dataByClient[clientName].actual += shipment.shipmentTonnage || 0;
           }
