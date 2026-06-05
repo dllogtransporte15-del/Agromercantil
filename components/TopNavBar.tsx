@@ -166,7 +166,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({ user, onLogout, currentPage, setC
   }
 
   return (
-    <header className="bg-white dark:bg-gray-800 shadow-md sticky top-0 z-40 border-b dark:border-gray-700">
+    <header className="bg-white/90 backdrop-blur-md dark:bg-gray-900/90 shadow-premium sticky top-0 z-40 border-b border-gray-100 dark:border-gray-800 transition-all duration-300">
       <div className="container mx-auto px-6">
         <div className="flex items-center justify-between h-16">
           {/* Logo e Nome da Empresa */}
