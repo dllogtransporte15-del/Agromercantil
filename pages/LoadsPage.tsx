@@ -25,6 +25,7 @@ interface LoadsPageProps {
   onDeleteLoad: (cargoId: string) => void;
   onReactivateLoad?: (cargo: Cargo) => void;
   onSuspendLoad?: (cargo: Cargo) => void;
+  onUpdateTmsBatch?: (cargoId: string, tmsBatchNumber: string) => void;
   onUpdatePrice: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
   onModalStateChange: (isOpen: boolean) => void;
   companyLogo?: string | null;
@@ -33,7 +34,7 @@ interface LoadsPageProps {
 }
 
 
-const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, products, shipments, onSaveLoad, onReactivateLoad, onSuspendLoad, onUpdatePrice, currentUser, profilePermissions, users, onDeleteLoad, onModalStateChange, companyLogo, vehicles, onDeleteAttachment, branches }) => {
+const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, products, shipments, onSaveLoad, onReactivateLoad, onSuspendLoad, onUpdateTmsBatch, onUpdatePrice, currentUser, profilePermissions, users, onDeleteLoad, onModalStateChange, companyLogo, vehicles, onDeleteAttachment, branches }) => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loadToEdit, setLoadToEdit] = useState<Cargo | null>(null);
@@ -88,9 +89,21 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
   };
 
   const handleCloseLoad = (cargoToClose: Cargo) => {
-    if (window.confirm(`Tem certeza que deseja fechar a carga ${cargoToClose.sequenceId}? Essa ação mudará o status para "Fechada".`)) {
-        onSaveLoad({ ...cargoToClose, status: CargoStatus.Fechada });
+    const reason = window.prompt(`Tem certeza que deseja fechar a carga ${cargoToClose.sequenceId}? Essa ação mudará o status para "Fechada". Por favor, informe o motivo:`);
+    if (reason === null) return;
+    if (!reason.trim()) {
+        alert("É obrigatório informar o motivo para fechar a carga.");
+        return;
     }
+    
+    // We need to pass the history. But App.tsx handleSaveLoad needs to be able to use it.
+    // Wait, I will edit App.tsx to prioritize loadData.history if provided.
+    // For now, let's pass it. If I don't change App.tsx, the history will be overridden.
+    onSaveLoad({ 
+        ...cargoToClose, 
+        status: CargoStatus.Fechada,
+        history: [...cargoToClose.history, { date: new Date().toISOString().split('T')[0], time: new Date().toLocaleTimeString('pt-BR', { hour12: false }), description: `Carga fechada. Motivo: ${reason}` }] 
+    } as Cargo);
   };
 
   const handleShowHistory = (load: Cargo) => {
@@ -130,6 +143,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
             onShowHistory={handleShowHistory}
             onReactivate={currentUser.profile !== UserProfile.Embarcador ? onReactivateLoad : undefined}
             onSuspend={currentUser.profile !== UserProfile.Embarcador ? onSuspendLoad : undefined}
+            onUpdateTmsBatch={onUpdateTmsBatch}
             onEditSchedule={canUpdate ? handleEditSchedule : undefined}
             onShowDetails={handleShowDetails}
             onShowShipments={handleShowShipments}

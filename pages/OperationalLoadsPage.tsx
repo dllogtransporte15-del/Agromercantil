@@ -27,6 +27,7 @@ interface OperationalLoadsPageProps {
   onDeleteLoad: (cargoId: string) => void;
   onReactivateLoad?: (cargo: Cargo) => void;
   onSuspendLoad?: (cargo: Cargo) => void;
+  onUpdateTmsBatch?: (cargoId: string, tmsBatchNumber: string) => void;
   onUpdatePrice: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
   onModalStateChange: (isOpen: boolean) => void;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
@@ -55,6 +56,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   onDeleteLoad,
   onReactivateLoad,
   onSuspendLoad,
+  onUpdateTmsBatch,
   onUpdatePrice,
   onModalStateChange,
   onDeleteAttachment,
@@ -101,9 +103,18 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   };
 
   const handleCloseLoad = (cargoToClose: Cargo) => {
-    if (window.confirm(`Tem certeza que deseja fechar a carga ${cargoToClose.sequenceId}? Essa ação mudará o status para "Fechada".`)) {
-        onSaveLoad({ ...cargoToClose, status: CargoStatus.Fechada });
+    const reason = window.prompt(`Tem certeza que deseja fechar a carga ${cargoToClose.sequenceId}? Essa ação mudará o status para "Fechada". Por favor, informe o motivo:`);
+    if (reason === null) return;
+    if (!reason.trim()) {
+        alert("É obrigatório informar o motivo para fechar a carga.");
+        return;
     }
+    
+    onSaveLoad({ 
+        ...cargoToClose, 
+        status: CargoStatus.Fechada,
+        history: [...cargoToClose.history, { date: new Date().toISOString().split('T')[0], time: new Date().toLocaleTimeString('pt-BR', { hour12: false }), description: `Carga fechada. Motivo: ${reason}` }] 
+    } as Cargo);
   };
 
   const canCloseLoad = [UserProfile.Diretor, UserProfile.Coordenador, UserProfile.Comercial].includes(currentUser.profile as UserProfile) || can('delete', currentUser, 'loads', profilePermissions);
@@ -215,6 +226,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         onClose={canCloseLoad ? handleCloseLoad : undefined}
         onReactivate={currentUser.profile !== UserProfile.Embarcador ? onReactivateLoad : undefined}
         onSuspend={currentUser.profile !== UserProfile.Embarcador ? onSuspendLoad : undefined}
+        onUpdateTmsBatch={onUpdateTmsBatch}
         onShowDetails={handleShowCargoDetails}
         onShowShipments={handleShowShipments}
         onDelete={onDeleteLoad}

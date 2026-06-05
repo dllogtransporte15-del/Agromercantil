@@ -205,6 +205,7 @@ export interface Cargo {
   createdAt: string;
   createdById: string;
   history: HistoryLog[];
+  loadingStartDate?: string;
   loadingDeadline?: string;
   allowedVehicleTypes?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[];
   freightLegs?: FreightLeg[];
@@ -224,6 +225,7 @@ export interface Cargo {
     user?: string;
     password?: string;
   };
+  tmsBatchNumber?: string;
 }
 
 

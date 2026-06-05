@@ -1567,11 +1567,13 @@ const App: React.FC = () => {
       });
 
       let updatedCargo: Cargo;
+      const baseHistory = ('history' in loadData && Array.isArray(loadData.history) && loadData.history.length > oldCargo.history.length) ? loadData.history : oldCargo.history;
+
       if (changes.length > 0) {
         const newHistory = createHistoryLog(`Carga atualizada: ${changes.join('; ')}.`);
-        updatedCargo = { ...oldCargo, ...loadData, history: [...oldCargo.history, newHistory] };
+        updatedCargo = { ...oldCargo, ...loadData, history: [...baseHistory, newHistory] } as Cargo;
       } else {
-        updatedCargo = { ...oldCargo, ...loadData };
+        updatedCargo = { ...oldCargo, ...loadData, history: baseHistory } as Cargo;
       }
 
       setCargos(prev => prev.map(l => l.id === loadData.id ? updatedCargo : l));
@@ -1754,10 +1756,17 @@ const App: React.FC = () => {
   const handleReactivateLoad = async (cargoToReactivate: Cargo) => {
     if (!currentUser) return;
     
+    const reason = window.prompt(`Por favor, informe o motivo para reativar a carga ${cargoToReactivate.sequenceId}:`);
+    if (reason === null) return;
+    if (!reason.trim()) {
+        showToast("É obrigatório informar o motivo para reativar a carga.", "warning");
+        return;
+    }
+
     const updatedCargo: Cargo = {
       ...cargoToReactivate,
       status: CargoStatus.EmAndamento,
-      history: [...cargoToReactivate.history, createHistoryLog(`Carga reativada por ${currentUser.name}. Status alterado de "${cargoToReactivate.status}" para "Em Andamento".`)]
+      history: [...cargoToReactivate.history, createHistoryLog(`Carga reativada por ${currentUser.name}. Motivo: ${reason}. Status alterado de "${cargoToReactivate.status}" para "Em Andamento".`)]
     };
 
     setCargos(prev => prev.map(c => c.id === cargoToReactivate.id ? updatedCargo : c));
@@ -1772,10 +1781,17 @@ const App: React.FC = () => {
   const handleSuspendLoad = async (cargoToSuspend: Cargo) => {
     if (!currentUser) return;
     
+    const reason = window.prompt(`Por favor, informe o motivo para suspender a carga ${cargoToSuspend.sequenceId}:`);
+    if (reason === null) return;
+    if (!reason.trim()) {
+        showToast("É obrigatório informar o motivo para suspender a carga.", "warning");
+        return;
+    }
+
     const updatedCargo: Cargo = {
       ...cargoToSuspend,
       status: CargoStatus.Suspensa,
-      history: [...cargoToSuspend.history, createHistoryLog(`Carga suspensa por ${currentUser.name}.`)]
+      history: [...cargoToSuspend.history, createHistoryLog(`Carga suspensa por ${currentUser.name}. Motivo: ${reason}.`)]
     };
 
     setCargos(prev => prev.map(c => c.id === cargoToSuspend.id ? updatedCargo : c));
@@ -1784,6 +1800,27 @@ const App: React.FC = () => {
     } catch (err) {
       console.error('Erro ao suspender carga:', err);
       showToast("Erro ao suspender carga no banco de dados.", 'error');
+    }
+  };
+
+  const handleUpdateTmsBatch = async (cargoId: string, tmsBatchNumber: string) => {
+    if (!currentUser) return;
+    const cargo = cargos.find(c => c.id === cargoId);
+    if (!cargo) return;
+
+    const updatedCargo: Cargo = {
+      ...cargo,
+      tmsBatchNumber,
+      history: [...cargo.history, createHistoryLog(`Lote TMS atualizado para: ${tmsBatchNumber} por ${currentUser.name}`)]
+    };
+
+    setCargos(prev => prev.map(c => c.id === cargoId ? updatedCargo : c));
+    try {
+      await upsertCargo(updatedCargo);
+      showToast("Lote TMS atualizado com sucesso!", "success");
+    } catch (err) {
+      console.error('Erro ao atualizar Lote TMS:', err);
+      showToast("Erro ao atualizar Lote TMS no banco de dados.", "error");
     }
   };
 
@@ -1815,7 +1852,7 @@ const App: React.FC = () => {
       case 'vehicles':
         return <VehiclesPage vehicles={vehicles} setVehicles={setVehicles} onSaveVehicle={handleSaveVehicle} owners={owners} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} cargos={cargos} />;
       case 'loads':
-        return <LoadsPage loads={activeLoads} setLoads={setCargos} clients={clients} products={products} onSaveLoad={handleSaveLoad} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} onUpdatePrice={handleUpdateShipmentPrice} currentUser={currentUser} profilePermissions={profilePermissions} users={users} shipments={visibleShipments} onDeleteLoad={handleDeleteCargo} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} vehicles={vehicles} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} />;
+        return <LoadsPage loads={activeLoads} setLoads={setCargos} clients={clients} products={products} onSaveLoad={handleSaveLoad} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} onUpdateTmsBatch={handleUpdateTmsBatch} onUpdatePrice={handleUpdateShipmentPrice} currentUser={currentUser} profilePermissions={profilePermissions} users={users} shipments={visibleShipments} onDeleteLoad={handleDeleteCargo} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} vehicles={vehicles} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} />;
       case 'products':
         return <ProductsPage products={products} onSaveProduct={handleSaveProduct} onDeleteProduct={handleDeleteProduct} currentUser={currentUser} profilePermissions={profilePermissions} />;
       case 'shipments':
@@ -1858,6 +1895,7 @@ const App: React.FC = () => {
             onSaveLoad={handleSaveLoad}
             onReactivateLoad={handleReactivateLoad}
             onSuspendLoad={handleSuspendLoad}
+            onUpdateTmsBatch={handleUpdateTmsBatch}
             currentUser={currentUser} 
             profilePermissions={profilePermissions}
             shipments={visibleShipments}

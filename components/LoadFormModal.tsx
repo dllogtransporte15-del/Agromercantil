@@ -64,6 +64,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
     requiresScheduling: false,
     type: CargoType.Spot,
     status: CargoStatus.EmAndamento,
+    loadingStartDate: '',
     loadingDeadline: '',
     allowedVehicleTypes: DEFAULT_ALLOWED_VEHICLE_TYPES,
     freightLegs: [
@@ -624,10 +625,15 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                             <input name="totalVolume" value={load.totalVolume || ''} onChange={handleChange} type="number" placeholder="Ex: 5000" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Volume total contratado para a carga.</p>
                         </div>
-                        <div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Data de Início do Carregamento</label>
+                            <input name="loadingStartDate" value={load.loadingStartDate || ''} onChange={handleChange} type="date" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600"/>
+                          </div>
+                          <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Prazo de Carregamento</label>
                             <input name="loadingDeadline" value={load.loadingDeadline || ''} onChange={handleChange} type="date" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600"/>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Prazo final para o carregamento do lote.</p>
+                          </div>
                         </div>
                     </div>
                  </div>

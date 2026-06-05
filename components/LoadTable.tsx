@@ -31,13 +31,15 @@ interface LoadTableProps {
   currentUser: User;
   profilePermissions?: ProfilePermissions;
   onFilteredLoadsChange?: (loads: Cargo[]) => void;
+  onUpdateTmsBatch?: (cargoId: string, tmsBatchNumber: string) => void;
 }
 
 const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipments, dailyBalanceDate, onDailyBalanceDateChange, onCreateShipment, onSuspend, onReactivate, onFinalize, onEdit, onClose, onShowHistory, onShowDetails, onEditSchedule,  onShowShipments,
   onDelete,
   currentUser,
   profilePermissions,
-  onFilteredLoadsChange
+  onFilteredLoadsChange,
+  onUpdateTmsBatch
 }) => {
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
   const [expandedLoadId, setExpandedLoadId] = useState<string | null>(null);
@@ -211,12 +213,33 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                 {/* ID and Status */}
                 <div className="flex items-center gap-3 min-w-[120px]">
                   <div className="flex flex-col">
-                    <button 
-                      onClick={() => onShowDetails?.(load)}
-                      className="text-sm font-bold text-primary dark:text-blue-400 hover:underline text-left"
-                    >
-                      #{load.sequenceId}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={() => onShowDetails?.(load)}
+                        className="text-sm font-bold text-primary dark:text-blue-400 hover:underline text-left"
+                      >
+                        #{load.sequenceId}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const canEditTmsBatch = currentUser.profile === UserProfile.Fiscal || currentUser.profile === UserProfile.Admin;
+                          if (!canEditTmsBatch || !onUpdateTmsBatch) return;
+                          const batchNumber = window.prompt("Informe o número do lote criado no TMS:", load.tmsBatchNumber || "");
+                          if (batchNumber !== null && batchNumber.trim() !== "") {
+                            onUpdateTmsBatch(load.id, batchNumber.trim());
+                          }
+                        }}
+                        className={`text-xs focus:outline-none ${
+                          (currentUser.profile === UserProfile.Fiscal || currentUser.profile === UserProfile.Admin) 
+                            ? 'cursor-pointer hover:scale-125 transition-transform' 
+                            : 'cursor-default'
+                        }`}
+                        title={load.tmsBatchNumber ? `Lote TMS: ${load.tmsBatchNumber}` : "Criação de Lote TMS Pendente"}
+                      >
+                        {load.tmsBatchNumber ? "✅" : "⚠️"}
+                      </button>
+                    </div>
                     <span className="text-[10px] text-gray-400 font-mono truncate w-20" title={load.id}>{load.id.substring(0, 8)}...</span>
                   </div>
                   <span 
