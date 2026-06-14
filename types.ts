@@ -165,6 +165,7 @@ export interface CargoDestination {
   mapLink?: string;
   targetTonnage?: number;
   freightLegs: FreightLeg[];
+  tmsBatchNumber?: string;
 }
 
 export enum DailyScheduleType {

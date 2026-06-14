@@ -128,11 +128,13 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                             <div key={dest.id || idx} className="flex flex-col sm:flex-row gap-2 text-sm text-gray-800 dark:text-gray-200">
                                 <span className="font-medium">- {dest.city}</span>
                                 {dest.location && <span className="text-gray-500">({dest.location})</span>}
+                                {dest.tmsBatchNumber && <span className="text-blue-600 dark:text-blue-400 font-medium whitespace-nowrap">| Lote TMS: {dest.tmsBatchNumber}</span>}
                                 {dest.mapLink && <a href={dest.mapLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 underline ml-2">Mapa</a>}
                             </div>
                         )) || (
                             <div className="flex flex-col sm:flex-row gap-2 text-sm text-gray-800 dark:text-gray-200">
                                 <span className="font-medium">- {cargo.destination}</span>
+                                {cargo.tmsBatchNumber && <span className="text-blue-600 dark:text-blue-400 font-medium whitespace-nowrap">| Lote TMS: {cargo.tmsBatchNumber}</span>}
                                 {cargo.destinationMapLink && <a href={cargo.destinationMapLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 underline ml-2">Mapa</a>}
                             </div>
                         )}

@@ -31,7 +31,7 @@ interface LoadTableProps {
   currentUser: User;
   profilePermissions?: ProfilePermissions;
   onFilteredLoadsChange?: (loads: Cargo[]) => void;
-  onUpdateTmsBatch?: (cargoId: string, tmsBatchNumber: string) => void;
+  onUpdateTmsBatch?: (cargoId: string, tmsBatchNumber: string, destId?: string) => void;
 }
 
 const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipments, dailyBalanceDate, onDailyBalanceDateChange, onCreateShipment, onSuspend, onReactivate, onFinalize, onEdit, onClose, onShowHistory, onShowDetails, onEditSchedule,  onShowShipments,
@@ -225,9 +225,19 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                           e.stopPropagation();
                           const canEditTmsBatch = currentUser.profile === UserProfile.Fiscal || currentUser.profile === UserProfile.Admin;
                           if (!canEditTmsBatch || !onUpdateTmsBatch) return;
-                          const batchNumber = window.prompt("Informe o número do lote criado no TMS:", load.tmsBatchNumber || "");
-                          if (batchNumber !== null && batchNumber.trim() !== "") {
-                            onUpdateTmsBatch(load.id, batchNumber.trim());
+
+                          if (load.destinations && load.destinations.length > 1) {
+                            for (const dest of load.destinations) {
+                              const batchNumber = window.prompt(`Informe o número do lote criado no TMS para o destino ${dest.city}:`, dest.tmsBatchNumber || "");
+                              if (batchNumber !== null && batchNumber.trim() !== (dest.tmsBatchNumber || "")) {
+                                onUpdateTmsBatch(load.id, batchNumber.trim(), dest.id);
+                              }
+                            }
+                          } else {
+                            const batchNumber = window.prompt("Informe o número do lote criado no TMS:", load.tmsBatchNumber || "");
+                            if (batchNumber !== null && batchNumber.trim() !== (load.tmsBatchNumber || "")) {
+                              onUpdateTmsBatch(load.id, batchNumber.trim());
+                            }
                           }
                         }}
                         className={`text-xs focus:outline-none ${
@@ -235,9 +245,15 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                             ? 'cursor-pointer hover:scale-125 transition-transform' 
                             : 'cursor-default'
                         }`}
-                        title={load.tmsBatchNumber ? `Lote TMS: ${load.tmsBatchNumber}` : "Criação de Lote TMS Pendente"}
+                        title={
+                          load.destinations && load.destinations.length > 1 
+                            ? `Lotes TMS: ${load.destinations.map(d => d.tmsBatchNumber ? `${d.city}: ${d.tmsBatchNumber}` : `${d.city}: Pendente`).join(' | ')}`
+                            : load.tmsBatchNumber ? `Lote TMS: ${load.tmsBatchNumber}` : "Criação de Lote TMS Pendente"
+                        }
                       >
-                        {load.tmsBatchNumber ? "✅" : "⚠️"}
+                        {load.destinations && load.destinations.length > 1
+                          ? (load.destinations.every(d => d.tmsBatchNumber) ? "✅" : "⚠️")
+                          : (load.tmsBatchNumber ? "✅" : "⚠️")}
                       </button>
                     </div>
                     <span className="text-[10px] text-gray-400 font-mono truncate w-20" title={load.id}>{load.id.substring(0, 8)}...</span>

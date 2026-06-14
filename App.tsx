@@ -1803,16 +1803,25 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpdateTmsBatch = async (cargoId: string, tmsBatchNumber: string) => {
+  const handleUpdateTmsBatch = async (cargoId: string, tmsBatchNumber: string, destId?: string) => {
     if (!currentUser) return;
     const cargo = cargos.find(c => c.id === cargoId);
     if (!cargo) return;
 
-    const updatedCargo: Cargo = {
-      ...cargo,
-      tmsBatchNumber,
-      history: [...cargo.history, createHistoryLog(`Lote TMS atualizado para: ${tmsBatchNumber} por ${currentUser.name}`)]
-    };
+    let updatedCargo: Cargo;
+    if (destId) {
+      updatedCargo = {
+        ...cargo,
+        destinations: cargo.destinations?.map(d => d.id === destId ? { ...d, tmsBatchNumber } : d),
+        history: [...cargo.history, createHistoryLog(`Lote TMS do destino atualizado para: ${tmsBatchNumber} por ${currentUser.name}`)]
+      };
+    } else {
+      updatedCargo = {
+        ...cargo,
+        tmsBatchNumber,
+        history: [...cargo.history, createHistoryLog(`Lote TMS atualizado para: ${tmsBatchNumber} por ${currentUser.name}`)]
+      };
+    }
 
     setCargos(prev => prev.map(c => c.id === cargoId ? updatedCargo : c));
     try {

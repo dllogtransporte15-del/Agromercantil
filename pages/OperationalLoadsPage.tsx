@@ -27,7 +27,7 @@ interface OperationalLoadsPageProps {
   onDeleteLoad: (cargoId: string) => void;
   onReactivateLoad?: (cargo: Cargo) => void;
   onSuspendLoad?: (cargo: Cargo) => void;
-  onUpdateTmsBatch?: (cargoId: string, tmsBatchNumber: string) => void;
+  onUpdateTmsBatch?: (cargoId: string, tmsBatchNumber: string, destId?: string) => void;
   onUpdatePrice: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
   onModalStateChange: (isOpen: boolean) => void;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
