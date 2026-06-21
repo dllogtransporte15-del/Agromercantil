@@ -28,6 +28,7 @@ interface LoadTableProps {
   onShowDetails?: (load: Cargo) => void;
   onEditSchedule?: (load: Cargo) => void;
   onShowShipments?: (load: Cargo) => void;
+  onShowIndicatedDrivers?: (load: Cargo) => void;
   onDelete?: (cargoId: string) => void;
   currentUser: User;
   profilePermissions?: ProfilePermissions;
@@ -36,6 +37,7 @@ interface LoadTableProps {
 }
 
 const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipments, dailyBalanceDate, onDailyBalanceDateChange, onCreateShipment, onSuspend, onReactivate, onFinalize, onEdit, onClose, onShowHistory, onShowDetails, onEditSchedule,  onShowShipments,
+  onShowIndicatedDrivers,
   onDelete,
   currentUser,
   profilePermissions,
@@ -493,6 +495,11 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                           {onCreateShipment && load.status === CargoStatus.EmAndamento && (
                             <button onClick={() => { onCreateShipment(load); setOpenActionMenu(null); }} className="w-full text-left px-4 py-2 text-sm text-primary dark:text-blue-400 font-medium hover:bg-gray-100 dark:hover:bg-gray-700">
                               Novo Embarque
+                            </button>
+                          )}
+                          {onShowIndicatedDrivers && load.status === CargoStatus.EmAndamento && (
+                            <button onClick={() => { onShowIndicatedDrivers(load); setOpenActionMenu(null); }} className="w-full text-left px-4 py-2 text-sm text-emerald-600 dark:text-emerald-400 font-medium hover:bg-gray-100 dark:hover:bg-gray-700">
+                              Motoristas Indicados
                             </button>
                           )}
                           {onSuspend && load.status === CargoStatus.EmAndamento && (

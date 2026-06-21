@@ -7,6 +7,7 @@ import LoadFormModal from '../components/LoadFormModal';
 import HistoryModal from '../components/HistoryModal';
 import CargoDetailsModal from '../components/CargoDetailsModal';
 import CargoShipmentsSidePanel from '../components/CargoShipmentsSidePanel';
+import IndicatedDriversModal from '../components/IndicatedDriversModal';
 import type { Cargo, Client, Product, Driver, Shipment, Vehicle, User, ProfilePermissions, VehicleSetType, VehicleBodyType, Branch } from '../types';
 import { can } from '../auth';
 import { CopyIcon } from '../components/icons/CopyIcon';
@@ -77,11 +78,16 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   const [detailsModalCargo, setDetailsModalCargo] = useState<Cargo | null>(null);
   const [isShipmentsPanelOpen, setIsShipmentsPanelOpen] = useState(false);
   const [selectedCargoForShipments, setSelectedCargoForShipments] = useState<Cargo | null>(null);
+  const [selectedCargoForIndicatedDrivers, setSelectedCargoForIndicatedDrivers] = useState<Cargo | null>(null);
 
   React.useEffect(() => {
-    const isAnyOpen = isShipmentModalOpen || isLoadFormModalOpen || isHistoryModalOpen || !!detailsModalCargo || isShipmentsPanelOpen;
+    const isAnyOpen = isShipmentModalOpen || isLoadFormModalOpen || isHistoryModalOpen || !!detailsModalCargo || isShipmentsPanelOpen || !!selectedCargoForIndicatedDrivers;
     onModalStateChange(isAnyOpen);
-  }, [isShipmentModalOpen, isLoadFormModalOpen, isHistoryModalOpen, detailsModalCargo, isShipmentsPanelOpen, onModalStateChange]);
+  }, [isShipmentModalOpen, isLoadFormModalOpen, isHistoryModalOpen, detailsModalCargo, isShipmentsPanelOpen, selectedCargoForIndicatedDrivers, onModalStateChange]);
+
+  const handleShowIndicatedDrivers = (cargo: Cargo) => {
+    setSelectedCargoForIndicatedDrivers(cargo);
+  };
 
   const handleShowCargoDetails = (cargo: Cargo) => {
     setDetailsModalCargo(cargo);
@@ -152,14 +158,19 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       return;
     }
 
-    const header = '🌽 *LIBERADOS AGROMERCANTIL* 🌽\n';
+    const header = '🌽 LIBERADOS AGROMERCANTIL 🌽\n';
 
     const loadsText = loadsToShare.map(load => {
       const product = products.find(p => p.id === load.productId)?.name || 'Produto Não Informado';
       const origin = load.origin;
       const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
 
-      let text = `📍 *Origem* - ${origin} \n🚩 *Destinos*`;
+      let text = `📍${origin}`;
+      if (load.originMapLink) {
+        text += `\n📍Coleta - ${load.originMapLink}`;
+      }
+      text += `\n🌾 ${product}`;
+      text += `\n🚩 Destinos`;
       
       const dests = (load.destinations && load.destinations.length > 0) 
         ? load.destinations 
@@ -176,17 +187,13 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
           const pricePJ = totalPJ.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           const pricePF = totalPF.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-          text += `\n- ${dest.city} 💲 PJ ${pricePJ} - PF ${pricePF}`;
+          text += `\n\n${dest.city} 💲 PJ ${pricePJ}/PF ${pricePF}`;
           if (dest.mapLink) {
              text += `\n${dest.mapLink}`;
           }
+          text += `\n🚛 ${bodyTypes} 🚛`;
       });
 
-      text += `\n🌾 ${product}`;
-      if (load.originMapLink) {
-        text += `\n📍Coleta - ${load.originMapLink}`;
-      }
-      text += `\n🚛 ${bodyTypes} 🚛`;
       return text;
     }).join('\n\n');
 
@@ -229,6 +236,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         onUpdateTmsBatch={onUpdateTmsBatch}
         onShowDetails={handleShowCargoDetails}
         onShowShipments={handleShowShipments}
+        onShowIndicatedDrivers={handleShowIndicatedDrivers}
         onDelete={onDeleteLoad}
         currentUser={currentUser}
         profilePermissions={profilePermissions}
@@ -293,6 +301,15 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         products={products}
         vehicles={vehicles}
         onDeleteAttachment={onDeleteAttachment}
+      />
+
+      <IndicatedDriversModal
+        isOpen={!!selectedCargoForIndicatedDrivers}
+        onClose={() => setSelectedCargoForIndicatedDrivers(null)}
+        cargo={selectedCargoForIndicatedDrivers}
+        drivers={drivers}
+        shipments={shipments}
+        loads={loads}
       />
     </>
   );

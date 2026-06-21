@@ -77,3 +77,60 @@ export function getCoordsSync(query: string): { lat: number; lng: number } | nul
   const normalizedQuery = query.trim().toLowerCase();
   return geocodeCache[normalizedQuery] || null;
 }
+
+export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Radius of the earth in km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c; // Distance in km
+  return d;
+}
+
+function deg2rad(deg: number): number {
+  return deg * (Math.PI / 180);
+}
+
+const STATE_DDDS: Record<string, string[]> = {
+  'AC': ['68'],
+  'AL': ['82'],
+  'AM': ['92', '97'],
+  'AP': ['96'],
+  'BA': ['71', '73', '74', '75', '77'],
+  'CE': ['85', '88'],
+  'DF': ['61'],
+  'ES': ['27', '28'],
+  'GO': ['61', '62', '64'],
+  'MA': ['98', '99'],
+  'MG': ['31', '32', '33', '34', '35', '37', '38'],
+  'MS': ['67'],
+  'MT': ['65', '66'],
+  'PA': ['91', '93', '94'],
+  'PB': ['83'],
+  'PE': ['81', '87'],
+  'PI': ['86', '89'],
+  'PR': ['41', '42', '43', '44', '45', '46'],
+  'RJ': ['21', '22', '24'],
+  'RN': ['84'],
+  'RO': ['69'],
+  'RR': ['95'],
+  'RS': ['51', '53', '54', '55'],
+  'SC': ['47', '48', '49'],
+  'SE': ['79'],
+  'SP': ['11', '12', '13', '14', '15', '16', '17', '18', '19'],
+  'TO': ['63'],
+};
+
+export function getDDDsForCity(cityString: string): string[] {
+  if (!cityString) return [];
+  const parts = cityString.split(',');
+  if (parts.length > 1) {
+    const uf = parts[1].trim().toUpperCase();
+    return STATE_DDDS[uf] || [];
+  }
+  return [];
+}
