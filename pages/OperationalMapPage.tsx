@@ -438,27 +438,30 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
       const origin = load.origin;
       const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
       
-      let text = `📍 *Origem* - ${origin}\n🚩 *Destinos*`;
+      let text = `📍*${origin}*`;
+      if (load.originLocation) text += `\n📍Coleta - ${load.originLocation}`;
+      if (load.originMapLink && !load.originLocation) text += `\n📍Coleta - ${load.originMapLink}`;
+      else if (load.originMapLink) text += `\n${load.originMapLink}`;
+
+      text += `\n🌾 ${product}`;
+      text += `\n🚩 *Destinos*`;
       
       if (load.destinations && load.destinations.length > 0) {
         load.destinations.forEach(dest => {
             const leg = dest.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: load.driverFreightValuePerTon };
             const pj = (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             const pf = (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            text += `\n- ${dest.city} 💲 PJ ${pj} - PF ${pf}`;
+            text += `\n* *${dest.city}* 💲 *_PJ ${pj}/PF ${pf}_*`;
             if (dest.mapLink) text += `\n${dest.mapLink}`;
         });
       } else {
         const pj = (load.driverFreightValuePerTonPJ ?? load.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const pf = (load.driverFreightValuePerTonPF ?? load.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        text += `\n- ${load.destination} 💲 PJ ${pj} - PF ${pf}`;
+        text += `\n* *${load.destination}* 💲 *_PJ ${pj}/PF ${pf}_*`;
         if (load.destinationMapLink) text += `\n${load.destinationMapLink}`;
       }
 
-      text += `\n🌾 ${product}\n🚛 ${bodyTypes} 🚛`;
-      if (load.originLocation) text += `\n📍 Coleta - ${load.originLocation}`;
-      if (load.originMapLink && !load.originLocation) text += `\n📍 Coleta - ${load.originMapLink}`;
-      else if (load.originMapLink) text += `\n${load.originMapLink}`;
+      text += `\n🚛 ${bodyTypes} 🚛`;
       
       return text;
     }).join('\n\n');

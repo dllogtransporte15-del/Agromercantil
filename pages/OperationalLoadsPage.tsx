@@ -165,12 +165,12 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       const origin = load.origin;
       const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
 
-      let text = `📍${origin}`;
+      let text = `📍*${origin}*`;
       if (load.originMapLink) {
         text += `\n📍Coleta - ${load.originMapLink}`;
       }
       text += `\n🌾 ${product}`;
-      text += `\n🚩 Destinos`;
+      text += `\n🚩 *Destinos*`;
       
       const dests = (load.destinations && load.destinations.length > 0) 
         ? load.destinations 
@@ -187,7 +187,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
           const pricePJ = totalPJ.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           const pricePF = totalPF.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-          text += `\n\n${dest.city} 💲 PJ ${pricePJ}/PF ${pricePF}`;
+          text += `\n* *${dest.city}* 💲 *_PJ ${pricePJ}/PF ${pricePF}_*`;
           if (dest.mapLink) {
              text += `\n${dest.mapLink}`;
           }
