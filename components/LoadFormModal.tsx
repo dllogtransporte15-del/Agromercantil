@@ -238,11 +238,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
         setLoad(prev => ({ ...prev, [name]: parseFloat(value) || 0 }));
     }
     else {
-        let finalValue = value;
-        if (name === 'origin') {
-            finalValue = formatCityState(value);
-        }
-        setLoad(prev => ({ ...prev, [name]: finalValue }));
+        setLoad(prev => ({ ...prev, [name]: value }));
     }
   };
 
@@ -259,8 +255,6 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
           let finalValue: any = value;
           if (field === 'targetTonnage') {
               finalValue = parseFloat(value) || undefined;
-          } else if (field === 'city') {
-              finalValue = formatCityState(value);
           }
           newDests[destIndex] = { ...newDests[destIndex], [field]: finalValue };
           return { ...prev, destinations: newDests };
