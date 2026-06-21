@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Client } from '../types';
 import { PaymentMethod } from '../types';
+import { formatCpfCnpj, formatPhone } from '../utils/formatters';
 
 interface ClientFormModalProps {
   isOpen: boolean;
@@ -53,7 +54,13 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
         const checked = (e.target as HTMLInputElement).checked;
         setClient(prev => ({ ...prev, [name]: checked }));
     } else {
-        setClient(prev => ({ ...prev, [name]: value }));
+        let formattedValue = value;
+        if (name === 'cnpj') {
+            formattedValue = formatCpfCnpj(value);
+        } else if (name === 'phone') {
+            formattedValue = formatPhone(value);
+        }
+        setClient(prev => ({ ...prev, [name]: formattedValue }));
     }
   };
 

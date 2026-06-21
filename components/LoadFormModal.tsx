@@ -9,6 +9,7 @@ import { UserPlusIcon } from './icons/UserPlusIcon';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { geocodeCity } from '../utils/geocoding';
 import { useToast } from '../hooks/useToast';
+import { formatCityState } from '../utils/formatters';
 
 interface LoadFormModalProps {
   isOpen: boolean;
@@ -237,17 +238,43 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
         setLoad(prev => ({ ...prev, [name]: parseFloat(value) || 0 }));
     }
     else {
-        setLoad(prev => ({ ...prev, [name]: value }));
+        let finalValue = value;
+        if (name === 'origin') {
+            finalValue = formatCityState(value);
+        }
+        setLoad(prev => ({ ...prev, [name]: finalValue }));
     }
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+      const { name, value } = e.target;
+      if (name === 'origin') {
+          setLoad(prev => ({ ...prev, [name]: formatCityState(value) }));
+      }
   };
 
   const handleDestinationChange = (destIndex: number, field: string, value: string) => {
       setLoad(prev => {
           const newDests = [...(prev.destinations || [])];
-          const finalValue = field === 'targetTonnage' ? (parseFloat(value) || undefined) : value;
+          let finalValue: any = value;
+          if (field === 'targetTonnage') {
+              finalValue = parseFloat(value) || undefined;
+          } else if (field === 'city') {
+              finalValue = formatCityState(value);
+          }
           newDests[destIndex] = { ...newDests[destIndex], [field]: finalValue };
           return { ...prev, destinations: newDests };
       });
+  };
+
+  const handleDestinationBlur = (destIndex: number, field: string, value: string) => {
+      if (field === 'city') {
+          setLoad(prev => {
+              const newDests = [...(prev.destinations || [])];
+              newDests[destIndex] = { ...newDests[destIndex], [field]: formatCityState(value) };
+              return { ...prev, destinations: newDests };
+          });
+      }
   };
 
   const handleAddDestination = () => {
@@ -532,7 +559,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                     
                     <div className="space-y-4">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Origem (Cidade e Local)</label>
-                        <input name="origin" value={load.origin} onChange={handleChange} placeholder="Cidade de Origem" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 mb-2" required list="cities-list" />
+                        <input name="origin" value={load.origin} onChange={handleChange} onBlur={handleBlur} placeholder="Cidade de Origem" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 mb-2" required list="cities-list" />
                         <input name="originLocation" value={load.originLocation ?? ''} onChange={handleChange} placeholder="Nome do Local (Ex: Fazenda...)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 mb-2" />
                         <input name="originMapLink" value={load.originMapLink ?? ''} onChange={handleChange} placeholder="Link do Google Maps (Origem)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
                     </div>
@@ -557,7 +584,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                                     </button>
                                 )}
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                                    <input value={dest.city} onChange={(e) => handleDestinationChange(idx, 'city', e.target.value)} placeholder="Cidade de Destino" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" required list="cities-list" />
+                                    <input value={dest.city} onChange={(e) => handleDestinationChange(idx, 'city', e.target.value)} onBlur={(e) => handleDestinationBlur(idx, 'city', e.target.value)} placeholder="Cidade de Destino" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" required list="cities-list" />
                                     <input value={dest.location ?? ''} onChange={(e) => handleDestinationChange(idx, 'location', e.target.value)} placeholder="Nome do Local (Ex: Porto...)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
                                     <input value={dest.mapLink ?? ''} onChange={(e) => handleDestinationChange(idx, 'mapLink', e.target.value)} placeholder="Link do Google Maps" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
                                     <input type="number" step="0.1" value={dest.targetTonnage ?? ''} onChange={(e) => handleDestinationChange(idx, 'targetTonnage', e.target.value)} placeholder="Saldo Entrega (ton)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />

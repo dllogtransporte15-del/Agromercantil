@@ -4,6 +4,7 @@ import type { Cargo, Driver, Shipment, Client, Vehicle, User } from '../types';
 import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType } from '../types';
 import { supabase } from '../supabase';
 import { useToast } from '../hooks/useToast';
+import { formatCpfCnpj, formatPhone } from '../utils/formatters';
 
 
 interface NewShipmentModalProps {
@@ -402,11 +403,11 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">CPF do Motorista</label>
-                <input type="text" value={driverCpf} onChange={(e) => setDriverCpf(e.target.value)} placeholder="Digite o CPF do motorista" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
+                <input type="text" value={driverCpf} onChange={(e) => setDriverCpf(formatCpfCnpj(e.target.value))} placeholder="Digite o CPF do motorista" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
               </div>
               <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contato (WhatsApp)</label>
-                  <input type="text" value={driverContact} onChange={(e) => setDriverContact(e.target.value)} placeholder="Contato (auto-preenchido)" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" disabled={isExistingDriver} required />
+                  <input type="text" value={driverContact} onChange={(e) => setDriverContact(formatPhone(e.target.value))} placeholder="Contato (auto-preenchido)" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" disabled={isExistingDriver} required />
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -417,7 +418,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contato do Proprietário</label>
-                <input type="text" value={ownerContact} onChange={(e) => setOwnerContact(e.target.value)} placeholder="Telefone/WhatsApp do proprietário" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
+                <input type="text" value={ownerContact} onChange={(e) => setOwnerContact(formatPhone(e.target.value))} placeholder="Telefone/WhatsApp do proprietário" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
               </div>
             </div>
 

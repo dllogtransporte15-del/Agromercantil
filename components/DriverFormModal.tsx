@@ -4,7 +4,7 @@ import { History } from 'lucide-react';
 import type { Driver, Owner } from '../types';
 import { DriverClassification } from '../types';
 import { useToast } from '../hooks/useToast';
-
+import { formatCpfCnpj, formatPhone } from '../utils/formatters';
 interface DriverFormModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -50,8 +50,15 @@ const DriverFormModal: React.FC<DriverFormModalProps> = ({
     const { name, value, type } = e.target;
     const checked = (e.target as HTMLInputElement).checked;
     
+    let formattedValue = value;
+    if (name === 'cpf') {
+      formattedValue = formatCpfCnpj(value);
+    } else if (name === 'phone') {
+      formattedValue = formatPhone(value);
+    }
+    
     setDriver(prev => {
-      const newState = { ...prev, [name]: type === 'checkbox' ? checked : value };
+      const newState = { ...prev, [name]: type === 'checkbox' ? checked : formattedValue };
       if (name === 'classification' && value === DriverClassification.Terceiro) {
         newState.ownerId = undefined;
       }

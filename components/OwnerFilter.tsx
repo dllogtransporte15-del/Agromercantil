@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { OwnerType } from '../types';
+import { formatCpfCnpj, formatPhone } from '../utils/formatters';
 
 export interface OwnerFilters {
   name: string;
@@ -17,7 +18,13 @@ interface OwnerFilterProps {
 const OwnerFilter: React.FC<OwnerFilterProps> = ({ filters, onFilterChange }) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    onFilterChange({ ...filters, [name]: value });
+    let formattedValue = value;
+    if (name === 'cpfCnpj') {
+      formattedValue = formatCpfCnpj(value);
+    } else if (name === 'phone') {
+      formattedValue = formatPhone(value);
+    }
+    onFilterChange({ ...filters, [name]: formattedValue });
   };
 
   const clearFilters = () => {

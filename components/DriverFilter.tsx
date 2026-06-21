@@ -2,6 +2,7 @@
 import React from 'react';
 import type { Owner } from '../types';
 import { DriverClassification } from '../types';
+import { formatCpfCnpj, formatPhone } from '../utils/formatters';
 
 export interface DriverFilters {
   name: string;
@@ -22,7 +23,13 @@ interface DriverFilterProps {
 const DriverFilter: React.FC<DriverFilterProps> = ({ owners, filters, onFilterChange }) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    onFilterChange({ ...filters, [name]: value });
+    let formattedValue = value;
+    if (name === 'cpf') {
+      formattedValue = formatCpfCnpj(value);
+    } else if (name === 'phone') {
+      formattedValue = formatPhone(value);
+    }
+    onFilterChange({ ...filters, [name]: formattedValue });
   };
 
   const clearFilters = () => {

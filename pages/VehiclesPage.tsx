@@ -8,6 +8,7 @@ import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
 import type { Vehicle, Owner, User, ProfilePermissions, Shipment, Cargo } from '../types';
 import { VehicleSetType, VehicleBodyType, DriverClassification } from '../types';
 import { can } from '../auth';
+import Pagination from '../components/Pagination';
 
 interface VehiclesPageProps {
   vehicles: Vehicle[];
@@ -44,6 +45,9 @@ const VehiclesPage: React.FC<VehiclesPageProps> = ({
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
   const canCreate = can('create', currentUser, 'vehicles', profilePermissions);
   const canUpdate = can('update', currentUser, 'vehicles', profilePermissions);
   const canDelete = can('delete', currentUser, 'vehicles', profilePermissions);
@@ -59,6 +63,16 @@ const VehiclesPage: React.FC<VehiclesPageProps> = ({
       return plateMatch && setTypeMatch && bodyTypeMatch && classificationMatch && ownerMatch;
     });
   }, [vehicles, filters]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
+
+  const totalPages = Math.ceil(filteredVehicles.length / itemsPerPage);
+  const paginatedVehicles = filteredVehicles.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   const handleOpenModal = () => {
     setVehicleToEdit(null);
@@ -178,12 +192,22 @@ const VehiclesPage: React.FC<VehiclesPageProps> = ({
         />
 
         <VehicleTable 
-          vehicles={filteredVehicles} 
+          vehicles={paginatedVehicles} 
           owners={owners} 
           onEdit={canUpdate ? handleEditVehicle : undefined} 
           onDelete={canDelete ? handleDeleteVehicle : undefined} 
           onShowHistory={handleShowHistory}
         />
+
+        {totalPages > 1 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            totalItems={filteredVehicles.length}
+            itemsPerPage={itemsPerPage}
+          />
+        )}
       </div>
 
       <VehicleFormModal 

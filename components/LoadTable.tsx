@@ -9,6 +9,7 @@ import { PlusIcon } from './icons/PlusIcon';
 import { HistoryIcon } from './icons/HistoryIcon';
 import { Search, Filter, X } from 'lucide-react';
 import MultiSelectDropdown from './MultiSelectDropdown';
+import Pagination from './Pagination';
 
 interface LoadTableProps {
   loads: Cargo[];
@@ -51,6 +52,9 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
   const [filterOrigin, setFilterOrigin] = useState<string[]>([]);
   const [filterDest, setFilterDest] = useState<string[]>([]);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
   const getClientName = (clientId: string) => clients.find(c => c.id === clientId)?.nomeFantasia || 'N/A';
   const getProductName = (productId: string) => products.find(p => p.id === productId)?.name || 'N/A';
 
@@ -76,6 +80,16 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
   React.useEffect(() => {
     onFilteredLoadsChange?.(filteredLoads);
   }, [filteredLoads.map(l => l.id).join(','), filterId, filterClient, filterProduct, filterOrigin, filterDest]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [filterId, filterClient, filterProduct, filterOrigin, filterDest]);
+
+  const totalPages = Math.ceil(filteredLoads.length / itemsPerPage);
+  const paginatedLoads = filteredLoads.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   const activeFiltersCount = (filterId.length > 0 ? 1 : 0) + (filterClient.length > 0 ? 1 : 0) + (filterProduct.length > 0 ? 1 : 0) + (filterOrigin.length > 0 ? 1 : 0) + (filterDest.length > 0 ? 1 : 0);
 
@@ -161,7 +175,7 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
       </div>
 
       <div className="space-y-3">
-        {filteredLoads.map((load) => {
+        {paginatedLoads.map((load) => {
           const scheduledButNotLoaded = Math.max(0, load.scheduledVolume - load.loadedVolume);
           const dailyScheduledTonnage = shipments
             .filter(s => s.cargoId === load.id && s.scheduledDate === dailyBalanceDate)
@@ -600,6 +614,16 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
           );
         })}
       </div>
+
+      {totalPages > 1 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalItems={filteredLoads.length}
+          itemsPerPage={itemsPerPage}
+        />
+      )}
     </div>
   );
 };

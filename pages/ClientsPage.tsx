@@ -6,6 +6,7 @@ import ClientFormModal from '../components/ClientFormModal';
 import ClientFilter, { ClientFilters } from '../components/ClientFilter';
 import type { Client, User, ProfilePermissions } from '../types';
 import { PaymentMethod } from '../types';
+import Pagination from '../components/Pagination';
 import { can } from '../auth';
 
 interface ClientsPageProps {
@@ -26,6 +27,9 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
     contact: '',
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
 
   const canCreate = can('create', currentUser, 'clients', profilePermissions);
   const canUpdate = can('update', currentUser, 'clients', profilePermissions);
@@ -49,6 +53,17 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
       return nomeFantasiaMatch && cnpjMatch && cityStateMatch && contactMatch;
     });
   }, [clients, filters]);
+
+  // Reset page when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
+
+  const totalPages = Math.ceil(filteredClients.length / itemsPerPage);
+  const paginatedClients = filteredClients.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   const handleOpenModal = () => {
     setClientToEdit(null);
@@ -197,10 +212,20 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
       />
 
       <ClientTable 
-        clients={filteredClients} 
+        clients={paginatedClients} 
         onEdit={canUpdate ? handleEditClient : undefined} 
         onDelete={canDelete ? handleDeleteClient : undefined} 
       />
+
+      {totalPages > 1 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalItems={filteredClients.length}
+          itemsPerPage={itemsPerPage}
+        />
+      )}
 
       <ClientFormModal
         isOpen={isModalOpen}

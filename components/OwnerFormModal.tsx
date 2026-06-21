@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Owner } from '../types';
 import { OwnerType } from '../types';
+import { formatCpfCnpj, formatPhone } from '../utils/formatters';
 
 interface OwnerFormModalProps {
   isOpen: boolean;
@@ -35,7 +36,13 @@ const OwnerFormModal: React.FC<OwnerFormModalProps> = ({ isOpen, onClose, onSave
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setOwner(prev => ({ ...prev, [name]: value }));
+    let formattedValue = value;
+    if (name === 'cpfCnpj') {
+        formattedValue = formatCpfCnpj(value);
+    } else if (name === 'phone') {
+        formattedValue = formatPhone(value);
+    }
+    setOwner(prev => ({ ...prev, [name]: formattedValue }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {

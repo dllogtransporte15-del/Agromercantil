@@ -5,6 +5,7 @@ import { generateLoadingOrderPDF } from '../utils/pdfGenerator';
 import { FileTextIcon, Trash2 } from 'lucide-react';
 import { getToolStaysByShipment, StayRecord } from '../services/api/toolsApi';
 import { getShipmentAttachmentUrl } from '../services/api/db';
+import { formatCpfCnpj, formatPhone } from '../utils/formatters';
 
 
 interface ShipmentDetailsModalProps {
@@ -213,7 +214,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     type="text"
                                     className="w-full mt-1 p-1.5 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     value={editedData.driverCpf || ''}
-                                    onChange={e => setEditedData({...editedData, driverCpf: e.target.value})}
+                                    onChange={e => setEditedData({...editedData, driverCpf: formatCpfCnpj(e.target.value)})}
                                 />
                             </div>
                             <div>
@@ -222,7 +223,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     type="text"
                                     className="w-full mt-1 p-1.5 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     value={editedData.driverContact || ''}
-                                    onChange={e => setEditedData({...editedData, driverContact: e.target.value})}
+                                    onChange={e => setEditedData({...editedData, driverContact: formatPhone(e.target.value)})}
                                 />
                             </div>
                             <div>
@@ -296,8 +297,8 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                     ) : (
                         <>
                             <DetailItem label="Motorista" value={shipment.driverName} />
-                            <DetailItem label="Documento (CPF)" value={shipment.driverCpf} />
-                            <DetailItem label="Contato" value={shipment.driverContact} />
+                            <DetailItem label="Documento (CPF)" value={shipment.driverCpf ? formatCpfCnpj(shipment.driverCpf) : ''} />
+                            <DetailItem label="Contato" value={shipment.driverContact ? formatPhone(shipment.driverContact) : ''} />
                             
                             <div className="md:col-span-2 lg:col-span-3 h-px bg-gray-100 dark:bg-gray-700 my-2" />
                             
@@ -527,7 +528,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                         type="text"
                                         className="w-full mt-1 p-1.5 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                         value={editedData.ownerContact || ''}
-                                        onChange={e => setEditedData({...editedData, ownerContact: e.target.value})}
+                                        onChange={e => setEditedData({...editedData, ownerContact: formatPhone(e.target.value)})}
                                         placeholder="Telefone do proprietário..."
                                     />
                                 ) : (
@@ -566,7 +567,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                 ) : (
                                     <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-md border dark:border-gray-700">
                                         <p className="text-sm font-mono text-gray-800 dark:text-gray-200">
-                                            {shipment.anttOwnerIdentifier || <span className="text-gray-400 italic font-sans">Não preenchido no cadastro</span>}
+                                            {shipment.anttOwnerIdentifier ? formatCpfCnpj(shipment.anttOwnerIdentifier) : <span className="text-gray-400 italic font-sans">Não preenchido no cadastro</span>}
                                         </p>
                                     </div>
                                 )}

@@ -2,6 +2,7 @@
 import React from 'react';
 import { History } from 'lucide-react';
 import type { Driver, Owner } from '../types';
+import { formatCpfCnpj, formatPhone } from '../utils/formatters';
 
 interface DriverTableProps {
   drivers: Driver[];
@@ -38,10 +39,10 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers, owners, onEdit, onDe
               <tr key={driver.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{driver.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  <div className="text-gray-900 dark:text-white">{driver.cpf}</div>
+                  <div className="text-gray-900 dark:text-white">{driver.cpf ? formatCpfCnpj(driver.cpf) : ''}</div>
                   <div className="text-gray-500 dark:text-gray-400">CNH: {driver.cnh}</div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{driver.phone}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{driver.phone ? formatPhone(driver.phone) : ''}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{driver.classification}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getOwnerName(driver.ownerId)}</td>
                 <td className="px-6 py-4 whitespace-nowrap">

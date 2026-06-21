@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { formatCpfCnpj } from '../utils/formatters';
 
 export interface ClientFilters {
   nomeFantasia: string;
@@ -16,7 +17,11 @@ interface ClientFilterProps {
 const ClientFilter: React.FC<ClientFilterProps> = ({ filters, onFilterChange }) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    onFilterChange({ ...filters, [name]: value });
+    let formattedValue = value;
+    if (name === 'cnpj') {
+      formattedValue = formatCpfCnpj(value);
+    }
+    onFilterChange({ ...filters, [name]: formattedValue });
   };
 
   const clearFilters = () => {

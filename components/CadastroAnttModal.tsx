@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Shipment } from '../types';
 import { useToast } from '../hooks/useToast';
+import { formatCpfCnpj } from '../utils/formatters';
 
 interface CadastroAnttModalProps {
   isOpen: boolean;
@@ -46,7 +47,7 @@ const CadastroAnttModal: React.FC<CadastroAnttModalProps> = ({ isOpen, onClose, 
                 type="text"
                 id="antt-identifier"
                 value={anttOwnerIdentifier}
-                onChange={(e) => setAnttOwnerIdentifier(e.target.value)}
+                onChange={(e) => setAnttOwnerIdentifier(formatCpfCnpj(e.target.value))}
                 className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600"
                 placeholder="00.000.000/0000-00 ou 000.000.000-00"
                 required

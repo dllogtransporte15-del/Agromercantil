@@ -8,6 +8,7 @@ import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
 import type { Driver, Owner, User, ProfilePermissions, Shipment, Cargo } from '../types';
 import { DriverClassification } from '../types';
 import { can } from '../auth';
+import Pagination from '../components/Pagination';
 
 // For reading XLS files
 declare const XLSX: any;
@@ -49,6 +50,9 @@ const DriversPage: React.FC<DriversPageProps> = ({
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
   const canCreate = can('create', currentUser, 'drivers', profilePermissions);
   const canUpdate = can('update', currentUser, 'drivers', profilePermissions);
   const canDelete = can('delete', currentUser, 'drivers', profilePermissions);
@@ -69,6 +73,16 @@ const DriversPage: React.FC<DriversPageProps> = ({
       return nameMatch && cpfMatch && cnhMatch && phoneMatch && classificationMatch && ownerMatch && statusMatch;
     });
   }, [drivers, filters]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
+
+  const totalPages = Math.ceil(filteredDrivers.length / itemsPerPage);
+  const paginatedDrivers = filteredDrivers.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   const handleOpenModal = () => {
     setDriverToEdit(null);
@@ -309,12 +323,22 @@ const DriversPage: React.FC<DriversPageProps> = ({
         />
 
         <DriverTable 
-          drivers={filteredDrivers} 
+          drivers={paginatedDrivers} 
           owners={owners} 
           onEdit={canUpdate ? handleEditDriver : undefined} 
           onDelete={canDelete ? handleDeleteDriver : undefined} 
           onShowHistory={handleShowHistory}
         />
+
+        {totalPages > 1 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            totalItems={filteredDrivers.length}
+            itemsPerPage={itemsPerPage}
+          />
+        )}
       </div>
 
       <DriverFormModal 

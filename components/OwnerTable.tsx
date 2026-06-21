@@ -1,6 +1,7 @@
 
 import React from 'react';
 import type { Owner } from '../types';
+import { formatCpfCnpj, formatPhone } from '../utils/formatters';
 
 interface OwnerTableProps {
   owners: Owner[];
@@ -41,10 +42,10 @@ const OwnerTable: React.FC<OwnerTableProps> = ({ owners, onEdit, onDelete }) => 
                   <div className="text-sm font-medium text-gray-900 dark:text-white">{owner.name}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                  {owner.cpfCnpj}
+                  {owner.cpfCnpj ? formatCpfCnpj(owner.cpfCnpj) : ''}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                  {owner.phone}
+                  {owner.phone ? formatPhone(owner.phone) : ''}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${

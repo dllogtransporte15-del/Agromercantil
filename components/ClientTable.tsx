@@ -1,6 +1,7 @@
 
 import React from 'react';
 import type { Client } from '../types';
+import { formatCpfCnpj, formatPhone } from '../utils/formatters';
 
 interface ClientTableProps {
   clients: Client[];
@@ -42,13 +43,13 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, onEdit, onDelete }) 
                   <div className="text-sm text-gray-500 dark:text-gray-400">{client.razaoSocial}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                  {client.cnpj}
+                  {client.cnpj ? formatCpfCnpj(client.cnpj) : ''}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                   {client.city}/{client.state}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-gray-900 dark:text-white">{client.phone}</div>
+                  <div className="text-sm text-gray-900 dark:text-white">{client.phone ? formatPhone(client.phone) : ''}</div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">{client.email}</div>
                 </td>
                 {(onEdit || onDelete) && (

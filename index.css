@@ -21,7 +21,7 @@ body {
   color: #1E293B;
 }
 
-:is(.dark body) {
+.dark body {
   background-color: #0F172A;
   color: #F8FAFC;
 }
@@ -49,15 +49,15 @@ textarea:focus {
   outline: none !important;
 }
 
-:is(.dark input),
-:is(.dark select),
-:is(.dark textarea) {
+.dark input,
+.dark select,
+.dark textarea {
   @apply border-gray-700 bg-gray-800/50 text-white;
 }
 
-:is(.dark input:focus),
-:is(.dark select:focus),
-:is(.dark textarea:focus) {
+.dark input:focus,
+.dark select:focus,
+.dark textarea:focus {
   @apply border-primary-500 bg-gray-800;
   box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2) !important;
 }
@@ -69,8 +69,9 @@ textarea:disabled {
   @apply bg-gray-100 text-gray-500 cursor-not-allowed border-gray-200 opacity-80;
 }
 
-:is(.dark input:disabled),
-:is(.dark select:disabled) {
+.dark input:disabled,
+.dark select:disabled,
+.dark textarea:disabled {
   @apply bg-gray-900 text-gray-400 border-gray-800;
 }
 
@@ -140,7 +141,7 @@ button.text-blue-600:hover {
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 0 4px rgba(0,0,0,0.04) !important;
 }
 
-:is(.dark .bg-gray-800.shadow) {
+.dark .bg-gray-800.shadow {
   border-radius: 1rem !important;
   box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.2) !important;
   border: 1px solid rgba(51, 65, 85, 0.5);
@@ -155,7 +156,7 @@ button.text-blue-600:hover {
   border-top-width: 4px;
   border-color: var(--primary);
 }
-:is(.dark .card-brand) { background-color: #1E293B; }
+.dark .card-brand { background-color: #1E293B; }
 
 /* Global Tables Premium UI */
 table {
@@ -171,7 +172,7 @@ thead th {
   border-bottom: 1px solid #e2e8f0;
 }
 
-:is(.dark thead th) {
+.dark thead th {
   @apply bg-gray-800/80 text-gray-400 border-gray-700;
 }
 
@@ -194,9 +195,9 @@ tbody tr:hover {
   background-color: rgba(240, 253, 244, 0.4) !important; /* subtle primary hover */
 }
 
-:is(.dark tbody tr) { border-bottom: 1px solid #334155; }
-:is(.dark tbody td) { color: #cbd5e1; }
-:is(.dark tbody tr:hover) { background-color: rgba(15, 23, 42, 0.6) !important; }
+.dark tbody tr { border-bottom: 1px solid #334155; }
+.dark tbody td { color: #cbd5e1; }
+.dark tbody tr:hover { background-color: rgba(15, 23, 42, 0.6) !important; }
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
@@ -215,10 +216,10 @@ tbody tr:hover {
 ::-webkit-scrollbar-thumb:hover {
   background-color: rgba(148, 163, 184, 0.9);
 }
-:is(.dark ::-webkit-scrollbar-thumb) {
+.dark ::-webkit-scrollbar-thumb {
   background-color: rgba(71, 85, 105, 0.8);
 }
-:is(.dark ::-webkit-scrollbar-thumb:hover) {
+.dark ::-webkit-scrollbar-thumb:hover {
   background-color: rgba(100, 116, 139, 0.9);
 }
 
@@ -234,10 +235,9 @@ tbody tr:hover {
   border-radius: 1.25rem !important;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15) !important;
   border: 1px solid rgba(255, 255, 255, 0.5);
-  overflow: hidden;
 }
 
-:is(.dark .fixed .bg-gray-800) {
+.dark .fixed .bg-gray-800 {
   border: 1px solid rgba(51, 65, 85, 0.5);
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.3) !important;
 }
@@ -248,7 +248,7 @@ tbody tr:hover {
   letter-spacing: -0.01em;
   color: #0f172a;
 }
-:is(.dark .fixed .bg-gray-800 h2) { color: #f8fafc; }
+.dark .fixed .bg-gray-800 h2 { color: #f8fafc; }
 
 /* =========================================
    EXISTING BRAND PATTERNS & UTILS

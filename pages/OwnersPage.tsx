@@ -7,6 +7,7 @@ import OwnerFilter, { OwnerFilters } from '../components/OwnerFilter';
 import type { Owner, User, ProfilePermissions } from '../types';
 import { OwnerType } from '../types';
 import { can } from '../auth';
+import Pagination from '../components/Pagination';
 
 interface OwnersPageProps {
   owners: Owner[];
@@ -27,6 +28,9 @@ const OwnersPage: React.FC<OwnersPageProps> = ({ owners, setOwners, onSaveOwner,
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
   const canCreate = can('create', currentUser, 'owners', profilePermissions);
   const canUpdate = can('update', currentUser, 'owners', profilePermissions);
   const canDelete = can('delete', currentUser, 'owners', profilePermissions);
@@ -41,6 +45,16 @@ const OwnersPage: React.FC<OwnersPageProps> = ({ owners, setOwners, onSaveOwner,
       return nameMatch && cpfCnpjMatch && phoneMatch && typeMatch;
     });
   }, [owners, filters]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
+
+  const totalPages = Math.ceil(filteredOwners.length / itemsPerPage);
+  const paginatedOwners = filteredOwners.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   const handleOpenModal = () => {
     setOwnerToEdit(null);
@@ -174,10 +188,20 @@ const OwnersPage: React.FC<OwnersPageProps> = ({ owners, setOwners, onSaveOwner,
       />
 
       <OwnerTable 
-        owners={filteredOwners} 
+        owners={paginatedOwners} 
         onEdit={canUpdate ? handleEditOwner : undefined} 
         onDelete={canDelete ? handleDeleteOwner : undefined} 
       />
+
+      {totalPages > 1 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalItems={filteredOwners.length}
+          itemsPerPage={itemsPerPage}
+        />
+      )}
 
       <OwnerFormModal
         isOpen={isModalOpen}

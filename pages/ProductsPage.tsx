@@ -4,6 +4,7 @@ import Header from '../components/Header';
 import type { Product, User, ProfilePermissions } from '../types';
 import { ProductUnit } from '../types';
 import { can } from '../auth';
+import Pagination from '../components/Pagination';
 
 interface ProductsPageProps {
   products: Product[];
@@ -127,6 +128,9 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
   const canCreate = can('create', currentUser, 'products', profilePermissions);
   const canUpdate = can('update', currentUser, 'products', profilePermissions);
   const canDelete = can('delete', currentUser, 'products', profilePermissions);
@@ -149,6 +153,16 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
 
   const filteredProducts = products.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const paginatedProducts = filteredProducts.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
   );
 
   return (
@@ -203,7 +217,7 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {filteredProducts.map(product => (
+              {paginatedProducts.map(product => (
                 <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                   <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
                     {product.name}
@@ -243,6 +257,16 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
       <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
         {filteredProducts.length} produto(s) encontrado(s)
       </p>
+
+      {totalPages > 1 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalItems={filteredProducts.length}
+          itemsPerPage={itemsPerPage}
+        />
+      )}
 
       <ProductFormModal
         isOpen={isModalOpen}
