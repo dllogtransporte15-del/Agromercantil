@@ -184,10 +184,11 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
           const totalPJ = legs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
           const totalPF = legs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
 
-          const pricePJ = totalPJ.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          const pricePF = totalPF.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const pricePJ = totalPJ === 0 ? 'A Combinar' : totalPJ.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const pricePF = totalPF === 0 ? 'A Combinar' : totalPF.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const priceDisplay = (totalPJ === 0 && totalPF === 0) ? 'Valor a Combinar' : `_PJ ${pricePJ} / PF ${pricePF}_`;
 
-          text += `\n* *${dest.city}* 💲 *_PJ ${pricePJ}/PF ${pricePF}_*`;
+          text += `\n* *${dest.city}* 💲 *${priceDisplay}*`;
           if (dest.mapLink) {
              text += `\n${dest.mapLink}`;
           }

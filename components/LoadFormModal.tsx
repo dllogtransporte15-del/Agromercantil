@@ -10,6 +10,7 @@ import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { geocodeCity } from '../utils/geocoding';
 import { useToast } from '../hooks/useToast';
 import { formatCityState } from '../utils/formatters';
+import DatePicker, { DateObject } from "react-multi-date-picker";
 
 interface LoadFormModalProps {
   isOpen: boolean;
@@ -84,7 +85,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
   const [hasMultiLeg, setHasMultiLeg] = useState(false);
   const [showSalesperson, setShowSalesperson] = useState(false);
   
-  const [newScheduleDate, setNewScheduleDate] = useState('');
+  const [newScheduleDates, setNewScheduleDates] = useState<DateObject[]>([]);
   const [newScheduleType, setNewScheduleType] = useState<DailyScheduleType>(DailyScheduleType.Livre);
   const [newScheduleTonnage, setNewScheduleTonnage] = useState<number | undefined>();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -423,31 +424,37 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
   };
   
   const handleAddSchedule = () => {
-    if (!newScheduleDate) {
-        showToast('Por favor, selecione uma data.', 'warning');
+    if (!newScheduleDates || newScheduleDates.length === 0) {
+        showToast('Por favor, selecione pelo menos uma data.', 'warning');
         return;
     }
-    if ((load.dailySchedule || []).some(e => e.date === newScheduleDate)) {
-        showToast('Já existe uma programação para esta data. Remova a antiga primeiro.', 'warning');
-        return;
-    }
-    if (newScheduleType === DailyScheduleType.Fixo && (!newScheduleTonnage || newScheduleTonnage <= 0)) {
-        showToast('Para Demanda Fixa, a tonelagem deve ser maior que zero.', 'warning');
+    
+    const datesStrings = newScheduleDates.map(d => `${d.year}-${String(d.month.number).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`);
+    const alreadyScheduled = datesStrings.filter(d => (load.dailySchedule || []).some(e => e.date === d));
+    
+    if (alreadyScheduled.length > 0) {
+        const formattedDates = alreadyScheduled.map(d => new Date(d + 'T12:00:00Z').toLocaleDateString('pt-BR'));
+        showToast(`As seguintes datas já estão na programação: ${formattedDates.join(', ')}. Remova-as primeiro.`, 'warning');
         return;
     }
 
-    const newEntry: DailyScheduleEntry = {
-        date: newScheduleDate,
+    if (!newScheduleTonnage || newScheduleTonnage <= 0) {
+        showToast('A tonelagem estimada por dia deve ser maior que zero.', 'warning');
+        return;
+    }
+
+    const newEntries: DailyScheduleEntry[] = datesStrings.map(dateStr => ({
+        date: dateStr,
         type: newScheduleType,
-        tonnage: newScheduleType === DailyScheduleType.Fixo ? newScheduleTonnage : undefined,
-    };
+        tonnage: newScheduleTonnage,
+    }));
 
     setLoad(prev => ({
         ...prev,
-        dailySchedule: [...(prev.dailySchedule || []), newEntry].sort((a,b) => a.date.localeCompare(b.date)),
+        dailySchedule: [...(prev.dailySchedule || []), ...newEntries].sort((a,b) => a.date.localeCompare(b.date)),
     }));
     
-    setNewScheduleDate('');
+    setNewScheduleDates([]);
     setNewScheduleType(DailyScheduleType.Livre);
     setNewScheduleTonnage(undefined);
   };
@@ -665,9 +672,17 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                  <div>
                     <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Adicionar Nova Programação</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 items-end">
-                       <div>
-                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Data</label>
-                         <input type="date" value={newScheduleDate} onChange={(e) => setNewScheduleDate(e.target.value)} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600"/>
+                       <div className="flex flex-col">
+                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Datas</label>
+                         <DatePicker
+                           multiple
+                           value={newScheduleDates}
+                           onChange={setNewScheduleDates}
+                           format="DD/MM/YYYY"
+                           placeholder="Selecione as datas..."
+                           containerClassName="w-full mt-1"
+                           inputClass="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                         />
                        </div>
                        <div>
                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de Demanda</label>
@@ -676,9 +691,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                          </select>
                        </div>
                        <div>
-                         {newScheduleType === DailyScheduleType.Fixo && (
-                            <input type="number" value={newScheduleTonnage || ''} onChange={(e) => setNewScheduleTonnage(parseFloat(e.target.value) || undefined)} placeholder="Toneladas" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                         )}
+                            <input type="number" value={newScheduleTonnage || ''} onChange={(e) => setNewScheduleTonnage(parseFloat(e.target.value) || undefined)} placeholder="Toneladas" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
                        </div>
                        <div className="md:col-span-3">
                          <button type="button" onClick={handleAddSchedule} className="w-full py-2 bg-primary text-white rounded-lg hover:bg-primary-dark">Adicionar à Timeline</button>
@@ -732,7 +745,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                                 <div key={entry.date} className="flex justify-between items-center p-2 border rounded-md dark:border-gray-600">
                                     <div>
                                         <p className="font-semibold text-gray-800 dark:text-gray-200">{new Date(entry.date + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400">{entry.type} {entry.type === DailyScheduleType.Fixo ? `(${entry.tonnage} ton)` : ''}</p>
+                                        <p className="text-sm text-gray-600 dark:text-gray-400">{entry.type} ({entry.tonnage} ton)</p>
                                     </div>
                                     <button type="button" onClick={() => handleRemoveSchedule(entry.date)} className="p-1 text-red-500 hover:text-red-700 dark:hover:text-red-400"><XIcon className="w-5 h-5"/></button>
                                 </div>

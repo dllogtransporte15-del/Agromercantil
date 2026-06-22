@@ -1519,6 +1519,13 @@ const App: React.FC = () => {
 
       if (!oldCargo) return;
 
+      if (loadData.status === CargoStatus.Fechada || loadData.status === CargoStatus.Suspensa) {
+        const today = new Date().toISOString().split('T')[0];
+        if (loadData.dailySchedule) {
+          loadData.dailySchedule = loadData.dailySchedule.filter(entry => entry.date <= today);
+        }
+      }
+
       const changes: string[] = [];
       (Object.keys(loadData) as Array<keyof Cargo>).forEach(key => {
         if (key === 'scheduledVolume' || key === 'loadedVolume') return;
@@ -1802,10 +1809,14 @@ const App: React.FC = () => {
         return;
     }
 
+    const today = new Date().toISOString().split('T')[0];
+    const filteredSchedule = cargoToSuspend.dailySchedule ? cargoToSuspend.dailySchedule.filter(entry => entry.date <= today) : [];
+
     const updatedCargo: Cargo = {
       ...cargoToSuspend,
       status: CargoStatus.Suspensa,
-      history: [...cargoToSuspend.history, createHistoryLog(`Carga suspensa por ${currentUser.name}. Motivo: ${reason}.`)]
+      dailySchedule: filteredSchedule,
+      history: [...cargoToSuspend.history, createHistoryLog(`Carga suspensa por ${currentUser.name}. Motivo: ${reason}. Programação futura excluída.`)]
     };
 
     setCargos(prev => prev.map(c => c.id === cargoToSuspend.id ? updatedCargo : c));

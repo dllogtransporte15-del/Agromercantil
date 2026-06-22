@@ -33,15 +33,15 @@ const ChangeDailyScheduleModal: React.FC<ChangeDailyScheduleModalProps> = ({ isO
 
   const handleSave = () => {
     if (!date) return;
-    if (scheduleType === DailyScheduleType.Fixo && (!tonnage || tonnage <= 0)) {
-        showToast('Para Demanda Fixa, a tonelagem deve ser maior que zero.', 'warning');
+    if (!tonnage || tonnage <= 0) {
+        showToast('A tonelagem estimada por dia deve ser maior que zero.', 'warning');
         return;
     }
 
     onSave({
         date,
         type: scheduleType,
-        tonnage: scheduleType === DailyScheduleType.Fixo ? tonnage : undefined,
+        tonnage: tonnage,
     });
   };
 
@@ -79,22 +79,20 @@ const ChangeDailyScheduleModal: React.FC<ChangeDailyScheduleModalProps> = ({ isO
                 ))}
             </div>
 
-            {scheduleType === DailyScheduleType.Fixo && (
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mt-4">
-                        Limite de Toneladas
-                    </label>
-                    <input
-                        type="number"
-                        value={tonnage || ''}
-                        onChange={(e) => setTonnage(parseFloat(e.target.value) || undefined)}
-                        placeholder="Ex: 120"
-                        className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600"
-                        required
-                        step="0.01"
-                    />
-                </div>
-            )}
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mt-4">
+                    Toneladas Estimadas por Dia
+                </label>
+                <input
+                    type="number"
+                    value={tonnage || ''}
+                    onChange={(e) => setTonnage(parseFloat(e.target.value) || undefined)}
+                    placeholder="Ex: 120"
+                    className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600"
+                    required
+                    step="0.01"
+                />
+            </div>
         </div>
 
         <div className="mt-8 flex justify-between items-center">

@@ -59,83 +59,18 @@ const DemandForecastReport: React.FC<DemandForecastReportProps> = ({ cargos, shi
 
       let cargoWeeklyPlanned = 0;
 
-      // Determine if cargo is Livre/Verificar by checking ALL its schedule entries
-      let hasLivreOrVerificar = false;
       if (cargo.dailySchedule && Array.isArray(cargo.dailySchedule)) {
-        hasLivreOrVerificar = cargo.dailySchedule.some(s => s.type === 'Demanda Livre' || s.type === 'Demanda a Verificar');
-      }
-
-      if (hasLivreOrVerificar) {
-        // Use the new duration-based logic if dates are set
-        if (cargo.loadingStartDate && cargo.loadingDeadline) {
-           const cargoStart = new Date(cargo.loadingStartDate + 'T12:00:00Z');
-           const cargoEnd = new Date(cargo.loadingDeadline + 'T12:00:00Z');
-           const diffTime = cargoEnd.getTime() - cargoStart.getTime();
-           const totalDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
-
-           // A programação diária pega o volume total e divide pela quantidade de dias de prazo
-           const dailyLivreQuota = cargo.totalVolume / totalDays;
-
-           const filterStart = new Date(startDate + 'T12:00:00Z');
-           const filterEnd = new Date(endDate + 'T12:00:00Z');
-           const filterDiff = filterEnd.getTime() - filterStart.getTime();
-           const filterDays = Math.max(1, Math.ceil(filterDiff / (1000 * 60 * 60 * 24)) + 1);
-
-           for (let i = 0; i < filterDays; i++) {
-             const currentDay = new Date(filterStart.getTime() + i * 24 * 60 * 60 * 1000);
-             const currentDayStr = currentDay.toISOString().split('T')[0];
-             const dayOfWeek = currentDay.getDay();
-
-             // Só planeja pro dia se estiver dentro da vigência do prazo
-             if (currentDayStr >= cargo.loadingStartDate && currentDayStr <= cargo.loadingDeadline) {
-               dataByClient[clientName].dailyPlanned[dayOfWeek] += dailyLivreQuota;
-               cargoWeeklyPlanned += dailyLivreQuota;
-             }
-           }
-        } else {
-           // Fallback to previous logic se faltarem datas: só aplica se houver alguma entrada explícita na semana
-           const hasScheduleInFilter = (cargo.dailySchedule || []).some(s => 
-             s.date >= startDate && s.date <= endDate && (s.type === 'Demanda Livre' || s.type === 'Demanda a Verificar')
-           );
-
-           if (hasScheduleInFilter) {
-             let volumeLoadedBefore = 0;
-             shipments.forEach(shipment => {
-               if (shipment.cargoId === cargo.id && validStatuses.includes(shipment.status) && shipment.scheduledDate < startDate) {
-                 volumeLoadedBefore += (shipment.shipmentTonnage || 0);
-               }
-             });
-             const pendingBalance = Math.max(0, cargo.totalVolume - volumeLoadedBefore);
+         cargo.dailySchedule.forEach(schedule => {
+           if (schedule.date >= startDate && schedule.date <= endDate) {
+             const [y, m, d] = schedule.date.split('-').map(Number);
+             const dateObj = new Date(y, m - 1, d);
+             const dayOfWeek = dateObj.getDay();
+             const amount = schedule.tonnage || 0;
              
-             const filterStart = new Date(startDate + 'T12:00:00Z');
-             const filterEnd = new Date(endDate + 'T12:00:00Z');
-             const filterDiff = filterEnd.getTime() - filterStart.getTime();
-             const filterDays = Math.max(1, Math.ceil(filterDiff / (1000 * 60 * 60 * 24)) + 1);
-             
-             const dailyLivreQuota = pendingBalance / 7;
-             for (let i = 0; i < filterDays; i++) {
-               const currentDay = new Date(filterStart.getTime() + i * 24 * 60 * 60 * 1000);
-               const dayOfWeek = currentDay.getDay();
-               dataByClient[clientName].dailyPlanned[dayOfWeek] += dailyLivreQuota;
-               cargoWeeklyPlanned += dailyLivreQuota;
-             }
+             dataByClient[clientName].dailyPlanned[dayOfWeek] += amount;
+             cargoWeeklyPlanned += amount;
            }
-        }
-      } else {
-        // Only Fixo
-        if (cargo.dailySchedule && Array.isArray(cargo.dailySchedule)) {
-           cargo.dailySchedule.forEach(schedule => {
-             if (schedule.date >= startDate && schedule.date <= endDate && schedule.type === 'Demanda Fixa') {
-               const [y, m, d] = schedule.date.split('-').map(Number);
-               const dateObj = new Date(y, m - 1, d);
-               const dayOfWeek = dateObj.getDay();
-               const amount = schedule.tonnage || 0;
-               
-               dataByClient[clientName].dailyPlanned[dayOfWeek] += amount;
-               cargoWeeklyPlanned += amount;
-             }
-           });
-        }
+         });
       }
 
       dataByClient[clientName].detailedPlanned += cargoWeeklyPlanned;

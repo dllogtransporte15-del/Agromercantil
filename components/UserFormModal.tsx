@@ -23,6 +23,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
     password: '',
     clientId: undefined,
     branchId: undefined,
+    phone: '',
   });
 
   const [user, setUser] = useState<Omit<User, 'id' | 'password'> & { password?: string }>(getInitialState());
@@ -91,6 +92,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
         <form onSubmit={handleSubmit} className="space-y-4">
           <input name="name" value={user.name} onChange={handleChange} placeholder="Nome Completo" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
           <input name="email" value={user.email} onChange={handleChange} type="email" placeholder="Email de Acesso" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
+          <input name="phone" value={user.phone || ''} onChange={handleChange} type="tel" placeholder="Telefone / WhatsApp (ex: 5511999999999)" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
           <input name="password" value={user.password} onChange={handleChange} type="password" placeholder={userToEdit ? 'Nova Senha (deixe em branco para manter)' : 'Senha'} className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
           
           <div>

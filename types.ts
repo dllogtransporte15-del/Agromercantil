@@ -34,6 +34,7 @@ export interface User {
   authId?: string;
   passwordUpdatedAt?: string;
   branchId?: string;
+  phone?: string;
 }
 
 export enum PaymentMethod {
