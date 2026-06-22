@@ -121,7 +121,7 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
     anttValue: '7000',
     valuePerKm: '0',
     driverTotalValue: '0',
-    margin: '0',
+    margin: '10',
     icms: '0',
     dieselPrice: '0',
     averageConsumption: '0',
@@ -222,7 +222,7 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
     const antt = parseFloat(formData.anttValue) || 0;
     const baseCost = antt + toll;
     const driverValueInput = parseFloat(formData.driverValue) || 0;
-    const companyFreightInput = parseFloat(formData.companyFreightPerTon) || 0;
+    const marginInput = parseFloat(formData.margin) || 0;
 
     let driverTotalValue = 0;
     let driverFreightPerTon = 0;
@@ -235,8 +235,14 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
       driverFreightPerTon = weight > 0 ? driverTotalValue / weight : 0;
     }
 
-    const companyTotalFreight = companyFreightInput * weight;
-    const marginPercent = companyFreightInput > 0 ? ((companyFreightInput - driverFreightPerTon) / companyFreightInput) * 100 : 0;
+    let companyFreightPerTon = 0;
+    if (marginInput >= 100) {
+      companyFreightPerTon = driverFreightPerTon;
+    } else {
+      companyFreightPerTon = driverFreightPerTon / (1 - (marginInput / 100));
+    }
+
+    const companyTotalFreight = companyFreightPerTon * weight;
     
     const differenceFromBase = driverTotalValue - baseCost;
     const isValid = differenceFromBase >= 0;
@@ -247,15 +253,15 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
       driverTotalValue,
       driverFreightPerTon,
       companyTotalFreight,
-      companyFreightPerTon: companyFreightInput,
-      marginPercent,
+      companyFreightPerTon,
+      marginPercent: marginInput,
       differenceFromBase,
       isValid,
       // Default zero compat
       dieselCost: 0,
       commissionValue: 0,
       carrierNetProfit: companyTotalFreight - driverTotalValue,
-      carrierProfitMargin: marginPercent
+      carrierProfitMargin: marginInput
     };
   }, [formData, routeInfo]);
 
@@ -510,17 +516,17 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
 
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Frete Empresa (R$/Ton)</label>
+                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Margem de Lucro Prevista (%)</label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">R$</span>
-                    <input type="number" step="0.01" name="companyFreightPerTon" value={formData.companyFreightPerTon} onChange={handleInputChange} className="w-full pl-10 pr-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm font-semibold focus:ring-2 focus:ring-indigo-500" placeholder="0.00" />
+                    <input type="number" step="0.1" name="margin" value={formData.margin} onChange={handleInputChange} className="w-full pr-8 px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm font-semibold text-right focus:ring-2 focus:ring-indigo-500" placeholder="0.00" />
+                    <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Margem de Lucro Prevista (%)</label>
+                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Frete Empresa (R$/Ton)</label>
                   <div className="relative">
-                    <input type="text" readOnly title="A margem de lucro é calculada automaticamente baseada no Frete Empresa e o frete do motorista." value={results ? results.marginPercent.toFixed(2) : '0.00'} className="w-full pr-8 px-3 py-2 bg-slate-50 border border-slate-200 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg text-sm font-bold text-slate-500 text-right outline-none cursor-not-allowed" />
-                    <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">R$</span>
+                    <input type="text" readOnly title="O Frete Empresa é calculado automaticamente." value={results ? results.companyFreightPerTon.toFixed(2) : '0.00'} className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg text-sm font-bold text-slate-500 outline-none cursor-not-allowed" />
                   </div>
                 </div>
               </div>
