@@ -38,6 +38,8 @@ export interface StayRecord {
 export interface QuoteRecord {
   id: string;
   clientName?: string;
+  productName?: string;
+  userName?: string;
   date: string;
   origin: string;
   destination: string;
@@ -438,6 +440,8 @@ export async function getToolQuotes(userId: string): Promise<QuoteRecord[]> {
   return (data ?? []).map((row: any) => ({
     id: row.id,
     clientName: row.client_name ?? undefined,
+    productName: row.product_name ?? undefined,
+    userName: row.user_name ?? undefined,
     date: row.created_at,
     origin: row.origin,
     destination: row.destination,
@@ -473,6 +477,8 @@ export async function getAllToolQuotes(): Promise<QuoteRecord[]> {
   return (data ?? []).map((row: any) => ({
     id: row.id,
     clientName: row.client_name ?? undefined,
+    productName: row.product_name ?? undefined,
+    userName: row.user_name ?? undefined,
     date: row.created_at,
     origin: row.origin,
     destination: row.destination,
@@ -503,6 +509,8 @@ export async function saveToolQuote(
   const payload: any = {
     user_id: userId,
     client_name: quote.clientName ?? null,
+    product_name: quote.productName ?? null,
+    user_name: quote.userName ?? null,
     origin: quote.origin,
     destination: quote.destination,
     distance: quote.distance,
@@ -554,6 +562,8 @@ export async function saveToolQuote(
     ? {
         id: data.id,
         clientName: data.client_name ?? undefined,
+        productName: data.product_name ?? undefined,
+        userName: data.user_name ?? undefined,
         date: data.created_at,
         origin: data.origin,
         destination: data.destination,

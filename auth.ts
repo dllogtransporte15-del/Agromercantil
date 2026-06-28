@@ -21,7 +21,7 @@ const createPermissions = (pages: Page[], readOnly = false): { [key in Page]?: C
 const diretorPages = allPages.filter(p => p !== 'appearance');
 const coordenadorPages = diretorPages.filter(p => p !== 'users-register');
 export const INITIAL_PERMISSIONS: ProfilePermissions = {
-  [UserProfile.Comercial]: createPermissions(['dashboard', 'clients', 'owners', 'drivers', 'vehicles', 'loads', 'shipments', 'reports', 'operational-loads', 'financial', 'operational-map', 'commissions', 'shipment-history', 'load-history', 'layover-calculator', 'freight-quote']),
+  [UserProfile.Comercial]: createPermissions(['dashboard', 'clients', 'owners', 'drivers', 'vehicles', 'loads', 'shipments', 'reports', 'operational-loads', 'financial', 'operational-map', 'commissions', 'shipment-history', 'load-history', 'layover-calculator', 'freight-quote', 'tools-history']),
   [UserProfile.Fiscal]: createPermissions(['dashboard', 'shipments', 'reports', 'shipment-history', 'load-history'], true),
   [UserProfile.Financeiro]: createPermissions(['dashboard', 'shipments', 'reports', 'financial', 'commissions', 'shipment-history', 'load-history'], true),
   [UserProfile.Embarcador]: createPermissions(['dashboard', 'reports', 'operational-loads', 'shipments', 'operational-map', 'shipment-history', 'load-history', 'layover-calculator'], true),

@@ -11,7 +11,7 @@ import {
   Percent, Scale, Fuel, Info, Save, Download, 
   FileText, CheckCircle2, AlertCircle, Loader2,
   ArrowRight, Settings2, Building2, Calculator,
-  FileCode, Clock, Search
+  FileCode, Clock, Search, Package
 } from 'lucide-react';
 import Header from '../components/Header';
 import { saveToolQuote, getToolClients, saveToolClient, ToolClient } from '../services/api/toolsApi';
@@ -33,6 +33,7 @@ interface Location {
 
 interface QuoteData {
   clientName: string;
+  productName: string;
   origin: string;
   destination: string;
   weight: string;
@@ -109,6 +110,7 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
 
   const initialData: QuoteData = {
     clientName: '',
+    productName: '',
     origin: '',
     destination: '',
     weight: '32',
@@ -279,6 +281,8 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
 
       const saved = await saveToolQuote(currentUser.authId || currentUser.id, {
         clientName: formData.clientName || 'Não Informado',
+        productName: formData.productName || undefined,
+        userName: currentUser.name || undefined,
         origin: formData.origin,
         destination: formData.destination,
         distance: routeInfo.distance,
@@ -325,9 +329,12 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
       head: [['Especificação', 'Detalhes']],
       body: [
         ['Data da Cotação', format(new Date(), 'dd/MM/yyyy HH:mm')],
+        ['Usuário', currentUser?.name || 'Não Identificado'],
         ['Cliente', formData.clientName || 'Não Informado'],
+        ['Produto', formData.productName || 'Não Informado'],
         ['Origem', formData.origin],
         ['Destino', formData.destination],
+        ['Nº de Eixos', `${formData.axes} Eixos`],
         ['Valor do Frete Empresa', `${formatCurrency(results.companyFreightPerTon)} / Tonelada`]
       ],
       theme: 'grid',
@@ -359,6 +366,13 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
                 <datalist id="clients-list-q">
                   {clients.map(c => <option key={c.id} value={c.name} />)}
                 </datalist>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
+                  <Package className="w-4 h-4 mr-1.5 text-slate-400" /> Produto
+                </label>
+                <input type="text" name="productName" value={formData.productName} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm" placeholder="Ex: Soja, Milho (opcional)" />
               </div>
 
               <div className="space-y-4">

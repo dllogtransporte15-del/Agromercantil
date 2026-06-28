@@ -118,7 +118,8 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
       const matchesSearch = 
         quote.origin.toLowerCase().includes(searchTerm.toLowerCase()) ||
         quote.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (quote.clientName && quote.clientName.toLowerCase().includes(searchTerm.toLowerCase()));
+        (quote.clientName && quote.clientName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (quote.productName && quote.productName.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchesClient = !filterClient || quote.clientName === filterClient;
 
@@ -308,12 +309,15 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         formatCurrency(s.totalValue)
       ]);
     } else {
-      head = [['Data da Cotação', 'Cliente', 'Origem', 'Destino', 'Valor do Frete Empresa (por Tonelada)']];
+      head = [['Data da Cotação', 'Usuário', 'Cliente', 'Produto', 'Origem', 'Destino', 'Eixos', 'Valor Empresa (por Ton)']];
       body = (data as QuoteRecord[]).map(q => [
         format(parseISO(q.date), 'dd/MM/yyyy HH:mm'),
+        q.userName || '-',
         q.clientName || '-',
+        q.productName || '-',
         q.origin,
         q.destination,
+        q.axes ? `${q.axes}` : '-',
         formatCurrency(q.companyFreightPerTon || 0)
       ]);
     }
@@ -395,9 +399,14 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                           {activeView === 'estadias' ? <Truck className="w-6 h-6" /> : <ArrowRight className="w-6 h-6" />}
                        </div>
                        <div>
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center flex-wrap gap-2 mb-1">
                             <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-400 rounded-md tracking-wider uppercase">{item.id}</span>
                             <span className="text-xs text-slate-400 font-medium">{format(parseISO(item.date), 'dd/MM/yyyy')} às {format(parseISO(item.date), 'HH:mm')}</span>
+                            {item.userName && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-md uppercase tracking-wider flex items-center">
+                                <User className="w-3 h-3 mr-1" /> {item.userName}
+                              </span>
+                            )}
                           </div>
                           <h3 className="text-lg font-bold text-slate-800 dark:text-white leading-tight">
                              {activeView === 'estadias' ? (
@@ -408,6 +417,9 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                           </h3>
                           <div className="flex flex-wrap items-center mt-2 gap-y-1 gap-x-4 text-sm text-slate-500 font-medium">
                              <div className="flex items-center"><Building2 className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> {item.clientName || 'Cliente Particular'}</div>
+                             {activeView === 'cotacoes' && item.productName && (
+                               <div className="flex items-center"><Scale className="w-3.5 h-3.5 mr-1.5 text-amber-500" /> {item.productName}</div>
+                             )}
                              <div className="flex items-center"><MapPin className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> {activeView === 'estadias' ? `${item.origin} → ${item.destination}` : `${item.distance.toFixed(0)} km`}</div>
                           </div>
                        </div>
@@ -415,7 +427,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
 
                     <div className="flex items-center justify-between md:flex-col md:items-end gap-2">
                        <div className={`text-xl font-black ${activeView === 'estadias' ? 'text-indigo-600' : 'text-emerald-600'}`}>
-                          {formatCurrency(activeView === 'estadias' ? item.totalValue : item.companyTotalFreight)}
+                          {activeView === 'estadias' ? formatCurrency(item.totalValue) : `${formatCurrency(item.companyFreightPerTon)} / Ton`}
                        </div>
                        <button onClick={(e) => { e.stopPropagation(); toggleExpand(item.id); }} className="p-2 hover:bg-slate-100 dark:hover:bg-gray-700 rounded-full transition-colors">
                           {expandedId === item.id ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
@@ -649,6 +661,12 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                 <span className="text-slate-500">Distância Total</span>
                                 <span className="font-bold text-slate-700 dark:text-gray-300">{item.distance.toFixed(0)} km</span>
                               </div>
+                              {item.productName && (
+                                <div className="flex justify-between text-sm py-2 border-b border-slate-100 dark:border-gray-700">
+                                  <span className="text-slate-500">Produto</span>
+                                  <span className="font-bold text-amber-600 dark:text-amber-400">{item.productName}</span>
+                                </div>
+                              )}
                               <div className="flex justify-between text-sm py-2 border-b border-slate-100 dark:border-gray-700">
                                 <span className="text-slate-500">Config. de Eixos</span>
                                 <span className="font-bold text-slate-700 dark:text-gray-300">{item.axes} Eixos</span>
@@ -682,7 +700,9 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Lucro Operacional</div>
                                <div className="text-lg font-bold text-emerald-600 mb-3">{formatCurrency(item.carrierNetProfit)} ({item.carrierProfitMargin.toFixed(1)}%)</div>
                                <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Cotação p/ Cliente</div>
-                               <div className="text-2xl font-black text-slate-800 dark:text-white">{formatCurrency(item.companyTotalFreight)}</div>
+                               <div className="text-2xl font-black text-slate-800 dark:text-white">
+                                 {formatCurrency(item.companyFreightPerTon)} <span className="text-sm text-slate-500 font-medium normal-case">/ Ton</span>
+                               </div>
                             </div>
                           </div>
                         </>
