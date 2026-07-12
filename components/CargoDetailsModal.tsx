@@ -41,10 +41,17 @@ const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number }> = ({ leg, i
                     <p className="text-xs text-emerald-600 dark:text-emerald-400">Frete Motor. PJ</p>
                     <p className="font-medium text-emerald-700 dark:text-emerald-300">{fmt(pj)}</p>
                 </div>
-                <div>
-                    <p className="text-xs text-orange-600 dark:text-orange-400">Frete Motor. PF</p>
-                    <p className="font-medium text-orange-700 dark:text-orange-300">{fmt(pf)}</p>
-                </div>
+                {!leg.disableDriverFreightPF ? (
+                    <div>
+                        <p className="text-xs text-orange-600 dark:text-orange-400">Frete Motor. PF</p>
+                        <p className="font-medium text-orange-700 dark:text-orange-300">{fmt(pf)}</p>
+                    </div>
+                ) : (
+                    <div>
+                        <p className="text-xs text-gray-400">Frete Motor. PF</p>
+                        <p className="font-medium text-gray-400">Desabilitado</p>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -93,6 +100,10 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
     const formatMargin = (m: number) => isNaN(m) || !isFinite(m) ? '0,00%' : `${m.toFixed(2).replace('.', ',')}%`;
 
     return { totalCompanyFreight, totalDriverFreightPJ, totalDriverFreightPF, netMarginPercentagePJ: formatMargin(marginPJ), netMarginPercentagePF: formatMargin(marginPF), marginPJ, marginPF };
+  }, [freightLegsToDisplay]);
+
+  const isPFDisabled = useMemo(() => {
+    return freightLegsToDisplay.some(leg => leg.disableDriverFreightPF);
   }, [freightLegsToDisplay]);
 
   const getMarginColorClass = (m: number) => {
@@ -196,13 +207,22 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                             <span className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(marginPJ)}`}>{netMarginPercentagePJ}</span>
                         </div>
                     </div>
-                    <div className="p-3 bg-orange-50 dark:bg-orange-900/30 rounded-md border border-orange-200 dark:border-orange-800 flex flex-col justify-between">
-                        <label className="text-xs font-medium text-orange-600 dark:text-orange-400">Frete PF / Margem PF (1º Destino)</label>
-                        <div className="flex items-center justify-between mt-1">
-                            <p className="text-lg font-bold text-orange-700 dark:text-orange-300">{formatCurrency(totalDriverFreightPF)}</p>
-                            <span className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(marginPF)}`}>{netMarginPercentagePF}</span>
+                    {!isPFDisabled ? (
+                        <div className="p-3 bg-orange-50 dark:bg-orange-900/30 rounded-md border border-orange-200 dark:border-orange-800 flex flex-col justify-between">
+                            <label className="text-xs font-medium text-orange-600 dark:text-orange-400">Frete PF / Margem PF (1º Destino)</label>
+                            <div className="flex items-center justify-between mt-1">
+                                <p className="text-lg font-bold text-orange-700 dark:text-orange-300">{formatCurrency(totalDriverFreightPF)}</p>
+                                <span className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(marginPF)}`}>{netMarginPercentagePF}</span>
+                            </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 opacity-60 flex flex-col justify-between">
+                            <label className="text-xs font-medium text-gray-500">Frete PF / Margem PF (1º Destino)</label>
+                            <div className="flex items-center justify-between mt-1">
+                                <p className="text-lg font-bold text-gray-400">Desabilitado</p>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 

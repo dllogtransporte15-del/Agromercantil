@@ -74,24 +74,32 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo }) =>
   };
 
   return (
-    <div className="relative flex items-center justify-center min-h-screen bg-primary overflow-hidden">
+    <div className="relative flex items-center justify-center min-h-screen bg-gradient-to-br from-[#0c2e17] via-[#124E27] to-[#0a2312] overflow-hidden">
+      {/* Background glow effects matching the brand palette */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 right-0 w-[80%] h-full bg-accent opacity-10 skew-x-[-25deg] origin-top-right"></div>
-        <div className="absolute bottom-0 left-0 w-[40%] h-[50%] bg-accent opacity-5 skew-x-[-15deg] origin-bottom-left"></div>
+        {/* Top-right golden orange glow */}
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-[#F99F1B] opacity-25 blur-[100px] rounded-full"></div>
+        {/* Bottom-left lime green glow */}
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-[#86efac] opacity-15 blur-[100px] rounded-full"></div>
+        {/* Subtle center warm glow */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-[#F99F1B] opacity-[0.03] blur-[120px] rounded-full"></div>
       </div>
 
-      <div className="relative z-10 w-full max-w-[360px] p-8 space-y-4 bg-white dark:bg-dark-card rounded-2xl shadow-2xl border-t-8 border-accent">
-        <div className="text-center">
+      <div className="relative z-10 w-full max-w-[360px] p-8 space-y-4 bg-white dark:bg-dark-card rounded-2xl shadow-2xl overflow-hidden">
+        {/* Top brand gradient line */}
+        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#124E27] via-[#F99F1B] to-[#86efac]"></div>
+
+        <div className="text-center pt-2">
           {companyLogo ? (
             <img src={companyLogo} alt="Logo da Empresa" className="h-16 mx-auto filter drop-shadow-md" />
           ) : (
-            <h1 className="text-4xl font-black text-primary dark:text-white tracking-tighter">
-              AGRO<span className="text-accent">MERCANTIL</span>
+            <h1 className="text-4xl font-black tracking-tighter">
+              <span className="text-accent">AGRO</span><span className="text-primary dark:text-white">MERCANTIL</span>
             </h1>
           )}
           <div className="mt-2 flex flex-col items-center">
-            <p className="text-lg font-bold text-primary dark:text-blue-400">Sistema de Gestão Logística</p>
-            <div className="h-1 w-12 bg-accent mt-1 rounded-full"></div>
+            <p className="text-lg font-bold text-primary dark:text-[#86efac]">Sistema de Gestão Logística</p>
+            <div className="h-1 w-16 bg-gradient-to-r from-accent to-primary mt-1.5 rounded-full"></div>
           </div>
         </div>
 
@@ -104,7 +112,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo }) =>
                 type="email"
                 required
                 disabled={isLoading}
-                className="appearance-none block w-full px-4 py-3 border border-gray-200 dark:border-gray-700 placeholder-gray-400 text-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent sm:text-sm dark:bg-gray-800 dark:text-white transition-all disabled:opacity-50"
+                className="appearance-none block w-full px-4 py-3 border border-gray-200 dark:border-gray-700 placeholder-gray-400 text-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent sm:text-sm dark:bg-gray-800 dark:text-white transition-all disabled:opacity-50"
                 placeholder="Seu email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
@@ -117,7 +125,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo }) =>
                 type="password"
                 required
                 disabled={isLoading}
-                className="appearance-none block w-full px-4 py-3 border border-gray-200 dark:border-gray-700 placeholder-gray-400 text-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent sm:text-sm dark:bg-gray-800 dark:text-white transition-all disabled:opacity-50"
+                className="appearance-none block w-full px-4 py-3 border border-gray-200 dark:border-gray-700 placeholder-gray-400 text-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent sm:text-sm dark:bg-gray-800 dark:text-white transition-all disabled:opacity-50"
                 placeholder="Sua senha"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
@@ -138,7 +146,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo }) =>
               className={`w-full flex justify-center py-3 px-4 border border-transparent text-base font-black rounded-xl text-white shadow-lg transition-all transform active:scale-[0.98] ${
                 isLoading 
                   ? 'bg-gray-400 cursor-not-allowed' 
-                  : 'bg-accent hover:bg-accent-dark hover:-translate-y-1 shadow-accent/20'
+                  : 'bg-gradient-to-r from-accent to-[#e08307] hover:from-[#e08307] hover:to-accent hover:-translate-y-0.5 shadow-accent/25'
               }`}
             >
               {isLoading ? (
@@ -156,7 +164,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo }) =>
         
         <div className="text-center pt-2">
             <p className="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-widest font-bold">
-                Transparência | Cuidado | Prazo
+                Transparência <span className="text-accent">•</span> Cuidado <span className="text-accent">•</span> Prazo
             </p>
         </div>
       </div>

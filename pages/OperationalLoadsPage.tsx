@@ -179,14 +179,23 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       dests.forEach(dest => {
           const legs = (dest.freightLegs && dest.freightLegs.length > 0) 
             ? dest.freightLegs 
-            : [{ driverFreightValuePerTon: load.driverFreightValuePerTon, driverFreightValuePerTonPJ: load.driverFreightValuePerTonPJ, driverFreightValuePerTonPF: load.driverFreightValuePerTonPF }];
+            : [{ driverFreightValuePerTon: load.driverFreightValuePerTon, driverFreightValuePerTonPJ: load.driverFreightValuePerTonPJ, driverFreightValuePerTonPF: load.driverFreightValuePerTonPF, disableDriverFreightPF: load.disableDriverFreightPF }];
           
           const totalPJ = legs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
           const totalPF = legs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
+          const isPFDisabled = legs.some(leg => leg.disableDriverFreightPF) || load.disableDriverFreightPF;
 
           const pricePJ = totalPJ === 0 ? 'A Combinar' : totalPJ.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           const pricePF = totalPF === 0 ? 'A Combinar' : totalPF.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          const priceDisplay = (totalPJ === 0 && totalPF === 0) ? 'Valor a Combinar' : `_PJ ${pricePJ} / PF ${pricePF}_`;
+          
+          let priceDisplay = '';
+          if (totalPJ === 0 && (isPFDisabled || totalPF === 0)) {
+              priceDisplay = 'Valor a Combinar';
+          } else if (isPFDisabled) {
+              priceDisplay = `_PJ ${pricePJ}_`;
+          } else {
+              priceDisplay = `_PJ ${pricePJ} / PF ${pricePF}_`;
+          }
 
           text += `\n* *${dest.city}* 💲 *${priceDisplay}*`;
           if (dest.mapLink) {

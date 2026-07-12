@@ -157,7 +157,7 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
                             PJ: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTonPJ ?? cargo.driverFreightValuePerTon)}/ton
                           </span>
                           <span className="text-[9px] font-bold text-orange-600 dark:text-orange-400">
-                            PF: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTonPF ?? cargo.driverFreightValuePerTon)}/ton
+                            PF: {cargo.disableDriverFreightPF ? 'Desabilitado' : `${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTonPF ?? cargo.driverFreightValuePerTon)}/ton`}
                           </span>
                         </div>
                       </div>

@@ -113,10 +113,11 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                         ...leg,
                         driverFreightValuePerTonPJ: leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon,
                         driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
+                        disableDriverFreightPF: leg.disableDriverFreightPF || false,
                       }))
-                    : [{ companyFreightValuePerTon: editableLoad.companyFreightValuePerTon, driverFreightValuePerTon: editableLoad.driverFreightValuePerTon, driverFreightValuePerTonPJ: editableLoad.driverFreightValuePerTonPJ ?? editableLoad.driverFreightValuePerTon, driverFreightValuePerTonPF: editableLoad.driverFreightValuePerTonPF ?? editableLoad.driverFreightValuePerTon, hasIcms: editableLoad.hasIcms, icmsPercentage: editableLoad.icmsPercentage }];
+                    : [{ companyFreightValuePerTon: editableLoad.companyFreightValuePerTon, driverFreightValuePerTon: editableLoad.driverFreightValuePerTon, driverFreightValuePerTonPJ: editableLoad.driverFreightValuePerTonPJ ?? editableLoad.driverFreightValuePerTon, driverFreightValuePerTonPF: editableLoad.driverFreightValuePerTonPF ?? editableLoad.driverFreightValuePerTon, hasIcms: editableLoad.hasIcms, icmsPercentage: editableLoad.icmsPercentage, disableDriverFreightPF: editableLoad.disableDriverFreightPF || false }];
                 while (legs.length < 2) {
-                    legs.push({ companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 });
+                    legs.push({ companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0, disableDriverFreightPF: false });
                 }
                 initialDestinations = [{
                     id: Math.random().toString(36).substr(2, 9),
@@ -131,9 +132,10 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                         ...leg,
                         driverFreightValuePerTonPJ: leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon,
                         driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
-                    })) : [{ companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 }];
+                        disableDriverFreightPF: leg.disableDriverFreightPF || false,
+                    })) : [{ companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0, disableDriverFreightPF: false }];
                     while (legs.length < 2) {
-                        legs.push({ companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 });
+                        legs.push({ companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0, disableDriverFreightPF: false });
                     }
                     return { ...d, freightLegs: legs };
                 });
@@ -358,6 +360,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                 ...leg,
                 driverFreightValuePerTonPJ: leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon,
                 driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
+                disableDriverFreightPF: leg.disableDriverFreightPF || false,
             }))
         };
     });
@@ -367,6 +370,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
     const totalCompanyFreightCalc = firstDestLegs.reduce((sum, leg) => sum + leg.companyFreightValuePerTon, 0);
     const totalDriverFreightPJCalc = firstDestLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
     const totalDriverFreightPFCalc = firstDestLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
+    const isPFDisabled = firstDestLegs.some(leg => leg.disableDriverFreightPF);
 
     // Geocode origin and FIRST destination
     const [originCoords, destinationCoords] = await Promise.all([
@@ -405,6 +409,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
         originCoords: originCoords || undefined,
         destinationCoords: destinationCoords || undefined,
         allowedVehicleTypes: finalAllowedVehicleTypes,
+        disableDriverFreightPF: isPFDisabled,
     };
 
     if (loadToEdit) {
@@ -796,52 +801,104 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                                             )}
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-1">Frete Motorista PJ (R$/ton)</label>
-                                                <input value={(leg1.driverFreightValuePerTonPJ !== undefined ? leg1.driverFreightValuePerTonPJ : '') || ''} onChange={(e) => handleLegChange(destIdx, 0, 'driverFreightValuePerTonPJ', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-emerald-200 dark:border-emerald-800 rounded dark:bg-gray-700" step="0.01"/>
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">Frete Motorista PF (R$/ton)</label>
-                                                <input value={(leg1.driverFreightValuePerTonPF !== undefined ? leg1.driverFreightValuePerTonPF : '') || ''} onChange={(e) => handleLegChange(destIdx, 0, 'driverFreightValuePerTonPF', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-orange-200 dark:border-orange-800 rounded dark:bg-gray-700" step="0.01"/>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                {/* Leg 2 */}
-                                {hasMultiLeg && (
-                                    <div className="mt-4 p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-                                        <div className="flex justify-between items-center mb-3"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Perna 2</h4>
-                                            <label className="flex items-center space-x-2 cursor-pointer">
-                                                <input type="checkbox" checked={leg2.hasIcms} onChange={(e) => handleLegChange(destIdx, 1, 'hasIcms', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
-                                                <span className="text-sm text-gray-700 dark:text-gray-300">Incide ICMS</span>
-                                            </label>
-                                        </div>
-                                        <div className="space-y-3">
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Frete Empresa (R$/ton)</label>
-                                                    <input value={leg2.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(destIdx, 1, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                                                </div>
-                                                {leg2.hasIcms && (
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ICMS (%)</label>
-                                                        <input value={leg2.icmsPercentage || ''} onChange={(e) => handleLegChange(destIdx, 1, 'icmsPercentage', e.target.value)} type="number" placeholder="%" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-1">Frete Motorista PJ (R$/ton)</label>
-                                                    <input value={(leg2.driverFreightValuePerTonPJ !== undefined ? leg2.driverFreightValuePerTonPJ : '') || ''} onChange={(e) => handleLegChange(destIdx, 1, 'driverFreightValuePerTonPJ', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-emerald-200 dark:border-emerald-800 rounded dark:bg-gray-700" step="0.01"/>
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">Frete Motorista PF (R$/ton)</label>
-                                                    <input value={(leg2.driverFreightValuePerTonPF !== undefined ? leg2.driverFreightValuePerTonPF : '') || ''} onChange={(e) => handleLegChange(destIdx, 1, 'driverFreightValuePerTonPF', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-orange-200 dark:border-orange-800 rounded dark:bg-gray-700" step="0.01"/>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
+                                             <div>
+                                                 <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-1">Frete Motorista PJ (R$/ton)</label>
+                                                 <input value={(leg1.driverFreightValuePerTonPJ !== undefined ? leg1.driverFreightValuePerTonPJ : '') || ''} onChange={(e) => handleLegChange(destIdx, 0, 'driverFreightValuePerTonPJ', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-emerald-200 dark:border-emerald-800 rounded dark:bg-gray-700" step="0.01"/>
+                                             </div>
+                                             <div>
+                                                 <div className="flex justify-between items-center mb-1">
+                                                     <label className={`block text-xs font-medium ${leg1.disableDriverFreightPF ? 'text-gray-400 line-through' : 'text-orange-600 dark:text-orange-400'}`}>
+                                                         Frete Motorista PF (R$/ton)
+                                                     </label>
+                                                     <label className="flex items-center space-x-1 cursor-pointer">
+                                                         <input 
+                                                             type="checkbox" 
+                                                             checked={!!leg1.disableDriverFreightPF} 
+                                                             onChange={(e) => {
+                                                                 handleLegChange(destIdx, 0, 'disableDriverFreightPF', e.target.checked);
+                                                                 if (e.target.checked) {
+                                                                     handleLegChange(destIdx, 0, 'driverFreightValuePerTonPF', 0);
+                                                                 }
+                                                             }} 
+                                                             className="h-3.5 w-3.5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
+                                                         />
+                                                         <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Desabilitar</span>
+                                                     </label>
+                                                 </div>
+                                                 <input 
+                                                     value={leg1.disableDriverFreightPF ? 'N/A' : (leg1.driverFreightValuePerTonPF !== undefined ? leg1.driverFreightValuePerTonPF : '') || ''} 
+                                                     onChange={(e) => handleLegChange(destIdx, 0, 'driverFreightValuePerTonPF', e.target.value)} 
+                                                     type={leg1.disableDriverFreightPF ? 'text' : 'number'} 
+                                                     disabled={!!leg1.disableDriverFreightPF}
+                                                     placeholder="0,00" 
+                                                     className={`p-2 w-full border rounded dark:bg-gray-700 ${leg1.disableDriverFreightPF ? 'bg-gray-100 border-gray-200 text-gray-400 dark:bg-gray-800 dark:border-gray-700 cursor-not-allowed' : 'border-orange-200 dark:border-orange-800'}`} 
+                                                     step="0.01"
+                                                 />
+                                             </div>
+                                         </div>
+                                     </div>
+                                 </div>
+                                 {/* Leg 2 */}
+                                 {hasMultiLeg && (
+                                     <div className="mt-4 p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                                         <div className="flex justify-between items-center mb-3"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Perna 2</h4>
+                                             <label className="flex items-center space-x-2 cursor-pointer">
+                                                 <input type="checkbox" checked={leg2.hasIcms} onChange={(e) => handleLegChange(destIdx, 1, 'hasIcms', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                                                 <span className="text-sm text-gray-700 dark:text-gray-300">Incide ICMS</span>
+                                             </label>
+                                         </div>
+                                         <div className="space-y-3">
+                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                 <div>
+                                                     <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Frete Empresa (R$/ton)</label>
+                                                     <input value={leg2.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(destIdx, 1, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                                                 </div>
+                                                 {leg2.hasIcms && (
+                                                     <div>
+                                                         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ICMS (%)</label>
+                                                         <input value={leg2.icmsPercentage || ''} onChange={(e) => handleLegChange(destIdx, 1, 'icmsPercentage', e.target.value)} type="number" placeholder="%" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
+                                                     </div>
+                                                 )}
+                                             </div>
+                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                 <div>
+                                                     <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-1">Frete Motorista PJ (R$/ton)</label>
+                                                     <input value={(leg2.driverFreightValuePerTonPJ !== undefined ? leg2.driverFreightValuePerTonPJ : '') || ''} onChange={(e) => handleLegChange(destIdx, 1, 'driverFreightValuePerTonPJ', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-emerald-200 dark:border-emerald-800 rounded dark:bg-gray-700" step="0.01"/>
+                                                 </div>
+                                                 <div>
+                                                     <div className="flex justify-between items-center mb-1">
+                                                         <label className={`block text-xs font-medium ${leg2.disableDriverFreightPF ? 'text-gray-400 line-through' : 'text-orange-600 dark:text-orange-400'}`}>
+                                                             Frete Motorista PF (R$/ton)
+                                                         </label>
+                                                         <label className="flex items-center space-x-1 cursor-pointer">
+                                                             <input 
+                                                                 type="checkbox" 
+                                                                 checked={!!leg2.disableDriverFreightPF} 
+                                                                 onChange={(e) => {
+                                                                     handleLegChange(destIdx, 1, 'disableDriverFreightPF', e.target.checked);
+                                                                     if (e.target.checked) {
+                                                                         handleLegChange(destIdx, 1, 'driverFreightValuePerTonPF', 0);
+                                                                     }
+                                                                 }} 
+                                                                 className="h-3.5 w-3.5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
+                                                             />
+                                                             <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Desabilitar</span>
+                                                         </label>
+                                                     </div>
+                                                     <input 
+                                                         value={leg2.disableDriverFreightPF ? 'N/A' : (leg2.driverFreightValuePerTonPF !== undefined ? leg2.driverFreightValuePerTonPF : '') || ''} 
+                                                         onChange={(e) => handleLegChange(destIdx, 1, 'driverFreightValuePerTonPF', e.target.value)} 
+                                                         type={leg2.disableDriverFreightPF ? 'text' : 'number'} 
+                                                         disabled={!!leg2.disableDriverFreightPF}
+                                                         placeholder="0,00" 
+                                                         className={`p-2 w-full border rounded dark:bg-gray-700 ${leg2.disableDriverFreightPF ? 'bg-gray-100 border-gray-200 text-gray-400 dark:bg-gray-800 dark:border-gray-700 cursor-not-allowed' : 'border-orange-200 dark:border-orange-800'}`} 
+                                                         step="0.01"
+                                                     />
+                                                 </div>
+                                             </div>
+                                         </div>
+                                     </div>
+                                 )}
                         {/* Totals */}
                         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
@@ -858,16 +915,25 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                                     >{calculateDestinationTotals(dest).netMarginPercentagePJ}</span>
                                 </div>
                             </div>
-                            <div className="p-3 bg-orange-50 dark:bg-orange-900/30 rounded-md border border-orange-200 dark:border-orange-800">
-                                <label className="text-xs font-medium text-orange-600 dark:text-orange-400">Frete PF / Margem PF</label>
-                                <div className="flex items-center justify-between">
-                                    <p className="text-lg font-bold text-orange-700 dark:text-orange-300">{calculateDestinationTotals(dest).totalDriverFreightPF.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</p>
-                                    <span
-                                      className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(calculateDestinationTotals(dest).marginPF)}`}
-                                      title={(load.salespersonCommissionPerTon || 0) > 0 ? `Margem já deduz comissão de R$ ${(load.salespersonCommissionPerTon || 0).toFixed(2)}/ton` : 'Margem PF'}
-                                    >{calculateDestinationTotals(dest).netMarginPercentagePF}</span>
+                            {!(dest.freightLegs?.some((leg: any) => leg.disableDriverFreightPF)) ? (
+                                <div className="p-3 bg-orange-50 dark:bg-orange-900/30 rounded-md border border-orange-200 dark:border-orange-800">
+                                    <label className="text-xs font-medium text-orange-600 dark:text-orange-400">Frete PF / Margem PF</label>
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-lg font-bold text-orange-700 dark:text-orange-300">{calculateDestinationTotals(dest).totalDriverFreightPF.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</p>
+                                        <span
+                                          className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(calculateDestinationTotals(dest).marginPF)}`}
+                                          title={(load.salespersonCommissionPerTon || 0) > 0 ? `Margem já deduz comissão de R$ ${(load.salespersonCommissionPerTon || 0).toFixed(2)}/ton` : 'Margem PF'}
+                                        >{calculateDestinationTotals(dest).netMarginPercentagePF}</span>
+                                    </div>
                                 </div>
-                            </div>
+                            ) : (
+                                <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 opacity-60 flex flex-col justify-between">
+                                    <label className="text-xs font-medium text-gray-500">Frete PF / Margem PF</label>
+                                    <div className="flex items-center justify-between mt-1">
+                                        <p className="text-lg font-bold text-gray-400">Desabilitado</p>
+                                    </div>
+                                </div>
+                            )}
                             {(load.salespersonCommissionPerTon || 0) > 0 && (
                                 <div className="md:col-span-3 flex items-center gap-2 px-3 py-2 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-md">
                                     <span className="text-xs font-bold text-purple-600 dark:text-purple-400">Com. Vendedor Externo:</span>

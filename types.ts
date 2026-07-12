@@ -157,6 +157,7 @@ export interface FreightLeg {
   driverFreightValuePerTon: number;
   hasIcms: boolean;
   icmsPercentage: number;
+  disableDriverFreightPF?: boolean;
 }
 
 export interface CargoDestination {
@@ -228,6 +229,7 @@ export interface Cargo {
     password?: string;
   };
   tmsBatchNumber?: string;
+  disableDriverFreightPF?: boolean;
 }
 
 

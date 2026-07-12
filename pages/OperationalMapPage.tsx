@@ -276,6 +276,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
                              driverFreightValuePerTon: leg?.driverFreightValuePerTon ?? cargoToShip.driverFreightValuePerTon,
                              driverFreightValuePerTonPJ: leg?.driverFreightValuePerTonPJ ?? cargoToShip.driverFreightValuePerTonPJ,
                              driverFreightValuePerTonPF: leg?.driverFreightValuePerTonPF ?? cargoToShip.driverFreightValuePerTonPF,
+                             disableDriverFreightPF: leg?.disableDriverFreightPF ?? cargoToShip.disableDriverFreightPF,
                              companyFreightValuePerTon: leg?.companyFreightValuePerTon ?? cargoToShip.companyFreightValuePerTon,
                          };
                     }
@@ -451,13 +452,17 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
             const leg = dest.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: load.driverFreightValuePerTon };
             const pj = (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             const pf = (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            text += `\n* *${dest.city}* 💲 *_PJ ${pj}/PF ${pf}_*`;
+            const isPFDisabled = leg.disableDriverFreightPF || load.disableDriverFreightPF;
+            const priceDisplay = isPFDisabled ? `_PJ ${pj}_` : `_PJ ${pj}/PF ${pf}_`;
+            text += `\n* *${dest.city}* 💲 *${priceDisplay}*`;
             if (dest.mapLink) text += `\n${dest.mapLink}`;
         });
       } else {
         const pj = (load.driverFreightValuePerTonPJ ?? load.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const pf = (load.driverFreightValuePerTonPF ?? load.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        text += `\n* *${load.destination}* 💲 *_PJ ${pj}/PF ${pf}_*`;
+        const isPFDisabled = load.disableDriverFreightPF;
+        const priceDisplay = isPFDisabled ? `_PJ ${pj}_` : `_PJ ${pj}/PF ${pf}_`;
+        text += `\n* *${load.destination}* 💲 *${priceDisplay}*`;
         if (load.destinationMapLink) text += `\n${load.destinationMapLink}`;
       }
 

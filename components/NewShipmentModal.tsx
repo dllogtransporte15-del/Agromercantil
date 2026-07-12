@@ -121,7 +121,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setVehicleTag('');
       setFilesToAttach([]);
       setDriverReferences('');
-      setFreightType(null);
+      setFreightType(cargo?.disableDriverFreightPF ? 'PJ' : null);
       setEmbarcadorId(
           currentUser?.profile === UserProfile.Embarcador
               ? currentUser.id
@@ -129,7 +129,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       );
     }
     prevIsOpen.current = isOpen;
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, cargo]);
 
     // Driver selection & Autofill logic
   const [lastAlertedDriverId, setLastAlertedDriverId] = useState<string>('');
@@ -514,9 +514,12 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                   {/* PF Button */}
                   <button
                     type="button"
+                    disabled={!!cargo?.disableDriverFreightPF}
                     onClick={() => setFreightType('PF')}
                     className={`relative flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all duration-200 ${
-                      freightType === 'PF'
+                      cargo?.disableDriverFreightPF
+                        ? 'border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/30 opacity-40 cursor-not-allowed'
+                        : freightType === 'PF'
                         ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/30 shadow-md shadow-orange-100 dark:shadow-none scale-[1.02]'
                         : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:border-orange-300 hover:bg-orange-50/50 dark:hover:border-orange-700'
                     }`}
@@ -527,16 +530,16 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                       </span>
                     )}
                     <span className={`text-xl font-black tracking-tight ${
-                      freightType === 'PF' ? 'text-orange-600 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400'
+                      cargo?.disableDriverFreightPF ? 'text-gray-400 dark:text-gray-600' : (freightType === 'PF' ? 'text-orange-600 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400')
                     }`}>PF</span>
                     <span className={`text-[10px] font-semibold mt-0.5 ${
-                      freightType === 'PF' ? 'text-orange-500' : 'text-gray-400'
-                    }`}>Pessoa Física</span>
+                      cargo?.disableDriverFreightPF ? 'text-gray-400' : (freightType === 'PF' ? 'text-orange-500' : 'text-gray-400')
+                    }`}>{cargo?.disableDriverFreightPF ? 'Indisponível' : 'Pessoa Física'}</span>
                     <span className={`text-sm font-bold mt-2 ${
-                      freightType === 'PF' ? 'text-orange-700 dark:text-orange-300' : 'text-gray-600 dark:text-gray-400'
-                    }`}>{formatCurrency(cargo?.driverFreightValuePerTonPF ?? cargo?.driverFreightValuePerTon ?? 0)}</span>
-                    <span className="text-[9px] text-gray-400">/ton</span>
-                    {freightType === 'PF' && shipmentTonnage > 0 && (
+                      cargo?.disableDriverFreightPF ? 'text-gray-400 dark:text-gray-600' : (freightType === 'PF' ? 'text-orange-700 dark:text-orange-300' : 'text-gray-600 dark:text-gray-400')
+                    }`}>{cargo?.disableDriverFreightPF ? 'N/A' : formatCurrency(cargo?.driverFreightValuePerTonPF ?? cargo?.driverFreightValuePerTon ?? 0)}</span>
+                    {!cargo?.disableDriverFreightPF && <span className="text-[9px] text-gray-400">/ton</span>}
+                    {freightType === 'PF' && shipmentTonnage > 0 && !cargo?.disableDriverFreightPF && (
                       <span className="mt-1.5 text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/50 px-2 py-0.5 rounded-full">
                         Total: {formatCurrency(calculatedFreightPF)}
                       </span>
