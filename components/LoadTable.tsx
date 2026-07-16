@@ -1,10 +1,10 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { Cargo, Client, Product, Shipment, User, ProfilePermissions } from '../types';
 import { DailyScheduleType, CargoStatus, UserProfile, ShipmentStatus } from '../types';
 import { can, INITIAL_PERMISSIONS } from '../auth';
 import VolumeBar from './VolumeBar';
-import { Trash2 } from 'lucide-react';
+import { Trash2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { PlusIcon } from './icons/PlusIcon';
 import { HistoryIcon } from './icons/HistoryIcon';
 import { Search, Filter, X } from 'lucide-react';
@@ -54,6 +54,28 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
   const [filterOrigin, setFilterOrigin] = useState<string[]>([]);
   const [filterDest, setFilterDest] = useState<string[]>([]);
 
+  type SortKey = 'id' | 'client' | 'product' | 'origin' | 'destination' | 'volume' | 'available';
+  type SortDir = 'asc' | 'desc';
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+    setCurrentPage(1);
+  };
+
+  const SortIcon = ({ col }: { col: SortKey }) => {
+    if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 ml-1 opacity-40" />;
+    return sortDir === 'asc'
+      ? <ArrowUp className="w-3 h-3 ml-1 text-blue-600" />
+      : <ArrowDown className="w-3 h-3 ml-1 text-blue-600" />;
+  };
+
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50;
 
@@ -67,17 +89,64 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
   const originOptions = Array.from(new Set(loads.map(l => l.origin))).filter(Boolean).sort();
   const destOptions = Array.from(new Set(loads.flatMap(l => (l.destinations || []).map(d => d.city).concat(l.destination)))).filter(Boolean).sort();
 
-  const filteredLoads = loads.filter(load => {
-    if (filterId.length > 0 && !filterId.includes(load.sequenceId?.toString() || '')) return false;
-    if (filterClient.length > 0 && !filterClient.includes(getClientName(load.clientId))) return false;
-    if (filterProduct.length > 0 && !filterProduct.includes(getProductName(load.productId))) return false;
-    if (filterOrigin.length > 0 && !filterOrigin.includes(load.origin)) return false;
-    if (filterDest.length > 0) {
-      const loadDests = (load.destinations || []).map(d => d.city).concat(load.destination);
-      if (!filterDest.some(fd => loadDests.includes(fd))) return false;
-    }
-    return true;
-  });
+  const filteredLoads = useMemo(() => {
+    const base = loads.filter(load => {
+      if (filterId.length > 0 && !filterId.includes(load.sequenceId?.toString() || '')) return false;
+      if (filterClient.length > 0 && !filterClient.includes(getClientName(load.clientId))) return false;
+      if (filterProduct.length > 0 && !filterProduct.includes(getProductName(load.productId))) return false;
+      if (filterOrigin.length > 0 && !filterOrigin.includes(load.origin)) return false;
+      if (filterDest.length > 0) {
+        const loadDests = (load.destinations || []).map(d => d.city).concat(load.destination);
+        if (!filterDest.some(fd => loadDests.includes(fd))) return false;
+      }
+      return true;
+    });
+
+    if (!sortKey) return base;
+
+    return [...base].sort((a, b) => {
+      let valA: string | number = '';
+      let valB: string | number = '';
+
+      switch (sortKey) {
+        case 'id':
+          valA = a.sequenceId ?? 0;
+          valB = b.sequenceId ?? 0;
+          break;
+        case 'client':
+          valA = getClientName(a.clientId).toLowerCase();
+          valB = getClientName(b.clientId).toLowerCase();
+          break;
+        case 'product':
+          valA = getProductName(a.productId).toLowerCase();
+          valB = getProductName(b.productId).toLowerCase();
+          break;
+        case 'origin':
+          valA = (a.origin || '').toLowerCase();
+          valB = (b.origin || '').toLowerCase();
+          break;
+        case 'destination': {
+          const destA = (a.destinations && a.destinations.length > 0) ? a.destinations[0].city : a.destination;
+          const destB = (b.destinations && b.destinations.length > 0) ? b.destinations[0].city : b.destination;
+          valA = (destA || '').toLowerCase();
+          valB = (destB || '').toLowerCase();
+          break;
+        }
+        case 'volume':
+          valA = a.totalVolume ?? 0;
+          valB = b.totalVolume ?? 0;
+          break;
+        case 'available':
+          valA = Math.max(0, (a.totalVolume ?? 0) - (a.scheduledVolume ?? 0));
+          valB = Math.max(0, (b.totalVolume ?? 0) - (b.scheduledVolume ?? 0));
+          break;
+      }
+
+      if (valA < valB) return sortDir === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [loads, filterId, filterClient, filterProduct, filterOrigin, filterDest, sortKey, sortDir]);
 
   React.useEffect(() => {
     onFilteredLoadsChange?.(filteredLoads);
@@ -153,6 +222,44 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
             <div className="text-xs text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap hidden sm:block">
               {filteredLoads.length !== loads.length ? `${filteredLoads.length} de ` : ''}{loads.length} cargas cadastradas
             </div>
+          </div>
+        </div>
+
+        {/* Sort Bar — always visible */}
+        <div className="px-4 pb-2 pt-1 border-t border-gray-100 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-800/30">
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mr-1">Ordenar por:</span>
+            {([
+              { key: 'id' as const, label: 'ID' },
+              { key: 'client' as const, label: 'Cliente' },
+              { key: 'product' as const, label: 'Produto' },
+              { key: 'origin' as const, label: 'Origem' },
+              { key: 'destination' as const, label: 'Destino' },
+              { key: 'volume' as const, label: 'Volume Total' },
+              { key: 'available' as const, label: 'Disponível' },
+            ]).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => handleSort(key)}
+                className={`flex items-center text-xs font-semibold px-2.5 py-1 rounded-md transition-all border ${
+                  sortKey === key
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                    : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400'
+                }`}
+              >
+                {label}
+                <SortIcon col={key} />
+              </button>
+            ))}
+            {sortKey && (
+              <button
+                onClick={() => { setSortKey(null); setSortDir('asc'); }}
+                className="flex items-center text-xs text-red-500 hover:text-red-700 dark:text-red-400 ml-1 px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                title="Remover ordenação"
+              >
+                <X className="w-3 h-3 mr-1" /> Limpar ordem
+              </button>
+            )}
           </div>
         </div>
 

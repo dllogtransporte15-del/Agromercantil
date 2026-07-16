@@ -11,10 +11,10 @@ import {
   Percent, Scale, Fuel, Info, Save, Download, 
   FileText, CheckCircle2, AlertCircle, Loader2,
   ArrowRight, Settings2, Building2, Calculator,
-  FileCode, Clock, Search, Package
+  FileCode, Clock, Search, Package, History, ExternalLink
 } from 'lucide-react';
 import Header from '../components/Header';
-import { saveToolQuote, getToolClients, saveToolClient, ToolClient } from '../services/api/toolsApi';
+import { saveToolQuote, getToolQuotes, getToolClients, saveToolClient, ToolClient, QuoteRecord } from '../services/api/toolsApi';
 import type { User as AppUser } from '../types';
 
 // Fix Leaflet icon issue by using CDN directly to prevent webpack/vite breaking the image paths
@@ -97,6 +97,7 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
   const [destCoords, setDestCoords] = useState<Location | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recentQuotes, setRecentQuotes] = useState<QuoteRecord[]>([]);
 
   const loadClients = useCallback(async () => {
     if (!currentUser) return;
@@ -104,9 +105,16 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
     setClients(data);
   }, [currentUser]);
 
+  const loadRecentQuotes = useCallback(async () => {
+    if (!currentUser) return;
+    const data = await getToolQuotes(currentUser.authId || currentUser.id);
+    setRecentQuotes(data.slice(0, 10));
+  }, [currentUser]);
+
   useEffect(() => {
     loadClients();
-  }, [loadClients]);
+    loadRecentQuotes();
+  }, [loadClients, loadRecentQuotes]);
 
   const initialData: QuoteData = {
     clientName: '',
@@ -305,6 +313,7 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
       if (saved) {
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
+        loadRecentQuotes(); // Atualiza o painel de cotações recentes
       } else {
         alert('Erro ao salvar cotação. Verifique sua conexão.');
       }
@@ -563,8 +572,8 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
         </div>
 
         {/* Painel Lateral Direito: Resultados */}
-        <div className="xl:col-span-3 space-y-6">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 overflow-hidden flex flex-col h-full ring-1 ring-slate-100 dark:ring-gray-700">
+        <div className="xl:col-span-3 space-y-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 overflow-hidden flex flex-col ring-1 ring-slate-100 dark:ring-gray-700">
             <div className="p-6 border-b border-slate-100 dark:border-gray-700 bg-slate-50/50 dark:bg-gray-900/50">
               <h2 className="text-lg font-medium flex items-center text-slate-800 dark:text-white">
                 <Calculator className="w-5 h-5 mr-2 text-indigo-500" /> Fechamento
@@ -640,6 +649,79 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
                   </div>
                   <p className="text-xs leading-relaxed max-w-[150px]">Preencha a origem e destino para ver os cálculos de frete.</p>
                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* Painel: Últimas Cotações Salvas */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 overflow-hidden ring-1 ring-slate-100 dark:ring-gray-700">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-gray-700 bg-slate-50/50 dark:bg-gray-900/50 flex items-center justify-between">
+              <h2 className="text-sm font-bold flex items-center text-slate-700 dark:text-white">
+                <History className="w-4 h-4 mr-2 text-indigo-500" /> Últimas Cotações
+              </h2>
+              <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+                {recentQuotes.length} registros
+              </span>
+            </div>
+
+            <div className="divide-y divide-slate-50 dark:divide-gray-700/50 max-h-[520px] overflow-y-auto">
+              {recentQuotes.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                  <History className="w-8 h-8 mb-2 opacity-30" />
+                  <p className="text-xs">Nenhuma cotação salva ainda.</p>
+                </div>
+              ) : (
+                recentQuotes.map((q) => {
+                  const d = new Date(q.date);
+                  const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                  const timeStr = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                  const formatCurr = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+
+                  return (
+                    <div
+                      key={q.id}
+                      className="px-4 py-3 hover:bg-slate-50 dark:hover:bg-gray-700/40 transition-colors group"
+                    >
+                      {/* Linha 1: Rota + Valor */}
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-gray-200 truncate">
+                          <span className="truncate max-w-[80px]" title={q.origin}>{q.origin.split(',')[0]}</span>
+                          <ArrowRight className="w-3 h-3 text-slate-300 shrink-0" />
+                          <span className="truncate max-w-[80px]" title={q.destination}>{q.destination.split(',')[0]}</span>
+                        </div>
+                        <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 shrink-0">
+                          {formatCurr(q.companyFreightPerTon)}
+                        </span>
+                      </div>
+
+                      {/* Linha 2: Cliente + Produto */}
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400 truncate">
+                        {q.clientName && (
+                          <span className="flex items-center gap-1 truncate">
+                            <Building2 className="w-2.5 h-2.5 shrink-0" />
+                            <span className="truncate">{q.clientName}</span>
+                          </span>
+                        )}
+                        {q.productName && (
+                          <span className="flex items-center gap-1 shrink-0">
+                            <Package className="w-2.5 h-2.5" />
+                            {q.productName}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Linha 3: Meta-info */}
+                      <div className="flex items-center justify-between mt-1.5">
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                          <span className="bg-slate-100 dark:bg-gray-700 text-slate-500 dark:text-gray-400 px-1.5 py-0.5 rounded font-medium">{q.axes}ei</span>
+                          <span className="bg-slate-100 dark:bg-gray-700 text-slate-500 dark:text-gray-400 px-1.5 py-0.5 rounded font-medium">{q.distance.toFixed(0)} km</span>
+                          <span className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 dark:text-indigo-400 px-1.5 py-0.5 rounded font-bold">{q.margin.toFixed(1)}%</span>
+                        </div>
+                        <span className="text-[10px] text-slate-300 dark:text-gray-600">{dateStr} {timeStr}</span>
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

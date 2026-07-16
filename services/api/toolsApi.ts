@@ -590,3 +590,68 @@ export async function deleteToolQuote(id: string): Promise<void> {
   const { error } = await supabase.from('tool_quotes').delete().eq('id', id);
   if (error) console.error('Erro ao excluir cotação:', error);
 }
+
+export async function updateToolQuote(
+  id: string,
+  updates: Partial<Omit<QuoteRecord, 'id' | 'date'>>
+): Promise<QuoteRecord | null> {
+  const payload: any = {};
+  if (updates.clientName !== undefined) payload.client_name = updates.clientName;
+  if (updates.productName !== undefined) payload.product_name = updates.productName;
+  if (updates.origin !== undefined) payload.origin = updates.origin;
+  if (updates.destination !== undefined) payload.destination = updates.destination;
+  if (updates.axes !== undefined) payload.axes = updates.axes;
+  if (updates.cargoType !== undefined) payload.cargo_type = updates.cargoType;
+  if (updates.weight !== undefined) payload.weight = updates.weight;
+  if (updates.tollValue !== undefined) payload.toll_value = updates.tollValue;
+  if (updates.margin !== undefined) payload.margin = updates.margin;
+  if (updates.valuePerKm !== undefined) payload.value_per_km = updates.valuePerKm;
+  if (updates.driverTotalValue !== undefined) payload.driver_total_value = updates.driverTotalValue;
+  if (updates.anttValue !== undefined) payload.antt_value = updates.anttValue;
+  if (updates.driverFreightPerTon !== undefined) payload.driver_freight_per_ton = updates.driverFreightPerTon;
+  if (updates.companyFreightPerTon !== undefined) payload.company_freight_per_ton = updates.companyFreightPerTon;
+  if (updates.companyTotalFreight !== undefined) payload.company_total_freight = updates.companyTotalFreight;
+  if (updates.carrierNetProfit !== undefined) payload.carrier_net_profit = updates.carrierNetProfit;
+  if (updates.carrierProfitMargin !== undefined) payload.carrier_profit_margin = updates.carrierProfitMargin;
+
+  if (Object.keys(payload).length === 0) return null;
+
+  const { data, error } = await supabase
+    .from('tool_quotes')
+    .update(payload)
+    .eq('id', id)
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('Erro ao atualizar cotação:', error);
+    return null;
+  }
+
+  return data
+    ? {
+        id: data.id,
+        clientName: data.client_name ?? undefined,
+        productName: data.product_name ?? undefined,
+        userName: data.user_name ?? undefined,
+        date: data.created_at,
+        origin: data.origin,
+        destination: data.destination,
+        distance: Number(data.distance),
+        axes: Number(data.axes),
+        cargoType: data.cargo_type,
+        inputMode: data.input_mode as 'PER_KM' | 'PER_TON',
+        valuePerKm: Number(data.value_per_km),
+        driverTotalValue: Number(data.driver_total_value),
+        tollValue: Number(data.toll_value),
+        anttValue: Number(data.antt_value),
+        weight: Number(data.weight),
+        margin: Number(data.margin),
+        driverFreightPerTon: Number(data.driver_freight_per_ton),
+        companyFreightPerTon: Number(data.company_freight_per_ton),
+        companyTotalFreight: Number(data.company_total_freight),
+        carrierNetProfit: Number(data.carrier_net_profit),
+        carrierProfitMargin: Number(data.carrier_profit_margin),
+      }
+    : null;
+}

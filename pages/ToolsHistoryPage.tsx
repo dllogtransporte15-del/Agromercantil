@@ -7,13 +7,13 @@ import {
   History as HistoryIcon, Search, Filter, Download, FileText, 
   Truck, Calendar, MapPin, User, Trash2, ChevronRight, 
   ArrowRight, DollarSign, Clock, FileDigit, Building2,
-  ChevronDown, ChevronUp, X, FileCode, Scale, Fuel, Route, Paperclip
+  ChevronDown, ChevronUp, X, FileCode, Scale, Fuel, Route, Paperclip, Pencil
 } from 'lucide-react';
 import Header from '../components/Header';
 import { 
   getToolStays, getToolQuotes, StayRecord, QuoteRecord, 
   getToolClients, ToolClient, deleteToolStay, deleteToolQuote, updateToolStay, uploadStayAttachment,
-  getAllToolStays, getAllToolQuotes, getAllToolClients
+  getAllToolStays, getAllToolQuotes, getAllToolClients, updateToolQuote
 } from '../services/api/toolsApi';
 import { getShipmentAttachmentUrl } from '../services/api/db';
 import type { User as AppUser, Shipment, Cargo, Client as AppClient } from '../types';
@@ -53,6 +53,23 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
   const [isShipmentDropdownOpen, setIsShipmentDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Estado de edição de cotações
+  const [editQuoteValues, setEditQuoteValues] = useState<{
+    id: string;
+    clientName: string;
+    productName: string;
+    origin: string;
+    destination: string;
+    axes: string;
+    cargoType: string;
+    weight: string;
+    tollValue: string;
+    margin: string;
+    driverFreightPerTon: string;
+    companyFreightPerTon: string;
+  } | null>(null);
+  const [isSavingQuote, setIsSavingQuote] = useState(false);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -90,6 +107,15 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     loadData();
   }, [loadData]);
 
+  // Converte timestamp UTC do Supabase para string de data local (YYYY-MM-DD) no fuso do browser
+  const toLocalDateStr = (isoStr: string): string => {
+    const d = new Date(isoStr);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
   const filteredStays = useMemo(() => {
     return stays.filter(stay => {
       const matchesSearch = 
@@ -103,10 +129,10 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
 
       let matchesDate = true;
       if (dateStart || dateEnd) {
-        const stayDate = parseISO(stay.date);
-        const start = dateStart ? startOfDay(parseISO(dateStart)) : new Date(0);
-        const end = dateEnd ? endOfDay(parseISO(dateEnd)) : new Date();
-        matchesDate = isWithinInterval(stayDate, { start, end });
+        // Compara usando a data local do registro (não UTC)
+        const stayLocalDate = toLocalDateStr(stay.date);
+        if (dateStart && stayLocalDate < dateStart) matchesDate = false;
+        if (dateEnd && stayLocalDate > dateEnd) matchesDate = false;
       }
 
       return matchesSearch && matchesClient && matchesDate;
@@ -125,10 +151,10 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
 
       let matchesDate = true;
       if (dateStart || dateEnd) {
-        const quoteDate = parseISO(quote.date);
-        const start = dateStart ? startOfDay(parseISO(dateStart)) : new Date(0);
-        const end = dateEnd ? endOfDay(parseISO(dateEnd)) : new Date();
-        matchesDate = isWithinInterval(quoteDate, { start, end });
+        // Compara usando a data local do registro (não UTC)
+        const quoteLocalDate = toLocalDateStr(quote.date);
+        if (dateStart && quoteLocalDate < dateStart) matchesDate = false;
+        if (dateEnd && quoteLocalDate > dateEnd) matchesDate = false;
       }
 
       return matchesSearch && matchesClient && matchesDate;
@@ -147,6 +173,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     if (expandedId === id) {
       setExpandedId(null);
       setEditValues(null);
+      setEditQuoteValues(null);
       setShipmentSearchTerm('');
       setIsShipmentDropdownOpen(false);
     } else {
@@ -177,8 +204,29 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         } else {
           setShipmentSearchTerm('');
         }
+      } else if (activeView === 'cotacoes') {
+        setEditValues(null);
+        setShipmentSearchTerm('');
+        const quote = quotes.find(q => q.id === id);
+        if (quote) {
+          setEditQuoteValues({
+            id,
+            clientName: quote.clientName || '',
+            productName: quote.productName || '',
+            origin: quote.origin || '',
+            destination: quote.destination || '',
+            axes: quote.axes.toString(),
+            cargoType: quote.cargoType || '',
+            weight: quote.weight.toString(),
+            tollValue: quote.tollValue.toString(),
+            margin: quote.margin.toString(),
+            driverFreightPerTon: quote.driverFreightPerTon.toString(),
+            companyFreightPerTon: quote.companyFreightPerTon.toString(),
+          });
+        }
       } else {
         setEditValues(null);
+        setEditQuoteValues(null);
         setShipmentSearchTerm('');
       }
       setIsShipmentDropdownOpen(false);
@@ -251,6 +299,33 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
       console.error(err);
     } finally {
       setIsSavingEdit(false);
+    }
+  };
+
+  const handleSaveQuote = async () => {
+    if (!editQuoteValues || isSavingQuote) return;
+    setIsSavingQuote(true);
+    try {
+      await updateToolQuote(editQuoteValues.id, {
+        clientName: editQuoteValues.clientName || undefined,
+        productName: editQuoteValues.productName || undefined,
+        origin: editQuoteValues.origin,
+        destination: editQuoteValues.destination,
+        axes: parseInt(editQuoteValues.axes) || 0,
+        cargoType: editQuoteValues.cargoType,
+        weight: parseFloat(editQuoteValues.weight) || 0,
+        tollValue: parseFloat(editQuoteValues.tollValue) || 0,
+        margin: parseFloat(editQuoteValues.margin) || 0,
+        driverFreightPerTon: parseFloat(editQuoteValues.driverFreightPerTon) || 0,
+        companyFreightPerTon: parseFloat(editQuoteValues.companyFreightPerTon) || 0,
+      });
+      await loadData();
+      setExpandedId(null);
+      setEditQuoteValues(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSavingQuote(false);
     }
   };
 
@@ -709,6 +784,98 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                       )}
                     </div>
 
+                    {/* Formulário de Edição da Cotação */}
+                    {activeView === 'cotacoes' && editQuoteValues?.id === item.id && (
+                      <div className="mt-6 pt-6 border-t border-slate-100 dark:border-gray-700">
+                        <h4 className="text-xs font-bold text-emerald-500 uppercase tracking-widest flex items-center mb-4">
+                          <Pencil className="w-3 h-3 mr-2" /> Editar Cotação
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                          <div>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Cliente</label>
+                            <input type="text" value={editQuoteValues.clientName}
+                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, clientName: e.target.value} : null)}
+                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Produto</label>
+                            <input type="text" value={editQuoteValues.productName}
+                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, productName: e.target.value} : null)}
+                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Origem</label>
+                            <input type="text" value={editQuoteValues.origin}
+                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, origin: e.target.value} : null)}
+                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Destino</label>
+                            <input type="text" value={editQuoteValues.destination}
+                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, destination: e.target.value} : null)}
+                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Eixos</label>
+                            <input type="number" value={editQuoteValues.axes}
+                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, axes: e.target.value} : null)}
+                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Tipo de Mercadoria</label>
+                            <input type="text" value={editQuoteValues.cargoType}
+                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, cargoType: e.target.value} : null)}
+                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Peso (Ton)</label>
+                            <input type="number" value={editQuoteValues.weight}
+                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, weight: e.target.value} : null)}
+                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Pedágio (R$)</label>
+                            <input type="number" value={editQuoteValues.tollValue}
+                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, tollValue: e.target.value} : null)}
+                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Margem (%)</label>
+                            <input type="number" value={editQuoteValues.margin}
+                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, margin: e.target.value} : null)}
+                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Frete Motorista (R$/Ton)</label>
+                            <input type="number" value={editQuoteValues.driverFreightPerTon}
+                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, driverFreightPerTon: e.target.value} : null)}
+                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Cotação Empresa (R$/Ton)</label>
+                            <input type="number" value={editQuoteValues.companyFreightPerTon}
+                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, companyFreightPerTon: e.target.value} : null)}
+                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
+                          </div>
+                        </div>
+                        <div className="flex justify-end mt-4 gap-2">
+                          <button
+                            onClick={() => setEditQuoteValues(null)}
+                            className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 border border-slate-200 dark:border-gray-600 rounded-lg transition-colors"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={handleSaveQuote}
+                            disabled={isSavingQuote}
+                            className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                          >
+                            {isSavingQuote ? 'Salvando...' : <><Pencil className="w-3 h-3" /> Salvar Cotação</>}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Ações do Registro */}
                     <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-slate-100 dark:border-gray-700">
                        <div className="flex items-center gap-2">
@@ -720,6 +887,31 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                           </button>
                        </div>
                        <div className="flex items-center gap-2">
+                          {activeView === 'cotacoes' && (
+                            <button
+                              onClick={e => { e.stopPropagation(); setEditQuoteValues(editQuoteValues?.id === item.id ? null : {
+                                id: item.id,
+                                clientName: item.clientName || '',
+                                productName: item.productName || '',
+                                origin: item.origin || '',
+                                destination: item.destination || '',
+                                axes: item.axes?.toString() || '',
+                                cargoType: item.cargoType || '',
+                                weight: item.weight?.toString() || '',
+                                tollValue: item.tollValue?.toString() || '',
+                                margin: item.margin?.toString() || '',
+                                driverFreightPerTon: item.driverFreightPerTon?.toString() || '',
+                                companyFreightPerTon: item.companyFreightPerTon?.toString() || '',
+                              }); }}
+                              className={`flex items-center px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                                editQuoteValues?.id === item.id
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800'
+                              }`}
+                            >
+                              <Pencil className="w-3.5 h-3.5 mr-2" /> {editQuoteValues?.id === item.id ? 'Editando...' : 'Editar Cotação'}
+                            </button>
+                          )}
                           <button onClick={() => handleDelete(item.id, activeView)} className="flex items-center px-4 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl text-xs font-bold transition-all">
                              <Trash2 className="w-3.5 h-3.5 mr-2" /> Excluir Registro
                           </button>
