@@ -27,6 +27,13 @@ interface OperationalMapPageProps {
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
 }
 
+const formatAllowedVehicleTypes = (allowed?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]): string => {
+    if (!allowed || allowed.length === 0) return 'N/A';
+    const allBodyTypes = allowed.flatMap(type => type.bodyTypes || []);
+    const uniqueBodyTypes = [...new Set(allBodyTypes)];
+    return uniqueBodyTypes.join(', ');
+};
+
 const P180 = Math.PI / 180;
 
 // Simple Haversine formula to calculate distance in KM

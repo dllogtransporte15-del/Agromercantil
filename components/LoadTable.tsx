@@ -150,7 +150,7 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
 
   React.useEffect(() => {
     onFilteredLoadsChange?.(filteredLoads);
-  }, [filteredLoads.map(l => l.id).join(','), filterId, filterClient, filterProduct, filterOrigin, filterDest]);
+  }, [filteredLoads, onFilteredLoadsChange]);
 
   React.useEffect(() => {
     setCurrentPage(1);

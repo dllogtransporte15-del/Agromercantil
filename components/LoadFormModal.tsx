@@ -64,6 +64,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
     hasIcms: false,
     icmsPercentage: 0,
     requiresScheduling: false,
+    requiresTracker: false,
     type: CargoType.Spot,
     status: CargoStatus.EmAndamento,
     loadingStartDate: '',
@@ -180,6 +181,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                     hasIcms: lastLoad.hasIcms,
                     icmsPercentage: lastLoad.icmsPercentage,
                     requiresScheduling: lastLoad.requiresScheduling,
+                    requiresTracker: lastLoad.requiresTracker || false,
                     type: lastLoad.type,
                     allowedVehicleTypes: lastLoad.allowedVehicleTypes ? JSON.parse(JSON.stringify(lastLoad.allowedVehicleTypes)) : baseState.allowedVehicleTypes,
                     freightLegs: lastLoad.freightLegs ? JSON.parse(JSON.stringify(lastLoad.freightLegs)) : baseState.freightLegs,
@@ -668,6 +670,29 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                             <input name="loadingDeadline" value={load.loadingDeadline || ''} onChange={handleChange} type="date" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600"/>
                           </div>
                         </div>
+                    </div>
+                    <div className="col-span-1 md:col-span-2 flex items-center space-x-6 pt-4">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          name="requiresScheduling" 
+                          checked={load.requiresScheduling || false} 
+                          onChange={handleChange} 
+                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" 
+                        />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">Exige Agendamento</span>
+                      </label>
+                      
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          name="requiresTracker" 
+                          checked={load.requiresTracker || false} 
+                          onChange={handleChange} 
+                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" 
+                        />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">Precisa de Rastreador</span>
+                      </label>
                     </div>
                  </div>
             </div>

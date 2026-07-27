@@ -228,6 +228,7 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t dark:border-gray-700 pt-4">
                 <DetailItem label="Exige Agendamento" value={cargo.requiresScheduling ? 'Sim' : 'Não'} />
+                <DetailItem label="Precisa de Rastreador" value={cargo.requiresTracker ? 'Sim' : 'Não'} />
                 <DetailItem label="Tipo de Carga" value={cargo.type} />
                 <DetailItem label="Status da Carga" value={cargo.status} />
                 <DetailItem label="Prazo de Carregamento" value={cargo.loadingDeadline ? new Date(cargo.loadingDeadline).toLocaleDateString('pt-BR') : 'N/A'} />

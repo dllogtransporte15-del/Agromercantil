@@ -103,6 +103,7 @@ export enum VehicleSetType {
   Rodotrem3x3 = "Rodotrem (3x3)",
   Rodotrem = "Rodotrem",
   Truck = "Caminhão Truck",
+  Bitruck = "Bitruck",
 }
 
 export enum VehicleBodyType {
@@ -221,6 +222,7 @@ export interface Cargo {
   originCoords?: { lat: number; lng: number };
   destinationCoords?: { lat: number; lng: number };
   branchId?: string;
+  requiresTracker?: boolean;
   destinations?: CargoDestination[];
   externalOrder?: {
     required: boolean;

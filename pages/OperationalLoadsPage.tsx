@@ -39,7 +39,25 @@ const formatAllowedVehicleTypes = (allowed?: { setType: VehicleSetType; bodyType
     if (!allowed || allowed.length === 0) return 'N/A';
     const allBodyTypes = allowed.flatMap(type => type.bodyTypes || []);
     const uniqueBodyTypes = [...new Set(allBodyTypes)];
-    return uniqueBodyTypes.join(';');
+    return uniqueBodyTypes.join(', ');
+};
+
+const FRETEBRAS_VEHICLE_MAP: Record<string, string | null> = {
+  'Rodotrem (3x3)': 'Bitrem 9 eixos',
+  'Carreta 4e': 'Carreta 4º eixo',
+  'Cavalo 4e': 'Carreta',
+  'Bitrem 8e': null,
+  'Bitrem 7e': 'Bitrem 7 eixos',
+  'LS Trucada': 'Carreta LS',
+  'Vanderleia': 'Vanderléia',
+  'Caminhão Truck': 'Truck',
+};
+
+const formatAllowedSetTypes = (allowed?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]): string => {
+    if (!allowed || allowed.length === 0) return '';
+    const allSetTypes = allowed.map(type => type.setType);
+    const uniqueSetTypes = [...new Set(allSetTypes)];
+    return uniqueSetTypes.join(', ');
 };
 
 const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
@@ -66,6 +84,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   const [isShipmentModalOpen, setIsShipmentModalOpen] = useState(false);
   const [selectedCargo, setSelectedCargo] = useState<Cargo | null>(null);
   const [copyButtonText, setCopyButtonText] = useState('Divulgar Cargas');
+  const [fretebrasButtonText, setFretebrasButtonText] = useState('Prompt Fretebras');
   const [visibleLoads, setVisibleLoads] = useState<Cargo[]>([]);
   const [dailyBalanceDate, setDailyBalanceDate] = useState(new Date().toISOString().split('T')[0]);
   const canCreateShipment = can('create', currentUser, 'shipments', profilePermissions);
@@ -218,16 +237,76 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
     });
   };
 
+  const handleShareFretebras = () => {
+    const loadsToShare = visibleLoads.filter(load => load.status === CargoStatus.EmAndamento);
+    if (loadsToShare.length === 0) {
+      alert('Nenhuma carga em andamento para divulgar.');
+      return;
+    }
+
+    const entriesText = loadsToShare.flatMap(load => {
+      const product = products.find(p => p.id === load.productId)?.name || '';
+      const origin = load.origin;
+      const allowed = load.allowedVehicleTypes || [];
+      const mappedVehicles = allowed
+        .map(t => FRETEBRAS_VEHICLE_MAP[t.setType] !== undefined ? FRETEBRAS_VEHICLE_MAP[t.setType] : t.setType)
+        .filter((t): t is string => Boolean(t));
+      const vehicleTypes = mappedVehicles.length > 0
+        ? [...new Set(mappedVehicles)].join(', ')
+        : '';
+      const bodyTypes = allowed.length > 0
+        ? [...new Set(allowed.flatMap(t => t.bodyTypes || []))].join(', ')
+        : '';
+      const rastreada = load.requiresTracker ? 'Sim' : 'Não';
+
+      const destinationsList = (load.destinations && load.destinations.length > 0)
+        ? load.destinations.map(d => d.city).filter(Boolean)
+        : [load.destination];
+
+      return destinationsList.map(destination => [
+        `ORIGEM: ${origin}`,
+        `DESTINO: ${destination}`,
+        `PRODUTO: ${product}`,
+        `VALOR: A combinar`,
+        `VEÍCULO: ${vehicleTypes}`,
+        `CARROCERIA: ${bodyTypes}`,
+        `RASTREADA: ${rastreada}`,
+        `LONA: Sim`,
+        `FORMA DE PAGAMENTO:`,
+        `OBSERVAÇÕES:`,
+      ].join('\n'));
+    }).join('\n\n');
+
+    navigator.clipboard.writeText(entriesText).then(() => {
+      setFretebrasButtonText('Copiado!');
+      setTimeout(() => setFretebrasButtonText('Prompt Fretebras'), 3000);
+    }, (err) => {
+      console.error('Falha ao copiar: ', err);
+      alert('Não foi possível copiar as cargas. Verifique as permissões do navegador.');
+    });
+  };
+
   return (
     <>
       <Header title="Cargas em Operação">
-        <button
-          onClick={handleShareLoads}
-          className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200"
-        >
-          <CopyIcon className="w-5 h-5 mr-2" />
-          {copyButtonText}
-        </button>
+        {currentUser.profile !== UserProfile.Cliente && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleShareLoads}
+              className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200"
+            >
+              <CopyIcon className="w-5 h-5 mr-2" />
+              {copyButtonText}
+            </button>
+            <button
+              onClick={handleShareFretebras}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200"
+            >
+              <CopyIcon className="w-5 h-5 mr-2" />
+              {fretebrasButtonText}
+            </button>
+          </div>
+        )}
       </Header>
       
       <h2 className="text-2xl font-semibold text-gray-800 dark:text-white mb-4">Lista de Cargas em Andamento</h2>
