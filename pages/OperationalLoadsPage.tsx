@@ -45,7 +45,8 @@ const formatAllowedVehicleTypes = (allowed?: { setType: VehicleSetType; bodyType
 const FRETEBRAS_VEHICLE_MAP: Record<string, string | null> = {
   'Rodotrem (3x3)': 'Bitrem 9 eixos',
   'Carreta 4e': 'Carreta 4º eixo',
-  'Cavalo 4e': 'Carreta',
+  'Cavalo 4e': null,
+  'LS Simples': null,
   'Bitrem 8e': null,
   'Bitrem 7e': 'Bitrem 7 eixos',
   'LS Trucada': 'Carreta LS',
