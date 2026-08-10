@@ -163,24 +163,21 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [lightboxTitle, setLightboxTitle] = useState<string>('');
 
-  if (!isOpen || !cargo) return null;
+  // Compute freightLegsToDisplay safely before hooks (cargo may be null when closed)
+  const freightLegsToDisplay = useMemo(() => {
+    if (!cargo) return [];
+    if (cargo.destinations && cargo.destinations.length > 0 && (cargo.destinations[0].freightLegs?.length ?? 0) > 0)
+      return cargo.destinations[0].freightLegs!;
+    if (cargo.freightLegs && cargo.freightLegs.length > 0)
+      return cargo.freightLegs;
+    return [{
+      companyFreightValuePerTon: cargo.companyFreightValuePerTon,
+      driverFreightValuePerTon: cargo.driverFreightValuePerTon,
+      hasIcms: cargo.hasIcms,
+      icmsPercentage: cargo.icmsPercentage,
+    }];
+  }, [cargo]);
 
-  const scheduledButNotLoaded = Math.max(0, cargo.scheduledVolume - cargo.loadedVolume);
-  
-  const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-  const formatDate = (dateString: string) => new Date(dateString).toLocaleString('pt-BR');
-
-  const freightLegsToDisplay = (cargo.destinations && cargo.destinations.length > 0 && cargo.destinations[0].freightLegs?.length > 0)
-    ? cargo.destinations[0].freightLegs
-    : (cargo.freightLegs && cargo.freightLegs.length > 0)
-      ? cargo.freightLegs
-      : [{
-          companyFreightValuePerTon: cargo.companyFreightValuePerTon,
-          driverFreightValuePerTon: cargo.driverFreightValuePerTon,
-          hasIcms: cargo.hasIcms,
-          icmsPercentage: cargo.icmsPercentage,
-        }];
-      
   const { totalCompanyFreight, totalDriverFreightPJ, totalDriverFreightPF, netMarginPercentagePJ, netMarginPercentagePF, marginPJ, marginPF } = useMemo(() => {
     const activeLegs = freightLegsToDisplay;
 
@@ -209,6 +206,13 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
   const isPFDisabled = useMemo(() => {
     return freightLegsToDisplay.some(leg => leg.disableDriverFreightPF);
   }, [freightLegsToDisplay]);
+
+  // ── Guard clause AFTER all hooks ──
+  if (!isOpen || !cargo) return null;
+
+  const scheduledButNotLoaded = Math.max(0, cargo.scheduledVolume - cargo.loadedVolume);
+  const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  const formatDate = (dateString: string) => new Date(dateString).toLocaleString('pt-BR');
 
   const getMarginColorClass = (m: number) => {
     if (isNaN(m) || !isFinite(m)) return 'text-gray-600 dark:text-gray-400 bg-gray-200 dark:bg-gray-700';
