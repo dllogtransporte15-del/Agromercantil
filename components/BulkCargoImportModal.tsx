@@ -467,7 +467,7 @@ function parseEmojiCargo(block: string, products: Product[], isMilhaoClient: boo
     destinationLocation,
     productName: productName || (foundProd?.name || 'Milho'),
     productId,
-    totalVolume: 0,
+    totalVolume: isMilhaoClient ? 100 : 0,
     baseValue,
     companyFreightValuePerTon: company,
     driverFreightValuePerTonPJ: pj,
@@ -1083,6 +1083,9 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                       </p>
                       <p className="text-xs text-blue-700 dark:text-blue-300">
                         • <strong>Produto:</strong> Seleciona automaticamente <strong>Milho</strong>.
+                      </p>
+                      <p className="text-xs text-blue-700 dark:text-blue-300">
+                        • <strong>Volume Padrão:</strong> <strong>100 ton</strong> (editável na conferência).
                       </p>
                       <p className="text-xs text-blue-700 dark:text-blue-300">
                         • <strong>Veículos Padrão:</strong> Todos os tipos de veículos (exceto Truck e Bitruck) com carrocerias <strong>Graneleiro e Basculante</strong>.
