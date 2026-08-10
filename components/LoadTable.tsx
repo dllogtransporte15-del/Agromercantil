@@ -299,12 +299,15 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
               : [{
                   companyFreightValuePerTon: load.companyFreightValuePerTon,
                   driverFreightValuePerTon: load.driverFreightValuePerTon,
+                  driverFreightValuePerTonPJ: load.driverFreightValuePerTonPJ ?? load.driverFreightValuePerTon,
+                  driverFreightValuePerTonPF: load.driverFreightValuePerTonPF ?? load.driverFreightValuePerTon,
                   hasIcms: load.hasIcms,
                   icmsPercentage: load.icmsPercentage,
+                  disableDriverFreightPF: load.disableDriverFreightPF,
                 }];
               
-          const totalDriverFreightPJ = freightLegsToDisplay.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
-          const totalDriverFreightPF = freightLegsToDisplay.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
+          const totalDriverFreightPJ = freightLegsToDisplay.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? load.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
+          const totalDriverFreightPF = freightLegsToDisplay.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? load.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
           const totalNetCompanyValue = freightLegsToDisplay.reduce((sum, leg) => {
               const icmsRate = leg.hasIcms ? leg.icmsPercentage / 100 : 0;
               return sum + (leg.companyFreightValuePerTon * (1 - icmsRate));
@@ -655,8 +658,8 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                     <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-2">
                         {load.destinations.map((dest, idx) => {
                              const leg = dest.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: 0, companyFreightValuePerTon: 0 };
-                             const pj = leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon;
-                             const pf = leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon;
+                             const pj = leg.driverFreightValuePerTonPJ ?? load.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon;
+                             const pf = leg.driverFreightValuePerTonPF ?? load.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon;
                              
                              const destShipments = shipments.filter(s => s.cargoId === load.id && s.route === dest.city && s.status !== ShipmentStatus.Cancelado);
                              const scheduledDest = destShipments.filter(s => [ShipmentStatus.PreCadastro, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoSeguradora, ShipmentStatus.AguardandoCarregamento].includes(s.status)).reduce((sum, s) => sum + (s.shipmentTonnage || 0), 0);

@@ -1608,40 +1608,66 @@ const App: React.FC = () => {
     } else { 
       if (!currentUser) return;
       
-      // Gerar um ID temporário para atualização otimista na UI
-      const tempId = `TEMP-${Date.now()}`;
+      const maxSeq = cargos.reduce((max, c) => Math.max(max, c.sequenceId || 0), 100);
+      const seqId = (loadData.sequenceId && loadData.sequenceId > 0)
+        ? loadData.sequenceId
+        : (maxSeq + 1);
+      const realId = `CRG-${seqId}`;
       const newLoad: Cargo = {
         ...loadData,
-        id: tempId,
+        id: realId,
+        sequenceId: seqId,
         createdAt: new Date().toISOString(),
         createdById: (loadData as any).createdById || currentUser.id,
-        history: [createHistoryLog(`Carga iniciada (Aguardando ID do servidor)`)],
+        history: [createHistoryLog(`Carga criada (#${seqId}).`)],
       } as Cargo;
 
-      
       // Atualização otimista
       setCargos(prev => [newLoad, ...prev]);
       
       try {
-        // O servidor irá ignorar o tempId e gerar o real CRG-XXX via Trigger
         const savedCargo = await insertCargo(newLoad);
-        
-        // Atualiza o estado local com o ID real retornado pelo banco
-        setCargos(prev => prev.map(c => c.id === tempId ? savedCargo : c));
-        
-        // Sincroniza o contador local de IDs para evitar saltos desnecessários (opcional)
-        const newNum = parseInt(savedCargo.id.split('-')[1], 10);
-        setNextIds((prev: any) => ({ ...prev, cargo: Math.max(prev.cargo, newNum + 1) }));
-        
+        setCargos(prev => prev.map(c => c.id === realId ? savedCargo : c));
+        setNextIds((prev: any) => ({ ...prev, cargo: Math.max(prev.cargo, seqId + 1) }));
       } catch (err: any) {
         console.error('Erro ao salvar carga no Supabase:', err);
-        // Remove a carga temporária em caso de erro (rollback)
-        setCargos(prev => prev.filter(c => c.id !== tempId));
-        
+        setCargos(prev => prev.filter(c => c.id !== realId));
         const errorMessage = err?.message || 'Erro desconhecido ao salvar no banco de dados.';
         showToast(`[ERRO CRÍTICO] A carga não pôde ser salva no banco de dados: ${errorMessage}. Verifique as informações preenchidas.`, 'error');
       }
     }
+  };
+
+  const handleBulkSaveLoads = async (cargosData: Array<Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'>>) => {
+    if (!currentUser) return;
+    const maxSeq = cargos.reduce((max, c) => Math.max(max, c.sequenceId || 0), 100);
+    let currentSeq = maxSeq + 1;
+
+    for (const loadData of cargosData) {
+      const seqId = currentSeq++;
+      const realId = `CRG-${seqId}`;
+      const newLoad: Cargo = {
+        ...loadData,
+        id: realId,
+        sequenceId: seqId,
+        createdAt: new Date().toISOString(),
+        createdById: currentUser.id,
+        history: [createHistoryLog(`Carga criada via importação em lote (#${seqId}).`)],
+      } as Cargo;
+
+      setCargos(prev => [newLoad, ...prev]);
+      try {
+        const savedCargo = await insertCargo(newLoad);
+        setCargos(prev => prev.map(c => c.id === realId ? savedCargo : c));
+        setNextIds((prev: any) => ({ ...prev, cargo: Math.max(prev.cargo, seqId + 1) }));
+      } catch (err: any) {
+        setCargos(prev => prev.filter(c => c.id !== realId));
+        const errorMessage = err?.message || 'Erro desconhecido.';
+        showToast(`[ERRO] Falha ao criar carga #${seqId}: ${errorMessage}`, 'error');
+        throw err;
+      }
+    }
+    showToast(`${cargosData.length} carga(s) criada(s) com sucesso!`, 'success');
   };
 
   const handleSaveUser = async (userData: User | Omit<User, 'id'>) => {
@@ -1886,7 +1912,7 @@ const App: React.FC = () => {
       case 'vehicles':
         return <VehiclesPage vehicles={vehicles} setVehicles={setVehicles} onSaveVehicle={handleSaveVehicle} owners={owners} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} cargos={cargos} />;
       case 'loads':
-        return <LoadsPage loads={activeLoads} setLoads={setCargos} clients={clients} products={products} onSaveLoad={handleSaveLoad} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} onUpdateTmsBatch={handleUpdateTmsBatch} onUpdatePrice={handleUpdateShipmentPrice} currentUser={currentUser} profilePermissions={profilePermissions} users={users} shipments={visibleShipments} onDeleteLoad={handleDeleteCargo} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} vehicles={vehicles} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} />;
+        return <LoadsPage loads={activeLoads} setLoads={setCargos} clients={clients} products={products} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} onUpdateTmsBatch={handleUpdateTmsBatch} onUpdatePrice={handleUpdateShipmentPrice} currentUser={currentUser} profilePermissions={profilePermissions} users={users} shipments={visibleShipments} onDeleteLoad={handleDeleteCargo} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} vehicles={vehicles} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} />;
       case 'products':
         return <ProductsPage products={products} onSaveProduct={handleSaveProduct} onDeleteProduct={handleDeleteProduct} currentUser={currentUser} profilePermissions={profilePermissions} />;
       case 'shipments':

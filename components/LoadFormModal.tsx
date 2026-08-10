@@ -638,15 +638,30 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                             </button>
                         </div>
                         {(load.attachments && load.attachments.length > 0) && (
-                            <ul className="mt-2 space-y-1">
-                                {load.attachments.map((fileName, index) => (
-                                    <li key={index} className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-900/50 p-2 rounded-md">
-                                        <span>{fileName}</span>
-                                        <button type="button" onClick={() => handleRemoveAttachment(fileName)} className="p-1 text-red-500 hover:text-red-700 dark:hover:text-red-400">
-                                            <XIcon className="w-4 h-4" />
-                                        </button>
-                                    </li>
-                                ))}
+                            <ul className="mt-2 space-y-1.5">
+                                {load.attachments.map((fileName, index) => {
+                                    const isImage = fileName.startsWith('data:image/') || /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(fileName);
+                                    return (
+                                        <li key={index} className="flex items-center justify-between text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700/50 p-2 rounded-lg border border-gray-200 dark:border-gray-600">
+                                            <div className="flex items-center gap-2 truncate">
+                                                {isImage ? (
+                                                    <>
+                                                        <img src={fileName} alt="Anexo" className="w-8 h-8 object-cover rounded border bg-white flex-shrink-0" />
+                                                        <span className="font-medium text-xs truncate">📸 Imagem Anexa #{index + 1}</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <PaperclipIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                                        <span className="text-xs truncate">{fileName.length > 40 ? `${fileName.slice(0, 37)}...` : fileName}</span>
+                                                    </>
+                                                )}
+                                            </div>
+                                            <button type="button" onClick={() => handleRemoveAttachment(fileName)} className="p-1 text-red-500 hover:text-red-700 dark:hover:text-red-400 flex-shrink-0 ml-2" title="Remover anexo">
+                                                <XIcon className="w-4 h-4" />
+                                            </button>
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         )}
                     </div>

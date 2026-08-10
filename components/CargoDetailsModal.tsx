@@ -1,5 +1,5 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import type { Cargo, Client, Product, User, FreightLeg } from '../types';
 import VolumeBar from './VolumeBar';
 import { PaperclipIcon } from './icons/PaperclipIcon';
@@ -19,6 +19,107 @@ const DetailItem: React.FC<{ label: string; value?: string | number | null; chil
         {children || <p className="text-sm text-gray-800 dark:text-gray-200">{value ?? 'N/A'}</p>}
     </div>
 );
+
+// ─────────────────────────────────────────────
+// Lightbox Modal para Visualização da Imagem
+// ─────────────────────────────────────────────
+
+interface ImageLightboxModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  imageUrl: string | null;
+  title?: string;
+}
+
+const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({ isOpen, onClose, imageUrl, title }) => {
+  const [zoom, setZoom] = useState(1);
+  const [rotation, setRotation] = useState(0);
+
+  useEffect(() => {
+    if (isOpen) {
+      setZoom(1);
+      setRotation(0);
+    }
+  }, [isOpen]);
+
+  if (!isOpen || !imageUrl) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="relative max-w-5xl w-full max-h-[95vh] flex flex-col bg-gray-900 border border-gray-700 rounded-2xl overflow-hidden shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header do visualizador */}
+        <div className="flex items-center justify-between px-6 py-3 bg-gray-800/90 border-b border-gray-700 text-white z-10">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">📸</span>
+            <div>
+              <h3 className="text-sm font-bold">{title || 'Visualizador de Anexo da Carga'}</h3>
+              <p className="text-[11px] text-gray-400">Visualização interativa (sem download)</p>
+            </div>
+          </div>
+
+          {/* Controles de Zoom e Rotação */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setZoom(prev => Math.max(0.5, prev - 0.25))}
+              className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs text-gray-200 transition-colors"
+              title="Diminuir Zoom"
+            >
+              🔍 −
+            </button>
+            <span className="text-xs font-mono px-2 py-1 bg-gray-800 rounded">{Math.round(zoom * 100)}%</span>
+            <button
+              onClick={() => setZoom(prev => Math.min(3, prev + 0.25))}
+              className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs text-gray-200 transition-colors"
+              title="Aumentar Zoom"
+            >
+              🔍 +
+            </button>
+            <button
+              onClick={() => setRotation(prev => (prev + 90) % 360)}
+              className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs text-gray-200 transition-colors ml-1"
+              title="Girar 90°"
+            >
+              ↻ Girar
+            </button>
+            <button
+              onClick={() => { setZoom(1); setRotation(0); }}
+              className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs text-gray-200 transition-colors"
+              title="Resetar Zoom"
+            >
+              ↺ 100%
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 bg-red-600/80 hover:bg-red-600 rounded-lg text-xs text-white transition-colors ml-2"
+              title="Fechar (Esc)"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Área da imagem */}
+        <div className="flex-1 overflow-auto p-4 flex items-center justify-center min-h-[400px] max-h-[82vh] bg-black/40 select-none">
+          <img
+            src={imageUrl}
+            alt="Anexo Digitalizado"
+            style={{
+              transform: `scale(${zoom}) rotate(${rotation}deg)`,
+              transition: 'transform 0.2s ease-out',
+            }}
+            className="max-w-full max-h-[78vh] object-contain rounded-lg shadow-lg cursor-grab active:cursor-grabbing"
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number }> = ({ leg, index }) => {
     const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
@@ -59,6 +160,9 @@ const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number }> = ({ leg, i
 
 
 const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, cargo, client, product, commercialUser }) => {
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [lightboxTitle, setLightboxTitle] = useState<string>('');
+
   if (!isOpen || !cargo) return null;
 
   const scheduledButNotLoaded = Math.max(0, cargo.scheduledVolume - cargo.loadedVolume);
@@ -253,24 +357,85 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
             {cargo.observations && (
                 <div className="border-t dark:border-gray-700 pt-4">
                     <DetailItem label="Observações">
-                        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md">{cargo.observations}</p>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md leading-relaxed">
+                            {cargo.observations.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
+                                /(https?:\/\/[^\s]+)/.test(part) ? (
+                                    <a
+                                        key={i}
+                                        href={part}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-primary dark:text-blue-400 underline font-semibold hover:opacity-80 break-all"
+                                    >
+                                        {part}
+                                    </a>
+                                ) : (
+                                    part
+                                )
+                            )}
+                        </p>
                     </DetailItem>
                 </div>
             )}
 
             {cargo.attachments && cargo.attachments.length > 0 && (
                 <div className="border-t dark:border-gray-700 pt-4">
-                    <DetailItem label="Anexos">
-                        <ul className="mt-1 space-y-2">
-                            {cargo.attachments.map((fileName, index) => (
-                                <li key={index}>
-                                    <a href="#" onClick={(e) => e.preventDefault()} className="flex items-center text-sm text-blue-600 dark:text-blue-400 hover:underline">
-                                        <PaperclipIcon className="w-4 h-4 mr-2" />
-                                        {fileName}
-                                    </a>
-                                </li>
-                            ))}
-                        </ul>
+                    <DetailItem label="Anexos & Imagens da Carga">
+                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {cargo.attachments.map((fileName, index) => {
+                                const isImage = fileName.startsWith('data:image/') || /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(fileName);
+                                const isPdf = /\.pdf(\?.*)?$/i.test(fileName);
+
+                                if (isImage) {
+                                    return (
+                                        <div
+                                            key={index}
+                                            onClick={() => {
+                                                setLightboxImage(fileName);
+                                                setLightboxTitle(`Anexo ${index + 1} — Carga #${cargo.sequenceId}`);
+                                            }}
+                                            className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600 rounded-xl hover:border-primary cursor-pointer transition-all group shadow-sm"
+                                        >
+                                            <img
+                                                src={fileName}
+                                                alt="Miniatura"
+                                                className="w-14 h-14 object-cover rounded-lg border border-gray-300 dark:border-gray-600 group-hover:scale-105 transition-transform bg-white flex-shrink-0"
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary transition-colors truncate">
+                                                    📸 Roteiro / Imagem da Carga {(cargo.attachments?.length || 0) > 1 ? `#${index + 1}` : ''}
+                                                </p>
+                                                <p className="text-xs text-primary font-medium flex items-center gap-1 mt-1">
+                                                    <span>🔍 Clique para visualizar ampliado</span>
+                                                </p>
+                                            </div>
+                                        </div>
+                                    );
+                                }
+
+                                return (
+                                    <div
+                                        key={index}
+                                        className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600 rounded-xl"
+                                    >
+                                        <div className="flex items-center gap-2 truncate">
+                                            <PaperclipIcon className="w-5 h-5 text-gray-500 flex-shrink-0" />
+                                            <span className="text-sm text-gray-800 dark:text-gray-200 truncate">
+                                                {fileName.length > 40 ? `${fileName.slice(0, 37)}...` : fileName}
+                                            </span>
+                                        </div>
+                                        <a
+                                            href={fileName}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-xs text-primary font-semibold hover:underline flex-shrink-0 ml-2"
+                                        >
+                                            Abrir ↗
+                                        </a>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </DetailItem>
                 </div>
             )}
@@ -315,6 +480,14 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
             </button>
         </div>
       </div>
+
+      {/* Visualizador Ampliado de Imagem / Anexo */}
+      <ImageLightboxModal
+        isOpen={!!lightboxImage}
+        onClose={() => setLightboxImage(null)}
+        imageUrl={lightboxImage}
+        title={lightboxTitle}
+      />
     </div>
   );
 };
