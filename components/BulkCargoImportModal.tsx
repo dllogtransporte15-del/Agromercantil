@@ -264,7 +264,7 @@ function parseVehicleTypes(text: string): { setType: VehicleSetType; bodyTypes: 
   const bodyTypes: VehicleBodyType[] = [];
   if (upper.includes('GRANELEIRO')) bodyTypes.push(VehicleBodyType.Graneleiro);
   if (upper.includes('BASCULANTE') || upper.includes('CAÇAMBA') || upper.includes('CACAMBA')) bodyTypes.push(VehicleBodyType.Basculante);
-  const defaultBodies = bodyTypes.length > 0 ? bodyTypes : [VehicleBodyType.Graneleiro];
+  const defaultBodies = bodyTypes.length > 0 ? bodyTypes : [VehicleBodyType.Graneleiro, VehicleBodyType.Basculante];
 
   if (upper.includes('BITREM')) results.push({ setType: VehicleSetType.Bitrem7e, bodyTypes: defaultBodies });
   if (upper.includes('RODOTREM')) results.push({ setType: VehicleSetType.Rodotrem, bodyTypes: defaultBodies });
@@ -276,6 +276,19 @@ function parseVehicleTypes(text: string): { setType: VehicleSetType; bodyTypes: 
   }
 
   return results.length > 0 ? results : [];
+}
+
+/**
+ * Retorna todos os tipos de veículos exceto Truck e Bitruck, com carrocerias Graneleiro e Basculante
+ */
+export function getMilhaoDefaultVehicleTypes(): { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[] {
+  const bodies = [VehicleBodyType.Graneleiro, VehicleBodyType.Basculante];
+  return Object.values(VehicleSetType)
+    .filter(st => st !== VehicleSetType.Truck && st !== VehicleSetType.Bitruck)
+    .map(st => ({
+      setType: st,
+      bodyTypes: bodies,
+    }));
 }
 
 function findProduct(name: string, products: Product[], isMilhaoClient: boolean = false, isComigoClient: boolean = false): Product | undefined {
@@ -462,7 +475,7 @@ function parseEmojiCargo(block: string, products: Product[], isMilhaoClient: boo
     driverFreightValuePerTon: pj,
     hasIcms: false,
     icmsPercentage: 12,
-    vehicleTypes: vehicleText.trim() ? parseVehicleTypes(vehicleText) : [],
+    vehicleTypes: isMilhaoClient ? getMilhaoDefaultVehicleTypes() : (vehicleText.trim() ? parseVehicleTypes(vehicleText) : []),
     observations: obsText || undefined,
     loadingStartDate,
     dailySchedule: getInitialDailySchedule(),
@@ -656,15 +669,7 @@ const CargoVehicleTypesManager: React.FC<{
   };
 
   const handleAddPresetGrain = () => {
-    const bodies = [VehicleBodyType.Graneleiro, VehicleBodyType.Basculante];
-    const presets = [
-      { setType: VehicleSetType.LSSimples, bodyTypes: bodies },
-      { setType: VehicleSetType.Carreta4e, bodyTypes: bodies },
-      { setType: VehicleSetType.Bitrem7e, bodyTypes: bodies },
-      { setType: VehicleSetType.Bitrem8e, bodyTypes: bodies },
-      { setType: VehicleSetType.Rodotrem, bodyTypes: bodies },
-    ];
-    onChange(presets);
+    onChange(getMilhaoDefaultVehicleTypes());
   };
 
   return (
@@ -679,7 +684,7 @@ const CargoVehicleTypesManager: React.FC<{
             onClick={handleAddPresetGrain}
             className="text-[10px] text-primary hover:underline font-semibold"
           >
-            ⚡ Adicionar Padrão (LS, 4º Eixo, Bitrem)
+            ⚡ Adicionar Padrão (Todos exceto Truck/Bitruck)
           </button>
         )}
       </div>
@@ -1078,6 +1083,9 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                       </p>
                       <p className="text-xs text-blue-700 dark:text-blue-300">
                         • <strong>Produto:</strong> Seleciona automaticamente <strong>Milho</strong>.
+                      </p>
+                      <p className="text-xs text-blue-700 dark:text-blue-300">
+                        • <strong>Veículos Padrão:</strong> Todos os tipos de veículos (exceto Truck e Bitruck) com carrocerias <strong>Graneleiro e Basculante</strong>.
                       </p>
                       <p className="text-xs text-blue-700 dark:text-blue-300">
                         • <strong>Margens:</strong> Frete Empresa (+5%), PJ (−8%), PF (−12%).
