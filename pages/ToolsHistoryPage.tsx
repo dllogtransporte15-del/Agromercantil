@@ -785,7 +785,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                     </div>
 
                     {/* Formulário de Edição da Cotação */}
-                    {activeView === 'cotacoes' && editQuoteValues?.id === item.id && (
+                    {activeView === 'cotacoes' && editQuoteValues && editQuoteValues.id === item.id && (
                       <div className="mt-6 pt-6 border-t border-slate-100 dark:border-gray-700">
                         <h4 className="text-xs font-bold text-emerald-500 uppercase tracking-widest flex items-center mb-4">
                           <Pencil className="w-3 h-3 mr-2" /> Editar Cotação
@@ -793,67 +793,67 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                           <div>
                             <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Cliente</label>
-                            <input type="text" value={editQuoteValues.clientName}
+                            <input type="text" value={editQuoteValues.clientName ?? ''}
                               onChange={e => setEditQuoteValues(prev => prev ? {...prev, clientName: e.target.value} : null)}
                               className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
                           </div>
                           <div>
                             <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Produto</label>
-                            <input type="text" value={editQuoteValues.productName}
+                            <input type="text" value={editQuoteValues.productName ?? ''}
                               onChange={e => setEditQuoteValues(prev => prev ? {...prev, productName: e.target.value} : null)}
                               className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
                           </div>
                           <div>
                             <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Origem</label>
-                            <input type="text" value={editQuoteValues.origin}
+                            <input type="text" value={editQuoteValues.origin ?? ''}
                               onChange={e => setEditQuoteValues(prev => prev ? {...prev, origin: e.target.value} : null)}
                               className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
                           </div>
                           <div>
                             <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Destino</label>
-                            <input type="text" value={editQuoteValues.destination}
+                            <input type="text" value={editQuoteValues.destination ?? ''}
                               onChange={e => setEditQuoteValues(prev => prev ? {...prev, destination: e.target.value} : null)}
                               className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
                           </div>
                           <div>
                             <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Eixos</label>
-                            <input type="number" value={editQuoteValues.axes}
+                            <input type="number" value={editQuoteValues.axes ?? ''}
                               onChange={e => setEditQuoteValues(prev => prev ? {...prev, axes: e.target.value} : null)}
                               className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
                           </div>
                           <div>
                             <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Tipo de Mercadoria</label>
-                            <input type="text" value={editQuoteValues.cargoType}
+                            <input type="text" value={editQuoteValues.cargoType ?? ''}
                               onChange={e => setEditQuoteValues(prev => prev ? {...prev, cargoType: e.target.value} : null)}
                               className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
                           </div>
                           <div>
                             <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Peso (Ton)</label>
-                            <input type="number" value={editQuoteValues.weight}
+                            <input type="number" value={editQuoteValues.weight ?? ''}
                               onChange={e => setEditQuoteValues(prev => prev ? {...prev, weight: e.target.value} : null)}
                               className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
                           </div>
                           <div>
                             <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Pedágio (R$)</label>
-                            <input type="number" value={editQuoteValues.tollValue}
+                            <input type="number" value={editQuoteValues.tollValue ?? ''}
                               onChange={e => setEditQuoteValues(prev => prev ? {...prev, tollValue: e.target.value} : null)}
                               className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
                           </div>
                           <div>
                             <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Margem (%)</label>
-                            <input type="number" value={editQuoteValues.margin}
+                            <input type="number" value={editQuoteValues.margin ?? ''}
                               onChange={e => setEditQuoteValues(prev => prev ? {...prev, margin: e.target.value} : null)}
                               className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
                           </div>
                           <div>
                             <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Frete Motorista (R$/Ton)</label>
-                            <input type="number" value={editQuoteValues.driverFreightPerTon}
+                            <input type="number" value={editQuoteValues.driverFreightPerTon ?? ''}
                               onChange={e => setEditQuoteValues(prev => prev ? {...prev, driverFreightPerTon: e.target.value} : null)}
                               className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
                           </div>
                           <div>
                             <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Cotação Empresa (R$/Ton)</label>
-                            <input type="number" value={editQuoteValues.companyFreightPerTon}
+                            <input type="number" value={editQuoteValues.companyFreightPerTon ?? ''}
                               onChange={e => setEditQuoteValues(prev => prev ? {...prev, companyFreightPerTon: e.target.value} : null)}
                               className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
                           </div>

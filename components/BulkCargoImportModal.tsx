@@ -118,10 +118,7 @@ function calcFreight(
   hasIcms: boolean = false,
   icmsPercentage: number = 0
 ) {
-  let company = companyValue;
-  if (isMilhao) {
-    company = parseFloat((companyValue * 1.05).toFixed(2));
-  }
+  const company = companyValue;
 
   // Abatimento de ICMS se ativo
   const icmsRate = hasIcms ? ((Number(icmsPercentage) || 0) / 100) : 0;
@@ -1091,7 +1088,7 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                         • <strong>Veículos Padrão:</strong> Todos os tipos de veículos (exceto Truck e Bitruck) com carrocerias <strong>Graneleiro e Basculante</strong>.
                       </p>
                       <p className="text-xs text-blue-700 dark:text-blue-300">
-                        • <strong>Margens:</strong> Frete Empresa (+5%), PJ (−8%), PF (−12%).
+                        • <strong>Margens:</strong> Frete Empresa (Valor informado), PJ (−8%), PF (−12%).
                       </p>
                       <p className="text-xs text-blue-700 dark:text-blue-300">
                         • <strong>Programação Diária:</strong> 40 ton em <em>Demanda a Verificar</em> (hoje até 16h, ou amanhã).
