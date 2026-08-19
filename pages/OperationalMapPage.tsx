@@ -25,6 +25,7 @@ interface OperationalMapPageProps {
   users: User[];
   onModalStateChange: (isOpen: boolean) => void;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
+  isSimplifiedWorkflowEnabled?: boolean;
 }
 
 const formatAllowedVehicleTypes = (allowed?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]): string => {
@@ -61,7 +62,20 @@ const isInBoundingBox = (lat: number, lon: number, centerLat: number, centerLon:
   return Math.abs(lat - centerLat) <= latDegree && Math.abs(lon - centerLon) <= lonDegree;
 };
 
-const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipments, clients, products, drivers, vehicles, onCreateShipment, currentUser, users, onModalStateChange, onDeleteAttachment }) => {
+const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ 
+  cargos, 
+  shipments, 
+  clients, 
+  products, 
+  drivers, 
+  vehicles, 
+  onCreateShipment, 
+  currentUser, 
+  users, 
+  onModalStateChange, 
+  onDeleteAttachment,
+  isSimplifiedWorkflowEnabled 
+}) => {
   const [originQuery, setOriginQuery] = useState('Catalão');
   const [originRadius, setOriginRadius] = useState(200);
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -708,6 +722,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
         currentUser={currentUser}
         shipments={shipments}
         users={users}
+        isSimplifiedWorkflowEnabled={isSimplifiedWorkflowEnabled}
       />
     </div>
   );

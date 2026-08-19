@@ -57,6 +57,7 @@ interface ShipmentsPageProps {
   companyLogo?: string | null;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onSwapCargo: (shipmentId: string, newCargoId: string) => void;
+  isSimplifiedWorkflowEnabled?: boolean;
 }
 
 
@@ -68,11 +69,13 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   profilePermissions, users, onUpdateAttachment, onAddAttachments, onUpdatePrice, onConfirmCancel, 
   onUpdateAnttAndBankDetails, onTransferShipment, onMarkArrival, onDeleteShipment,
   onRevertStatus, onUpdateScheduledDateTime, onUpdateShipmentData, activeLocks, onModalStateChange,
-  companyLogo, onDeleteAttachment, onSwapCargo
+  companyLogo, onDeleteAttachment, onSwapCargo, isSimplifiedWorkflowEnabled
 }) => {
 
-  const [activeStatus, setActiveStatus] = useState<ShipmentStatus | 'all'>(ShipmentStatus.PreCadastro);
-  const [isSimplifiedView, setIsSimplifiedView] = useState(false);
+  const isSimplifiedView = isSimplifiedWorkflowEnabled ?? (typeof window !== 'undefined' && localStorage.getItem('isSimplifiedWorkflowEnabled') === 'true');
+  const [activeStatus, setActiveStatus] = useState<ShipmentStatus | 'all'>(
+    isSimplifiedView ? ShipmentStatus.AguardandoSeguradora : ShipmentStatus.PreCadastro
+  );
   const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
   const [isEditPriceModalOpen, setEditPriceModalOpen] = useState(false);
   const [isCancelModalOpen, setCancelModalOpen] = useState(false);
@@ -85,9 +88,8 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
 
   const [detailsModalCargo, setDetailsModalCargo] = useState<Cargo | null>(null);
 
-  const handleToggleSimplifiedView = (simplified: boolean) => {
-    setIsSimplifiedView(simplified);
-    if (simplified) {
+  useEffect(() => {
+    if (isSimplifiedView) {
       const allowedInSimplified: (ShipmentStatus | 'all')[] = [
         ShipmentStatus.AguardandoSeguradora,
         ShipmentStatus.AguardandoCarregamento,
@@ -99,7 +101,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         setActiveStatus(ShipmentStatus.AguardandoSeguradora);
       }
     }
-  };
+  }, [isSimplifiedView, activeStatus]);
 
   // Sync selected shipment with latest data from props
   useEffect(() => {
@@ -133,7 +135,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   
   const canEditPrice = canUpdate && canPerformSpecialActions;
   const canCancelShipment = canPerformSpecialActions && (canDelete || currentUser.profile === UserProfile.Fiscal);
-  const canTransferShipment = canUpdate && canPerformSpecialActions;
+  const canTransferShipment = (canUpdate && canPerformSpecialActions) || currentUser?.profile === UserProfile.Embarcador;
   const isClient = currentUser.profile === UserProfile.Cliente;
 
   const filteredShipments = useMemo(() => {
@@ -255,6 +257,9 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
     const defaultResponse = { allowed: true, reason: '' };
     if (!currentUser) return { allowed: false, reason: 'Usuário não autenticado.' };
 
+    // Embarques simplificados podem ser avançados em qualquer status por Embarcadores e demais operadores
+    if (shipment.isSimplified) return defaultResponse;
+
     const currentStatus = shipment.status;
     const userProfile = currentUser.profile;
 
@@ -270,7 +275,6 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         return { allowed: false, reason: 'Apenas Financeiro, Diretor, Coordenador ou Admin podem avançar.' };
     }
 
-
     return defaultResponse;
   };
 
@@ -283,7 +287,6 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         onStatusChange={setActiveStatus}
         currentUser={currentUser}
         isSimplifiedView={isSimplifiedView}
-        onToggleSimplifiedView={handleToggleSimplifiedView}
       />
 
       <ShipmentTable 

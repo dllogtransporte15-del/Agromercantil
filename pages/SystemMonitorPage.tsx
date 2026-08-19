@@ -1,17 +1,18 @@
 
 import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
-import { Activity, CheckCircle2, AlertCircle, RefreshCw, Code, Database, Globe } from 'lucide-react';
+import { Activity, CheckCircle2, AlertCircle, RefreshCw, Code, Database, Globe, Zap, Sliders } from 'lucide-react';
 import { supabase } from '../supabase';
 
-interface ServiceStatus {
-  name: string;
-  status: 'ok' | 'warning' | 'error' | 'loading';
-  message: string;
-  latency?: number;
+interface SystemMonitorPageProps {
+  isSimplifiedWorkflowEnabled?: boolean;
+  onToggleSimplifiedWorkflow?: (enabled: boolean) => void;
 }
 
-const SystemMonitorPage: React.FC = () => {
+const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({
+  isSimplifiedWorkflowEnabled = false,
+  onToggleSimplifiedWorkflow,
+}) => {
   const [statuses, setStatuses] = useState<Record<string, ServiceStatus>>({
     github: { name: 'GitHub Infrastructure', status: 'loading', message: 'Verificando...' },
     supabase: { name: 'Supabase Database', status: 'loading', message: 'Verificando...' },
@@ -19,6 +20,22 @@ const SystemMonitorPage: React.FC = () => {
   });
   const [lastCheck, setLastCheck] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const [localSimplified, setLocalSimplified] = useState<boolean>(() => {
+    return isSimplifiedWorkflowEnabled || localStorage.getItem('isSimplifiedWorkflowEnabled') === 'true';
+  });
+
+  useEffect(() => {
+    setLocalSimplified(isSimplifiedWorkflowEnabled);
+  }, [isSimplifiedWorkflowEnabled]);
+
+  const handleToggle = (newValue: boolean) => {
+    setLocalSimplified(newValue);
+    localStorage.setItem('isSimplifiedWorkflowEnabled', String(newValue));
+    if (onToggleSimplifiedWorkflow) {
+      onToggleSimplifiedWorkflow(newValue);
+    }
+  };
 
   const checkStatus = async () => {
     setIsRefreshing(true);
@@ -109,11 +126,78 @@ const SystemMonitorPage: React.FC = () => {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header title="Monitoramento do Sistema" />
       
-      <div className="p-6 max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
+      <div className="p-6 max-w-4xl mx-auto space-y-8">
+
+        {/* Global Operational Settings Card: Modo de Embarque Simplificado */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border-2 border-blue-100 dark:border-blue-900/50 shadow-md p-6 overflow-hidden transition-all">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div className="space-y-2 max-w-2xl">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-xl border border-blue-200 dark:border-blue-800">
+                  <Zap className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                      Modo de Embarque Simplificado
+                    </h3>
+                    <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                      localSimplified
+                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                    }`}>
+                      {localSimplified ? 'Ativado ⚡' : 'Desativado'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5">
+                    Controle global do fluxo de solicitações e esteira operacional
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed pl-0 md:pl-12">
+                {localSimplified ? (
+                  <span className="text-blue-700 dark:text-blue-300 font-medium">
+                    ⚡ <strong>Função Ativa:</strong> As solicitações de embarque serão sempre simplificadas (sem campos de proprietário/carretas/dados bancários/tag) e a tela <strong>Operacional &gt; Embarques</strong> exibirá exclusivamente os status do fluxo simplificado (<em>Ag. Seguradora → Ag. Carregamento → Ag. Nota → Ag. Descarga → Finalizado</em>), com anexos opcionais.
+                  </span>
+                ) : (
+                  <span>
+                    Fluxo normal ativo. As solicitações de embarque exigem todos os dados cadastrais completos e a tela <strong>Operacional &gt; Embarques</strong> exibe todas as abas e regras de validação completas.
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {/* Toggle Button */}
+            <div className="flex flex-col items-center md:items-end gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => handleToggle(!localSimplified)}
+                className={`relative inline-flex h-8 w-16 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                  localSimplified ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+                }`}
+                role="switch"
+                aria-checked={localSimplified}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    localSimplified ? 'translate-x-8' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+              <span className="text-xs font-bold text-gray-600 dark:text-gray-400">
+                {localSimplified ? 'Clique para Desligar' : 'Clique para Ligar'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-6">
             <div>
-                <h2 className="text-xl font-bold text-gray-800 dark:text-white">Estado dos Serviços</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Verificação em tempo real da infraestrutura do sistema</p>
+              <h2 className="text-xl font-bold text-gray-800 dark:text-white">Estado dos Serviços</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Verificação em tempo real da infraestrutura do sistema</p>
             </div>
             <button 
                 onClick={checkStatus} 
@@ -123,9 +207,9 @@ const SystemMonitorPage: React.FC = () => {
                 <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 <span className="text-sm font-medium">Atualizar</span>
             </button>
-        </div>
+          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {Object.entries(statuses).map(([key, service]) => (
                 <div key={key} className={`p-6 rounded-xl border-2 transition-all ${getStatusColor(service.status)}`}>
                     <div className="flex items-center justify-between mb-4">
@@ -146,6 +230,7 @@ const SystemMonitorPage: React.FC = () => {
                     )}
                 </div>
             ))}
+          </div>
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6">

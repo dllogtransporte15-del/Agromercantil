@@ -34,9 +34,10 @@ if (INITIAL_PERMISSIONS[UserProfile.Fiscal] && INITIAL_PERMISSIONS[UserProfile.F
     INITIAL_PERMISSIONS[UserProfile.Fiscal]!['shipments']!.delete = true;
 }
 
-// Specifically grant 'create' permission for 'shipments' to 'Embarcador' profile
+// Specifically grant 'create' and 'update' permission for 'shipments' to 'Embarcador' profile
 if (INITIAL_PERMISSIONS[UserProfile.Embarcador] && INITIAL_PERMISSIONS[UserProfile.Embarcador]!['shipments']) {
     INITIAL_PERMISSIONS[UserProfile.Embarcador]!['shipments']!.create = true;
+    INITIAL_PERMISSIONS[UserProfile.Embarcador]!['shipments']!.update = true;
 }
 
 // Diretor e Coordenador can do everything EXCEPT delete cargas (loads) and embarques (shipments)

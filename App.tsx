@@ -145,6 +145,22 @@ const App: React.FC = () => {
 
   const { showToast } = useToast();
 
+  // Controle Global do Modo de Embarque Simplificado (ativado em Monitoramento)
+  const [isSimplifiedWorkflowEnabled, setIsSimplifiedWorkflowEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('isSimplifiedWorkflowEnabled') === 'true';
+  });
+
+  const handleToggleSimplifiedWorkflow = (enabled: boolean) => {
+    setIsSimplifiedWorkflowEnabled(enabled);
+    localStorage.setItem('isSimplifiedWorkflowEnabled', String(enabled));
+    showToast(
+      enabled 
+        ? 'Modo de Embarque Simplificado ativado: Solicitações e tela de Embarques agora estão simplificadas.' 
+        : 'Modo de Embarque Simplificado desativado: Sistema retornou ao fluxo padrão completo.',
+      'info'
+    );
+  };
+
   const isAnyModalActive = isAnyModalOpen || isTicketModalOpen;
   
   // Sincronização de modais para supressão de real-time
@@ -630,7 +646,7 @@ const App: React.FC = () => {
       driverFreightValue: data.driverFreightValue,
       driverFreightRateSnapshot: data.driverFreightRateSnapshot !== undefined ? data.driverFreightRateSnapshot : cargos.find(c => c.id === data.cargoId)?.driverFreightValuePerTon,
       companyFreightRateSnapshot: data.companyFreightRateSnapshot !== undefined ? data.companyFreightRateSnapshot : cargos.find(c => c.id === data.cargoId)?.companyFreightValuePerTon,
-      status: data.isSimplified ? ShipmentStatus.AguardandoSeguradora : ShipmentStatus.PreCadastro,
+      status: (isSimplifiedWorkflowEnabled || data.isSimplified) ? ShipmentStatus.AguardandoSeguradora : ShipmentStatus.PreCadastro,
       scheduledDate: data.scheduledDate,
       scheduledTime: data.scheduledTime,
       bankDetails: data.bankDetails,
@@ -641,7 +657,7 @@ const App: React.FC = () => {
       driverReferences: data.driverReferences,
       ownerContact: data.ownerContact,
       statusHistory: [{
-        status: data.isSimplified ? ShipmentStatus.AguardandoSeguradora : ShipmentStatus.PreCadastro,
+        status: (isSimplifiedWorkflowEnabled || data.isSimplified) ? ShipmentStatus.AguardandoSeguradora : ShipmentStatus.PreCadastro,
         timestamp: new Date().toISOString(),
         userId: currentUser.id,
       }],
@@ -650,7 +666,7 @@ const App: React.FC = () => {
       vehicleBodyType: data.vehicleBodyType,
       branchId: currentUser.branchId,
       route: (data as any).destination || undefined,
-      isSimplified: data.isSimplified,
+      isSimplified: isSimplifiedWorkflowEnabled || data.isSimplified,
     };
     const newShipments = [newShipment, ...shipments];
     
@@ -900,12 +916,14 @@ const App: React.FC = () => {
     let alertMessage = '';
 
     // Check permissions based on the current status
-    if (currentStatus === ShipmentStatus.PreCadastro || currentStatus === ShipmentStatus.AguardandoSeguradora) {
-        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Coordenador, UserProfile.Admin].includes(currentUser.profile);
-        alertMessage = 'Apenas os perfis Fiscal, Diretor, Coordenador ou Administrador podem realizar esta ação.';
-    } else if (currentStatus === ShipmentStatus.AguardandoAdiantamento || currentStatus === ShipmentStatus.AguardandoPagamentoSaldo) {
-        isUserAllowed = [UserProfile.Financeiro, UserProfile.Diretor, UserProfile.Coordenador, UserProfile.Admin].includes(currentUser.profile);
-        alertMessage = 'Apenas os perfis Financeiro, Diretor, Coordenador ou Administrador do Sistema podem realizar esta ação.';
+    if (!originalShipment.isSimplified) {
+        if (currentStatus === ShipmentStatus.PreCadastro || currentStatus === ShipmentStatus.AguardandoSeguradora) {
+            isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Coordenador, UserProfile.Admin].includes(currentUser.profile);
+            alertMessage = 'Apenas os perfis Fiscal, Diretor, Coordenador ou Administrador podem realizar esta ação.';
+        } else if (currentStatus === ShipmentStatus.AguardandoAdiantamento || currentStatus === ShipmentStatus.AguardandoPagamentoSaldo) {
+            isUserAllowed = [UserProfile.Financeiro, UserProfile.Diretor, UserProfile.Coordenador, UserProfile.Admin].includes(currentUser.profile);
+            alertMessage = 'Apenas os perfis Financeiro, Diretor, Coordenador ou Administrador do Sistema podem realizar esta ação.';
+        }
     }
 
     if (!isUserAllowed) {
@@ -1972,6 +1990,7 @@ const App: React.FC = () => {
                     activeLocks={activeLocks}
                     onModalStateChange={setIsAnyModalOpen}
                     companyLogo={companyLogo}
+                    isSimplifiedWorkflowEnabled={isSimplifiedWorkflowEnabled}
                 />;
       case 'operational-loads':
         return (
@@ -1995,6 +2014,7 @@ const App: React.FC = () => {
             onModalStateChange={setIsAnyModalOpen}
             onDeleteAttachment={handleDeleteShipmentAttachment}
             branches={branches}
+            isSimplifiedWorkflowEnabled={isSimplifiedWorkflowEnabled}
           />
         );
       case 'operational-map':
@@ -2011,6 +2031,7 @@ const App: React.FC = () => {
             users={users}
             onModalStateChange={setIsAnyModalOpen}
             onDeleteAttachment={handleDeleteShipmentAttachment}
+            isSimplifiedWorkflowEnabled={isSimplifiedWorkflowEnabled}
           />
         );
       case 'financial':
@@ -2037,7 +2058,10 @@ const App: React.FC = () => {
                   onSaveTheme={handleSaveThemeImage}
                 />;
       case 'system-monitor':
-        return <SystemMonitorPage />;
+        return <SystemMonitorPage 
+                  isSimplifiedWorkflowEnabled={isSimplifiedWorkflowEnabled} 
+                  onToggleSimplifiedWorkflow={handleToggleSimplifiedWorkflow} 
+                />;
       case 'shipment-history':
         return <ShipmentHistoryPage
                   shipments={visibleShipments}

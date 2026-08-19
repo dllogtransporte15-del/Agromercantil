@@ -33,6 +33,7 @@ interface OperationalLoadsPageProps {
   onModalStateChange: (isOpen: boolean) => void;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   branches: Branch[];
+  isSimplifiedWorkflowEnabled?: boolean;
 }
 
 const formatAllowedVehicleTypes = (allowed?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]): string => {
@@ -81,6 +82,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   onModalStateChange,
   onDeleteAttachment,
   branches,
+  isSimplifiedWorkflowEnabled,
 }) => {
   const [isShipmentModalOpen, setIsShipmentModalOpen] = useState(false);
   const [selectedCargo, setSelectedCargo] = useState<Cargo | null>(null);
@@ -344,6 +346,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         currentUser={currentUser}
         shipments={shipments}
         users={users}
+        isSimplifiedWorkflowEnabled={isSimplifiedWorkflowEnabled}
       />
 
       <LoadFormModal

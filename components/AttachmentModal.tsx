@@ -30,7 +30,6 @@ interface AttachmentModalProps {
 
 declare const L: any;
 
-const fiscalDocTypes = ['Nota Fiscal', 'CT-e', 'MDF-e', 'Carta Frete', 'Demurrage'];
 const allowedDocsForClient = [
     'Ticket de Carregamento',
     'Nota Fiscal',
@@ -38,25 +37,129 @@ const allowedDocsForClient = [
     'Comprovante de Descarga'
 ];
 
-const FileInput: React.FC<{ label: string; onFileChange: (files: FileList | null) => void; files: File[] }> = ({ label, onFileChange, files }) => {
-  const id = `file-upload-${label.replace(/\s/g, '-')}`;
+interface UnifiedFileInputProps {
+  label?: string;
+  files: File[];
+  onFilesChange: (files: File[]) => void;
+  helperText?: string;
+}
+
+const UnifiedFileInput: React.FC<UnifiedFileInputProps> = ({ 
+  label = 'Anexar Documentos', 
+  files, 
+  onFilesChange,
+  helperText = 'Selecione ou arraste vários documentos (PDF, imagens, etc.)' 
+}) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleAddFiles = (newFiles: FileList | null) => {
+    if (!newFiles || newFiles.length === 0) return;
+    const added = Array.from(newFiles);
+    const existingKeys = new Set(files.map(f => `${f.name}_${f.size}`));
+    const uniqueNew = added.filter(f => !existingKeys.has(`${f.name}_${f.size}`));
+    onFilesChange([...files, ...uniqueNew]);
+  };
+
+  const handleRemoveFile = (indexToRemove: number) => {
+    onFilesChange(files.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleAddFiles(e.dataTransfer.files);
+    }
+  };
+
   return (
     <div className="mb-4">
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
-      <label
-        htmlFor={id}
-        className="flex items-center justify-between w-full px-3 py-2 text-sm text-gray-600 bg-white border border-gray-300 rounded-md shadow-sm cursor-pointer hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600"
+      {label && (
+        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+          {label}
+        </label>
+      )}
+      
+      <div
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className={`relative border-2 border-dashed rounded-xl p-4 transition-all duration-200 cursor-pointer flex flex-col items-center justify-center text-center ${
+          isDragging
+            ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-900/30 ring-2 ring-blue-400'
+            : 'border-gray-300 dark:border-gray-600 bg-gray-50/60 dark:bg-gray-800/60 hover:bg-gray-100/80 dark:hover:bg-gray-700/60 hover:border-blue-400'
+        }`}
       >
-        <span>
-          {files.length > 0 ? `${files.length} arquivo(s) selecionado(s)` : `Selecionar arquivo(s)...`}
-        </span>
-        <PaperclipIcon className="w-4 h-4" />
-      </label>
-      <input id={id} type="file" className="hidden" multiple onChange={(e) => onFileChange(e.target.files)} accept=".pdf,.png,.jpg,.jpeg,.gif" />
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          multiple
+          accept=".pdf,.png,.jpg,.jpeg,.gif"
+          onChange={(e) => {
+            handleAddFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-xl">
+            <PaperclipIcon className="w-5 h-5" />
+          </div>
+          <div className="text-left">
+            <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+              Clique para selecionar ou arraste seus arquivos aqui
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {helperText}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Lista de Arquivos Selecionados */}
       {files.length > 0 && (
-         <ul className="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1">
-           {files.map(file => <li key={file.name}>{file.name}</li>)}
-         </ul>
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center justify-between text-xs font-semibold text-gray-600 dark:text-gray-300">
+            <span>{files.length} documento(s) pronto(s) para envio:</span>
+            <button
+              type="button"
+              onClick={() => onFilesChange([])}
+              className="text-red-500 hover:text-red-700 text-xs font-medium"
+            >
+              Limpar todos
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {files.map((file, idx) => (
+              <div
+                key={`${file.name}_${idx}`}
+                className="flex items-center gap-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-3 py-1.5 rounded-lg text-xs shadow-sm text-gray-800 dark:text-gray-200"
+              >
+                <PaperclipIcon className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                <span className="font-medium truncate max-w-[200px]" title={file.name}>
+                  {file.name}
+                </span>
+                <span className="text-[10px] text-gray-400">
+                  ({(file.size / 1024).toFixed(0)} KB)
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveFile(idx);
+                  }}
+                  className="text-gray-400 hover:text-red-500 ml-1 font-bold p-0.5 rounded"
+                  title="Remover anexo"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -64,8 +167,7 @@ const FileInput: React.FC<{ label: string; onFileChange: (files: FileList | null
 
 
 const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSave, shipment, documentName, currentUser, cargo, canSave = true }) => {
-  const [singleFiles, setSingleFiles] = useState<File[]>([]);
-  const [multiFiles, setMultiFiles] = useState<{ [key: string]: File[] }>({});
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [bankDetails, setBankDetails] = useState('');
   const [loadedTonnage, setLoadedTonnage] = useState<number | ''>('');
   const [advancePercentage, setAdvancePercentage] = useState<number | ''>('');
@@ -89,8 +191,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
   useEffect(() => {
     if (isOpen) {
       setError('');
-      setSingleFiles([]);
-      setMultiFiles({});
+      setAttachedFiles([]);
       setBankDetails(shipment.bankDetails || '');
       setLoadedTonnage(shipment.shipmentTonnage || '');
       setAdvancePercentage(shipment.advancePercentage || '');
@@ -279,51 +380,44 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
   };
 
   const handleSave = async () => {
-    let filesToAttach: { [key: string]: File[] } = {};
-    if (shipment.status === ShipmentStatus.AguardandoNota) {
-      const someFiles = Object.values(multiFiles).some(arr => Array.isArray(arr) && arr.length > 0);
-      if (!shipment.isSimplified && !someFiles) {
-        setError('Anexe pelo menos um documento para avançar.');
+    if (!shipment.isSimplified && attachedFiles.length === 0) {
+      setError('Selecione ao menos um arquivo para anexar.');
+      return;
+    }
+
+    if (!shipment.isSimplified && shipment.status === ShipmentStatus.AguardandoNota && !shipment.bankDetails && !bankDetails) {
+      setError('Dados bancários são obrigatórios.');
+      return;
+    }
+
+    if (shipment.status === ShipmentStatus.AguardandoCarregamento) {
+      if (!route.trim()) {
+        setError('A rota do motorista é obrigatória para avançar.');
         return;
       }
-      if (!shipment.isSimplified && !shipment.bankDetails && !bankDetails) {
-        setError('Dados bancários são obrigatórios.');
+      if (!loadedTonnage || Number(loadedTonnage) <= 0) {
+        setError('O peso carregado é obrigatório para avançar.');
         return;
       }
-      filesToAttach = multiFiles;
-    } else {
-      if (!shipment.isSimplified && singleFiles.length === 0) {
-        setError('Selecione ao menos um arquivo.');
+      if (!window.confirm(`Confirma o peso carregado de ${loadedTonnage} ton (${formatWeightPtBr(Number(loadedTonnage))}) para este embarque?`)) {
         return;
       }
-      if (shipment.status === ShipmentStatus.AguardandoCarregamento) {
-        if (!route.trim()) {
-          setError('A rota do motorista é obrigatória para avançar.');
-          return;
-        }
-        if (!loadedTonnage || Number(loadedTonnage) <= 0) {
-          setError('O peso carregado é obrigatório para avançar.');
-          return;
-        }
-        if (!window.confirm(`Confirma o peso carregado de ${loadedTonnage} ton (${formatWeightPtBr(Number(loadedTonnage))}) para este embarque?`)) {
-          return;
-        }
-      }
-      filesToAttach = singleFiles.length > 0 ? { [documentName]: singleFiles } : {};
     }
     
     if (shipment.status === ShipmentStatus.AguardandoDescarga && (!unloadedTonnage || Number(unloadedTonnage) <= 0)) {
-        showToast('O peso descarregado é obrigatório para informar a entrega.', 'warning');
-        return;
+      showToast('O peso descarregado é obrigatório para informar a entrega.', 'warning');
+      return;
     }
 
     if (shipment.status === ShipmentStatus.AguardandoPagamentoSaldo) {
-        const hasQuebra = shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001;
-        if (hasQuebra && (!discountValue || Number(discountValue) <= 0)) {
-            showToast('Atenção: Quebra de carga detectada. É obrigatório informar o valor do desconto para prosseguir.', 'warning');
-            return;
-        }
+      const hasQuebra = shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001;
+      if (hasQuebra && (!discountValue || Number(discountValue) <= 0)) {
+        showToast('Atenção: Quebra de carga detectada. É obrigatório informar o valor do desconto para prosseguir.', 'warning');
+        return;
+      }
     }
+
+    const filesToAttach: { [key: string]: File[] } = attachedFiles.length > 0 ? { [documentName]: attachedFiles } : {};
 
     setError('');
     setIsSaving(true);
@@ -413,70 +507,73 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
         {!isClientUser && (
             <div className="border-t dark:border-gray-700 pt-4">
                 <h3 className="text-lg font-semibold mb-4 text-primary">Próximo Passo: {documentName}</h3>
-                      {shipment.status === ShipmentStatus.AguardandoNota ? (
-                    <div className="space-y-6">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-                            {fiscalDocTypes.map(docType => (
-                                <FileInput key={docType} label={docType} files={multiFiles[docType] || []} onFileChange={(f) => setMultiFiles(prev => ({...prev, [docType]: f ? Array.from(f) : []}))} />
-                            ))}
-                        </div>
+                
+                {shipment.status === ShipmentStatus.AguardandoNota ? (
+                    <div className="space-y-4">
+                        <UnifiedFileInput 
+                            label="Anexar Documentos Fiscais" 
+                            files={attachedFiles} 
+                            onFilesChange={setAttachedFiles} 
+                            helperText="Selecione ou arraste um ou vários documentos de uma só vez (Nota Fiscal, CT-e, MDF-e, Carta Frete, etc.)"
+                        />
                     </div>
                 ) : shipment.status === ShipmentStatus.AguardandoCarregamento ? (
-                    <div className="space-y-6">
+                    <div className="space-y-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
+                            <UnifiedFileInput label={documentName} files={attachedFiles} onFilesChange={setAttachedFiles} />
                             <div>
-                                <label className="block text-sm font-medium mb-1">Toneladas Carregadas</label>
-                                <input type="number" step="0.01" value={loadedTonnage || ''} onChange={(e) => setLoadedTonnage(e.target.value === '' ? '' : Number(e.target.value))} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
+                                <label className="block text-sm font-semibold mb-1 text-gray-700 dark:text-gray-300">Toneladas Carregadas</label>
+                                <input type="number" step="0.01" value={loadedTonnage || ''} onChange={(e) => setLoadedTonnage(e.target.value === '' ? '' : Number(e.target.value))} className="w-full p-2.5 border rounded-xl dark:bg-gray-700 dark:border-gray-600" />
                             </div>
                         </div>
-
                     </div>
                 ) : shipment.status === ShipmentStatus.AguardandoAdiantamento ? (
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Valor pago no tag</label>
-                            <input 
-                                type="number" 
-                                value={tollValue || ''} 
-                                onChange={(e) => setTollValue(e.target.value === '' ? '' : Number(e.target.value))} 
-                                className={`w-full p-2 border rounded dark:bg-gray-700 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`}
-                                disabled={!canSave}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">(%) do adiantamento</label>
-                            <input 
-                                type="number" 
-                                value={advancePercentage || ''} 
-                                onChange={(e) => setAdvancePercentage(e.target.value === '' ? '' : Number(e.target.value))} 
-                                className={`w-full p-2 border rounded dark:bg-gray-700 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`} 
-                                disabled={!canSave}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Valor pago na conta</label>
-                            <input 
-                                type="number" 
-                                value={advanceValue || ''} 
-                                onChange={(e) => setAdvanceValue(e.target.value === '' ? '' : Number(e.target.value))} 
-                                className={`w-full p-2 border rounded dark:bg-gray-700 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`} 
-                                disabled={!canSave}
-                            />
+                    <div className="space-y-4">
+                        <UnifiedFileInput label={documentName} files={attachedFiles} onFilesChange={setAttachedFiles} />
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label className="block text-sm font-semibold mb-1 text-gray-700 dark:text-gray-300">Valor pago no tag</label>
+                                <input 
+                                    type="number" 
+                                    value={tollValue || ''} 
+                                    onChange={(e) => setTollValue(e.target.value === '' ? '' : Number(e.target.value))} 
+                                    className={`w-full p-2.5 border rounded-xl dark:bg-gray-700 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`}
+                                    disabled={!canSave}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold mb-1 text-gray-700 dark:text-gray-300">(%) do adiantamento</label>
+                                <input 
+                                    type="number" 
+                                    value={advancePercentage || ''} 
+                                    onChange={(e) => setAdvancePercentage(e.target.value === '' ? '' : Number(e.target.value))} 
+                                    className={`w-full p-2.5 border rounded-xl dark:bg-gray-700 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`} 
+                                    disabled={!canSave}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold mb-1 text-gray-700 dark:text-gray-300">Valor pago na conta</label>
+                                <input 
+                                    type="number" 
+                                    value={advanceValue || ''} 
+                                    onChange={(e) => setAdvanceValue(e.target.value === '' ? '' : Number(e.target.value))} 
+                                    className={`w-full p-2.5 border rounded-xl dark:bg-gray-700 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`} 
+                                    disabled={!canSave}
+                                />
+                            </div>
                         </div>
                     </div>
                 ) : shipment.status === ShipmentStatus.AguardandoDescarga ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
+                        <UnifiedFileInput label={documentName} files={attachedFiles} onFilesChange={setAttachedFiles} />
                         <div>
-                            <label className="block text-sm font-medium mb-1">Peso Descarregado (Ton)</label>
+                            <label className="block text-sm font-semibold mb-1 text-gray-700 dark:text-gray-300">Peso Descarregado (Ton)</label>
                             <input 
                                 type="number" 
                                 step="0.01" 
                                 value={unloadedTonnage || ''} 
                                 onChange={(e) => setUnloadedTonnage(e.target.value === '' ? '' : Number(e.target.value))} 
-                                className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                                className="w-full p-2.5 border rounded-xl dark:bg-gray-700 dark:border-gray-600"
                                 placeholder="Informe o peso conforme ticket"
                             />
                         </div>
@@ -505,33 +602,34 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                             </div>
                         )}
 
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
+                        <UnifiedFileInput label={documentName} files={attachedFiles} onFilesChange={setAttachedFiles} />
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
-                                <label className="block text-sm font-medium mb-1">Saldo estimado</label>
+                                <label className="block text-sm font-semibold mb-1 text-gray-700 dark:text-gray-300">Saldo estimado</label>
                                 <input 
                                     type="number" 
                                     value={balanceToReceiveValue || ''} 
                                     onChange={(e) => setBalanceToReceiveValue(e.target.value === '' ? '' : Number(e.target.value))} 
-                                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                                    className="w-full p-2.5 border rounded-xl dark:bg-gray-700 dark:border-gray-600"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-1">Valor a Descontar</label>
+                                <label className="block text-sm font-semibold mb-1 text-gray-700 dark:text-gray-300">Valor a Descontar</label>
                                 <input 
                                     type="number" 
                                     value={discountValue || ''} 
                                     onChange={(e) => setDiscountValue(e.target.value === '' ? '' : Number(e.target.value))} 
-                                    className={`w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 ${(shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001 && !discountValue) ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : ''}`}
+                                    className={`w-full p-2.5 border rounded-xl dark:bg-gray-700 dark:border-gray-600 ${(shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001 && !discountValue) ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : ''}`}
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-1">Valor Líquido de Saldo</label>
+                                <label className="block text-sm font-semibold mb-1 text-gray-700 dark:text-gray-300">Valor Líquido de Saldo</label>
                                 <input 
                                     type="number" 
                                     value={netBalanceValue || ''} 
                                     onChange={(e) => setNetBalanceValue(e.target.value === '' ? '' : Number(e.target.value))} 
-                                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 font-bold text-primary"
+                                    className="w-full p-2.5 border rounded-xl dark:bg-gray-700 dark:border-gray-600 font-bold text-primary"
                                 />
                             </div>
                         </div>
@@ -546,14 +644,14 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                                     <h5 className="text-sm font-bold text-red-800 dark:text-red-300">Quebra de Carga Detectada</h5>
                                     <p className="text-xs text-red-700 dark:text-red-400 mt-1 lowercase">
                                         FOI CONSTATADO PESO DESCARREGADO MENOR QUE O PESO CARREGADO. <br/>
-                                        <span className="font-bold uppercase underline">PARA PROSSEGUIR, É OBRIGATÓRIO INFORMAR O VALOR DO DESCONERTO REFERENTE À QUEBRA.</span>
+                                        <span className="font-bold uppercase underline">PARA PROSSEGUIR, É OBRIGATÓRIO INFORMAR O VALOR DO DESCONTO REFERENTE À QUEBRA.</span>
                                     </p>
                                 </div>
                             </div>
                         )}
                     </div>
                 ) : (
-                    <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
+                    <UnifiedFileInput label={documentName} files={attachedFiles} onFilesChange={setAttachedFiles} />
                 )}
 
 

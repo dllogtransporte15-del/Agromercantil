@@ -18,9 +18,23 @@ interface NewShipmentModalProps {
   currentUser: User | null;
   shipments: Shipment[];
   users: User[];
+  isSimplifiedWorkflowEnabled?: boolean;
 }
 
-const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, onSave, cargo, drivers, clients, vehicles, currentUser, shipments, users }) => {
+const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSave, 
+  cargo, 
+  drivers, 
+  clients, 
+  vehicles, 
+  currentUser, 
+  shipments, 
+  users,
+  isSimplifiedWorkflowEnabled
+}) => {
+  const isSimplified = isSimplifiedWorkflowEnabled ?? (typeof window !== 'undefined' && localStorage.getItem('isSimplifiedWorkflowEnabled') === 'true');
   const [driverName, setDriverName] = useState('');
   const [driverCpf, setDriverCpf] = useState('');
   const [ownerContact, setOwnerContact] = useState('');
@@ -42,7 +56,6 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const [driverReferences, setDriverReferences] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [freightType, setFreightType] = useState<'PJ' | 'PF' | null>(null);
-  const [isSimplified, setIsSimplified] = useState(false);
   const { showToast } = useToast();
 
   const handleScanDocument = async (files: File[]) => {
@@ -123,7 +136,6 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setFilesToAttach([]);
       setDriverReferences('');
       setFreightType(cargo?.disableDriverFreightPF ? 'PJ' : null);
-      setIsSimplified(false);
       setEmbarcadorId(
           currentUser?.profile === UserProfile.Embarcador
               ? currentUser.id
@@ -378,29 +390,25 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
           )}
         </div>
 
-        {/* Toggle Solicitação Simplificada */}
-        <div className="mb-5 flex items-center justify-between p-3 bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-800/50 rounded-xl transition-all">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-600/10 dark:bg-blue-400/10 rounded-lg text-blue-600 dark:text-blue-400">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+        {/* Indicador de Solicitação Simplificada (Controlado no Monitoramento) */}
+        {isSimplified && (
+          <div className="mb-5 flex items-center justify-between p-3 bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-800/50 rounded-xl transition-all">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-blue-600/10 dark:bg-blue-400/10 rounded-lg text-blue-600 dark:text-blue-400">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div>
+                <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Modo de Embarque Simplificado Ativo</span>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Campos opcionais omitidos conforme configuração em Monitoramento</p>
+              </div>
             </div>
-            <div>
-              <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Solicitação Simplificada</span>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Oculta dados bancários, tags, carretas, referências e contato do proprietário</p>
-            </div>
+            <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">
+              ⚡ Simplificado
+            </span>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isSimplified}
-              onChange={(e) => setIsSimplified(e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-          </label>
-        </div>
+        )}
         
         <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
