@@ -4,6 +4,13 @@ import Header from '../components/Header';
 import { Activity, CheckCircle2, AlertCircle, RefreshCw, Code, Database, Globe, Zap, Sliders } from 'lucide-react';
 import { supabase } from '../supabase';
 
+interface ServiceStatus {
+  name: string;
+  status: 'ok' | 'warning' | 'error' | 'loading' | string;
+  message: string;
+  latency?: number;
+}
+
 interface SystemMonitorPageProps {
   isSimplifiedWorkflowEnabled?: boolean;
   onToggleSimplifiedWorkflow?: (enabled: boolean) => void;
