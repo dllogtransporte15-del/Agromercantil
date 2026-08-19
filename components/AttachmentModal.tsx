@@ -282,17 +282,17 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
     let filesToAttach: { [key: string]: File[] } = {};
     if (shipment.status === ShipmentStatus.AguardandoNota) {
       const someFiles = Object.values(multiFiles).some(arr => Array.isArray(arr) && arr.length > 0);
-      if (!someFiles) {
+      if (!shipment.isSimplified && !someFiles) {
         setError('Anexe pelo menos um documento para avançar.');
         return;
       }
-      if (!shipment.bankDetails && !bankDetails) {
+      if (!shipment.isSimplified && !shipment.bankDetails && !bankDetails) {
         setError('Dados bancários são obrigatórios.');
         return;
       }
       filesToAttach = multiFiles;
     } else {
-      if (singleFiles.length === 0) {
+      if (!shipment.isSimplified && singleFiles.length === 0) {
         setError('Selecione ao menos um arquivo.');
         return;
       }
@@ -309,7 +309,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
           return;
         }
       }
-      filesToAttach = { [documentName]: singleFiles };
+      filesToAttach = singleFiles.length > 0 ? { [documentName]: singleFiles } : {};
     }
     
     if (shipment.status === ShipmentStatus.AguardandoDescarga && (!unloadedTonnage || Number(unloadedTonnage) <= 0)) {
@@ -384,7 +384,14 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto text-gray-800 dark:text-gray-200">
-        <h2 className="text-2xl font-bold mb-2">Gerenciar Anexos</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <h2 className="text-2xl font-bold">Gerenciar Anexos</h2>
+          {shipment.isSimplified && (
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
+              Modo Simplificado • Anexos Opcionais
+            </span>
+          )}
+        </div>
         <p className="mb-6 text-sm text-gray-500">Embarque: {shipment.id}</p>
         
         {documentsToShow.length > 0 && (

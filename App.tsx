@@ -630,7 +630,7 @@ const App: React.FC = () => {
       driverFreightValue: data.driverFreightValue,
       driverFreightRateSnapshot: data.driverFreightRateSnapshot !== undefined ? data.driverFreightRateSnapshot : cargos.find(c => c.id === data.cargoId)?.driverFreightValuePerTon,
       companyFreightRateSnapshot: data.companyFreightRateSnapshot !== undefined ? data.companyFreightRateSnapshot : cargos.find(c => c.id === data.cargoId)?.companyFreightValuePerTon,
-      status: ShipmentStatus.PreCadastro,
+      status: data.isSimplified ? ShipmentStatus.AguardandoSeguradora : ShipmentStatus.PreCadastro,
       scheduledDate: data.scheduledDate,
       scheduledTime: data.scheduledTime,
       bankDetails: data.bankDetails,
@@ -641,7 +641,7 @@ const App: React.FC = () => {
       driverReferences: data.driverReferences,
       ownerContact: data.ownerContact,
       statusHistory: [{
-        status: ShipmentStatus.PreCadastro,
+        status: data.isSimplified ? ShipmentStatus.AguardandoSeguradora : ShipmentStatus.PreCadastro,
         timestamp: new Date().toISOString(),
         userId: currentUser.id,
       }],
@@ -650,6 +650,7 @@ const App: React.FC = () => {
       vehicleBodyType: data.vehicleBodyType,
       branchId: currentUser.branchId,
       route: (data as any).destination || undefined,
+      isSimplified: data.isSimplified,
     };
     const newShipments = [newShipment, ...shipments];
     
@@ -832,7 +833,7 @@ const App: React.FC = () => {
     }
 
     // Validation for "Aguardando Nota" transition
-    if (originalShipment.status === ShipmentStatus.AguardandoNota && !originalShipment.bankDetails && !bankDetails) {
+    if (!originalShipment.isSimplified && originalShipment.status === ShipmentStatus.AguardandoNota && !originalShipment.bankDetails && !bankDetails) {
         showToast('Dados bancários são obrigatórios para avançar para a etapa de adiantamento.', 'warning');
         return;
     }
@@ -849,15 +850,44 @@ const App: React.FC = () => {
 
     let nextStatus: ShipmentStatus | undefined;
 
-    if (originalShipment.status === ShipmentStatus.AguardandoAdiantamento) {
-        const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
-        if (relatedCargo?.requiresScheduling) {
-            nextStatus = ShipmentStatus.AguardandoAgendamento;
-        } else {
-            nextStatus = ShipmentStatus.AguardandoDescarga;
+    if (originalShipment.isSimplified) {
+        switch (originalShipment.status) {
+            case ShipmentStatus.PreCadastro:
+                nextStatus = ShipmentStatus.AguardandoSeguradora;
+                break;
+            case ShipmentStatus.AguardandoSeguradora:
+                nextStatus = ShipmentStatus.AguardandoCarregamento;
+                break;
+            case ShipmentStatus.AguardandoCarregamento:
+                nextStatus = ShipmentStatus.AguardandoNota;
+                break;
+            case ShipmentStatus.AguardandoNota:
+                // Skips AguardandoAdiantamento and AguardandoAgendamento -> directly to AguardandoDescarga
+                nextStatus = ShipmentStatus.AguardandoDescarga;
+                break;
+            case ShipmentStatus.AguardandoAdiantamento:
+            case ShipmentStatus.AguardandoAgendamento:
+                nextStatus = ShipmentStatus.AguardandoDescarga;
+                break;
+            case ShipmentStatus.AguardandoDescarga:
+            case ShipmentStatus.AguardandoPagamentoSaldo:
+                // Skips AguardandoPagamentoSaldo -> directly to Finalizado
+                nextStatus = ShipmentStatus.Finalizado;
+                break;
+            default:
+                nextStatus = nextStatusMap[originalShipment.status];
         }
     } else {
-        nextStatus = nextStatusMap[originalShipment.status];
+        if (originalShipment.status === ShipmentStatus.AguardandoAdiantamento) {
+            const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
+            if (relatedCargo?.requiresScheduling) {
+                nextStatus = ShipmentStatus.AguardandoAgendamento;
+            } else {
+                nextStatus = ShipmentStatus.AguardandoDescarga;
+            }
+        } else {
+            nextStatus = nextStatusMap[originalShipment.status];
+        }
     }
     
     if (!nextStatus) {

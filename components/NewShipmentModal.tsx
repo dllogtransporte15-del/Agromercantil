@@ -42,6 +42,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const [driverReferences, setDriverReferences] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [freightType, setFreightType] = useState<'PJ' | 'PF' | null>(null);
+  const [isSimplified, setIsSimplified] = useState(false);
   const { showToast } = useToast();
 
   const handleScanDocument = async (files: File[]) => {
@@ -122,6 +123,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setFilesToAttach([]);
       setDriverReferences('');
       setFreightType(cargo?.disableDriverFreightPF ? 'PJ' : null);
+      setIsSimplified(false);
       setEmbarcadorId(
           currentUser?.profile === UserProfile.Embarcador
               ? currentUser.id
@@ -330,11 +332,11 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       driverName,
       driverCpf,
       driverContact,
-      ownerContact: ownerContact || undefined,
+      ownerContact: isSimplified ? undefined : (ownerContact || undefined),
       horsePlate,
-      trailer1Plate,
-      trailer2Plate,
-      trailer3Plate,
+      trailer1Plate: isSimplified ? undefined : (trailer1Plate || undefined),
+      trailer2Plate: isSimplified ? undefined : (trailer2Plate || undefined),
+      trailer3Plate: isSimplified ? undefined : (trailer3Plate || undefined),
       shipmentTonnage,
       driverFreightValue: calculatedFreight,
       freightType: freightType,
@@ -343,13 +345,14 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       scheduledTime,
       vehicleSetType: vehicleSetType || undefined,
       vehicleBodyType: vehicleBodyType || undefined,
-      bankDetails: bankDetails || undefined,
-      vehicleTag: vehicleTag || undefined,
+      bankDetails: isSimplified ? undefined : (bankDetails || undefined),
+      vehicleTag: isSimplified ? undefined : (vehicleTag || undefined),
       filesToAttach: filesToAttach.length > 0 ? filesToAttach : undefined,
-      driverReferences: driverReferences || undefined,
+      driverReferences: isSimplified ? undefined : (driverReferences || undefined),
       destination: cargo.destination,
       companyFreightRateSnapshot: cargo.companyFreightValuePerTon,
       driverFreightRateSnapshot: freightType === 'PJ' ? cargo.driverFreightValuePerTonPJ : cargo.driverFreightValuePerTonPF,
+      isSimplified,
     });
   };
 
@@ -362,7 +365,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <h2 className="text-2xl font-bold mb-2 text-gray-800 dark:text-white">Solicitação de Embarque</h2>
-        <div className="mb-6 p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
+        <div className="mb-4 p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
           <div className="flex flex-wrap gap-x-6 gap-y-1">
             <p className="text-sm text-gray-600 dark:text-gray-400">Cliente: <span className="font-semibold text-gray-800 dark:text-gray-200">{clientName}</span></p>
             <p className="text-sm text-gray-600 dark:text-gray-400">Rota: <span className="font-semibold text-gray-800 dark:text-gray-200">{cargo.origin} → {cargo.destination}</span></p>
@@ -373,6 +376,30 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                 Veículos Permitidos: <span className="font-semibold text-gray-800 dark:text-gray-200">{cargo.allowedVehicleTypes.map(vt => `${vt.setType} (${vt.bodyTypes?.join('/') || ''})`).join(', ')}</span>
               </p>
           )}
+        </div>
+
+        {/* Toggle Solicitação Simplificada */}
+        <div className="mb-5 flex items-center justify-between p-3 bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-800/50 rounded-xl transition-all">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-blue-600/10 dark:bg-blue-400/10 rounded-lg text-blue-600 dark:text-blue-400">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Solicitação Simplificada</span>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Oculta dados bancários, tags, carretas, referências e contato do proprietário</p>
+            </div>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isSimplified}
+              onChange={(e) => setIsSimplified(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+          </label>
         </div>
         
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -410,16 +437,18 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                   <input type="text" value={driverContact} onChange={(e) => setDriverContact(formatPhone(e.target.value))} placeholder="Contato (auto-preenchido)" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" disabled={isExistingDriver} required />
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className={isSimplified ? '' : 'grid grid-cols-1 md:grid-cols-2 gap-4'}>
               <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Motorista</label>
                   <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="Digite o nome do motorista" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required list="driver-names" />
                   <datalist id="driver-names">{drivers.map(d => <option key={d.id} value={d.name} />)}</datalist>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contato do Proprietário</label>
-                <input type="text" value={ownerContact} onChange={(e) => setOwnerContact(formatPhone(e.target.value))} placeholder="Telefone/WhatsApp do proprietário" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
-              </div>
+              {!isSimplified && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contato do Proprietário</label>
+                  <input type="text" value={ownerContact} onChange={(e) => setOwnerContact(formatPhone(e.target.value))} placeholder="Telefone/WhatsApp do proprietário" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
+                </div>
+              )}
             </div>
 
             <div>
@@ -445,36 +474,42 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Placa Carreta 1</label><input type="text" value={trailer1Plate} onChange={(e) => setTrailer1Plate(e.target.value.toUpperCase())} placeholder="Obrigatório" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required /></div>
-              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Placa Carreta 2</label><input type="text" value={trailer2Plate} onChange={(e) => setTrailer2Plate(e.target.value.toUpperCase())} placeholder="Opcional" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" /></div>
-              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Placa Carreta 3</label><input type="text" value={trailer3Plate} onChange={(e) => setTrailer3Plate(e.target.value.toUpperCase())} placeholder="Opcional" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" /></div>
-            </div>
+            {!isSimplified && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Placa Carreta 1</label><input type="text" value={trailer1Plate} onChange={(e) => setTrailer1Plate(e.target.value.toUpperCase())} placeholder="Obrigatório" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required={!isSimplified} /></div>
+                <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Placa Carreta 2</label><input type="text" value={trailer2Plate} onChange={(e) => setTrailer2Plate(e.target.value.toUpperCase())} placeholder="Opcional" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Placa Carreta 3</label><input type="text" value={trailer3Plate} onChange={(e) => setTrailer3Plate(e.target.value.toUpperCase())} placeholder="Opcional" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" /></div>
+              </div>
+            )}
             
-            <div>
-               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Dados Bancários</label>
-               <textarea 
-                 value={bankDetails} 
-                 onChange={(e) => setBankDetails(e.target.value)} 
-                 placeholder="Banco, Agência, Conta, PIX, etc." 
-                 className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 resize-y" 
-                 rows={2} 
-                 required
-               />
-            </div>
+            {!isSimplified && (
+              <div>
+                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Dados Bancários</label>
+                 <textarea 
+                   value={bankDetails} 
+                   onChange={(e) => setBankDetails(e.target.value)} 
+                   placeholder="Banco, Agência, Conta, PIX, etc." 
+                   className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 resize-y" 
+                   rows={2} 
+                   required={!isSimplified}
+                 />
+              </div>
+            )}
           
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className={isSimplified ? '' : 'grid grid-cols-1 md:grid-cols-2 gap-4'}>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Toneladas do Embarque</label>
                   <input type="number" value={shipmentTonnage || ''} onChange={(e) => setShipmentTonnage(parseFloat(e.target.value) || 0)} placeholder="Ex: 35.5" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01" required />
                 </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tag do Veículo</label>
-                    <input type="text" value={vehicleTag} onChange={(e) => setVehicleTag(e.target.value)} placeholder="Obrigatório" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
-                </div>
+                {!isSimplified && (
+                  <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tag do Veículo</label>
+                      <input type="text" value={vehicleTag} onChange={(e) => setVehicleTag(e.target.value)} placeholder="Obrigatório" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required={!isSimplified} />
+                  </div>
+                )}
             </div>
 
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className={`mt-4 ${isSimplified ? '' : 'grid grid-cols-1 md:grid-cols-2 gap-4'}`}>
               {/* Freight Type Selector */}
               <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700">
                 <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Tipo de Embarque <span className="text-red-500">*</span></p>
@@ -550,17 +585,19 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                   <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 text-center font-medium">⚠ Selecione o tipo antes de solicitar</p>
                 )}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Referências do Motorista</label>
-                <textarea
-                  value={driverReferences}
-                  onChange={(e) => setDriverReferences(e.target.value)}
-                  placeholder="Indicações, referências ou observações sobre o motorista..."
-                  className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 resize-y"
-                  rows={3}
-                  required
-                />
-              </div>
+              {!isSimplified && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Referências do Motorista</label>
+                  <textarea
+                    value={driverReferences}
+                    onChange={(e) => setDriverReferences(e.target.value)}
+                    placeholder="Indicações, referências ou observações sobre o motorista..."
+                    className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 resize-y"
+                    rows={3}
+                    required={!isSimplified}
+                  />
+                </div>
+              )}
             </div>
           
             <div className="mt-8 flex justify-end space-x-4">

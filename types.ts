@@ -321,6 +321,7 @@ export interface Shipment {
   vehicleSetType?: VehicleSetType;
   vehicleBodyType?: VehicleBodyType;
   branchId?: string;
+  isSimplified?: boolean;
 }
 
 

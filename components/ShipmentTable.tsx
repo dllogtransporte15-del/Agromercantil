@@ -328,12 +328,19 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
               <div key={shipment.id} className="p-3 space-y-3">
                 <div className="flex justify-between items-start">
                   <div>
-                    <button 
-                      onClick={() => setDetailsModalShipment(shipment)} 
-                      className="text-sm font-bold text-primary dark:text-blue-400 hover:underline"
-                    >
-                      {shipment.id}
-                    </button>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button 
+                        onClick={() => setDetailsModalShipment(shipment)} 
+                        className="text-sm font-bold text-primary dark:text-blue-400 hover:underline"
+                      >
+                        {shipment.id}
+                      </button>
+                      {shipment.isSimplified && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">
+                          ⚡ Simplificado
+                        </span>
+                      )}
+                    </div>
                     {cargo && (
                       <div className="text-xs text-gray-500 mt-0.5">
                         Carga: <button onClick={() => onShowCargoDetails?.(cargo)} className="font-semibold text-primary/80">#{cargo.sequenceId}</button>
@@ -509,12 +516,19 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
                 return (
                   <tr key={shipment.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                     <td className="px-6 py-[11px] whitespace-nowrap text-sm">
-                      <button 
-                          onClick={() => setDetailsModalShipment(shipment)} 
-                          className="font-medium text-primary dark:text-blue-400 hover:underline text-left block"
-                      >
-                          {shipment.id}
-                      </button>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button 
+                            onClick={() => setDetailsModalShipment(shipment)} 
+                            className="font-medium text-primary dark:text-blue-400 hover:underline text-left block"
+                        >
+                            {shipment.id}
+                        </button>
+                        {shipment.isSimplified && (
+                          <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">
+                            ⚡ Simplificado
+                          </span>
+                        )}
+                      </div>
                       {cargo && (
                         <div className="text-xs text-gray-500 dark:text-gray-400">
                           Carga: 

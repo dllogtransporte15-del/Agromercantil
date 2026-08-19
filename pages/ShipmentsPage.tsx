@@ -72,6 +72,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
 }) => {
 
   const [activeStatus, setActiveStatus] = useState<ShipmentStatus | 'all'>(ShipmentStatus.PreCadastro);
+  const [isSimplifiedView, setIsSimplifiedView] = useState(false);
   const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
   const [isEditPriceModalOpen, setEditPriceModalOpen] = useState(false);
   const [isCancelModalOpen, setCancelModalOpen] = useState(false);
@@ -83,6 +84,22 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
 
   const [detailsModalCargo, setDetailsModalCargo] = useState<Cargo | null>(null);
+
+  const handleToggleSimplifiedView = (simplified: boolean) => {
+    setIsSimplifiedView(simplified);
+    if (simplified) {
+      const allowedInSimplified: (ShipmentStatus | 'all')[] = [
+        ShipmentStatus.AguardandoSeguradora,
+        ShipmentStatus.AguardandoCarregamento,
+        ShipmentStatus.AguardandoNota,
+        ShipmentStatus.AguardandoDescarga,
+        'all',
+      ];
+      if (!allowedInSimplified.includes(activeStatus)) {
+        setActiveStatus(ShipmentStatus.AguardandoSeguradora);
+      }
+    }
+  };
 
   // Sync selected shipment with latest data from props
   useEffect(() => {
@@ -120,14 +137,18 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   const isClient = currentUser.profile === UserProfile.Cliente;
 
   const filteredShipments = useMemo(() => {
+    const list = isSimplifiedView 
+      ? shipments.filter(s => s.isSimplified)
+      : shipments;
+
     if (activeStatus === 'all') {
-      return shipments.filter(s => 
+      return list.filter(s => 
         s.status !== ShipmentStatus.Cancelado && 
         s.status !== ShipmentStatus.Finalizado
       );
     }
-    return shipments.filter(shipment => shipment.status === activeStatus);
-  }, [shipments, activeStatus]);
+    return list.filter(shipment => shipment.status === activeStatus);
+  }, [shipments, activeStatus, isSimplifiedView]);
   
   const handleOpenAttachmentModal = async (shipment: Shipment) => {
     // Locking logic removed per user request
@@ -261,6 +282,8 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         activeStatus={activeStatus} 
         onStatusChange={setActiveStatus}
         currentUser={currentUser}
+        isSimplifiedView={isSimplifiedView}
+        onToggleSimplifiedView={handleToggleSimplifiedView}
       />
 
       <ShipmentTable 
