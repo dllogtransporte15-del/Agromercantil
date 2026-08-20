@@ -201,14 +201,24 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       dests.forEach(dest => {
           const legs = (dest.freightLegs && dest.freightLegs.length > 0) 
             ? dest.freightLegs 
-            : [{ driverFreightValuePerTon: load.driverFreightValuePerTon, driverFreightValuePerTonPJ: load.driverFreightValuePerTonPJ, driverFreightValuePerTonPF: load.driverFreightValuePerTonPF, disableDriverFreightPF: load.disableDriverFreightPF }];
+            : [{ 
+                driverFreightValuePerTon: load.driverFreightValuePerTon, 
+                driverFreightValuePerTonPJ: load.driverFreightValuePerTonPJ, 
+                driverFreightHasTollPJ: load.driverFreightHasTollPJ,
+                driverFreightValuePerTonPF: load.driverFreightValuePerTonPF, 
+                driverFreightHasTollPF: load.driverFreightHasTollPF,
+                driverFreightHasToll: load.driverFreightHasToll,
+                disableDriverFreightPF: load.disableDriverFreightPF 
+              }];
           
           const totalPJ = legs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
           const totalPF = legs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
           const isPFDisabled = legs.some(leg => leg.disableDriverFreightPF) || load.disableDriverFreightPF;
+          const hasTollPJ = legs.some(leg => leg.driverFreightHasTollPJ ?? leg.driverFreightHasToll) || load.driverFreightHasTollPJ || load.driverFreightHasToll;
+          const hasTollPF = legs.some(leg => leg.driverFreightHasTollPF ?? leg.driverFreightHasToll) || load.driverFreightHasTollPF || load.driverFreightHasToll;
 
-          const pricePJ = totalPJ === 0 ? 'A Combinar' : totalPJ.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          const pricePF = totalPF === 0 ? 'A Combinar' : totalPF.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const pricePJ = totalPJ === 0 ? 'A Combinar' : `R$ ${totalPJ.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${hasTollPJ ? ' + Ped' : ''}`;
+          const pricePF = totalPF === 0 ? 'A Combinar' : `R$ ${totalPF.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${hasTollPF ? ' + Ped' : ''}`;
           
           let priceDisplay = '';
           if (totalPJ === 0 && (isPFDisabled || totalPF === 0)) {

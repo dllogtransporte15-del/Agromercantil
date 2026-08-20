@@ -154,10 +154,10 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
                         <DollarSign size={14} className="text-gray-400" />
                         <div className="flex flex-col items-end gap-0.5">
                           <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
-                            PJ: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTonPJ ?? cargo.driverFreightValuePerTon)}/ton
+                            PJ: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTonPJ ?? cargo.driverFreightValuePerTon)}/ton{(cargo.driverFreightHasTollPJ ?? cargo.driverFreightHasToll) ? ' + Ped' : ''}
                           </span>
                           <span className="text-[9px] font-bold text-orange-600 dark:text-orange-400">
-                            PF: {cargo.disableDriverFreightPF ? 'Desabilitado' : `${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTonPF ?? cargo.driverFreightValuePerTon)}/ton`}
+                            PF: {cargo.disableDriverFreightPF ? 'Desabilitado' : `${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTonPF ?? cargo.driverFreightValuePerTon)}/ton${(cargo.driverFreightHasTollPF ?? cargo.driverFreightHasToll) ? ' + Ped' : ''}`}
                           </span>
                         </div>
                       </div>

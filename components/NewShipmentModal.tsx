@@ -545,7 +545,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({
                     }`}>Pessoa Jurídica</span>
                     <span className={`text-sm font-bold mt-2 ${
                       freightType === 'PJ' ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-600 dark:text-gray-400'
-                    }`}>{formatCurrency(cargo?.driverFreightValuePerTonPJ ?? cargo?.driverFreightValuePerTon ?? 0)}</span>
+                    }`}>{formatCurrency(cargo?.driverFreightValuePerTonPJ ?? cargo?.driverFreightValuePerTon ?? 0)}{(cargo?.driverFreightHasTollPJ ?? cargo?.driverFreightHasToll) ? ' + Ped' : ''}</span>
                     <span className="text-[9px] text-gray-400">/ton</span>
                     {freightType === 'PJ' && shipmentTonnage > 0 && (
                       <span className="mt-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 rounded-full">
@@ -580,7 +580,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({
                     }`}>{cargo?.disableDriverFreightPF ? 'Indisponível' : 'Pessoa Física'}</span>
                     <span className={`text-sm font-bold mt-2 ${
                       cargo?.disableDriverFreightPF ? 'text-gray-400 dark:text-gray-600' : (freightType === 'PF' ? 'text-orange-700 dark:text-orange-300' : 'text-gray-600 dark:text-gray-400')
-                    }`}>{cargo?.disableDriverFreightPF ? 'N/A' : formatCurrency(cargo?.driverFreightValuePerTonPF ?? cargo?.driverFreightValuePerTon ?? 0)}</span>
+                    }`}>{cargo?.disableDriverFreightPF ? 'N/A' : `${formatCurrency(cargo?.driverFreightValuePerTonPF ?? cargo?.driverFreightValuePerTon ?? 0)}${(cargo?.driverFreightHasTollPF ?? cargo?.driverFreightHasToll) ? ' + Ped' : ''}`}</span>
                     {!cargo?.disableDriverFreightPF && <span className="text-[9px] text-gray-400">/ton</span>}
                     {freightType === 'PF' && shipmentTonnage > 0 && !cargo?.disableDriverFreightPF && (
                       <span className="mt-1.5 text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/50 px-2 py-0.5 rounded-full">

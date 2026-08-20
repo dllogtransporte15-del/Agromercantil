@@ -356,9 +356,10 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
             ? load.destinations.map(d => {
                 const leg = d.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: load.driverFreightValuePerTon };
                 const pj = leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon;
-                return `<li>${d.city} (R$ ${pj.toFixed(2)})</li>`;
+                const hasToll = leg.driverFreightHasTollPJ ?? leg.driverFreightHasToll ?? load.driverFreightHasTollPJ ?? load.driverFreightHasToll;
+                return `<li>${d.city} (R$ ${pj.toFixed(2)}${hasToll ? ' + Ped' : ''})</li>`;
               }).join('')
-            : `<li>${load.destination} (R$ ${load.driverFreightValuePerTon.toFixed(2)})</li>`;
+            : `<li>${load.destination} (R$ ${load.driverFreightValuePerTon.toFixed(2)}${(load.driverFreightHasTollPJ ?? load.driverFreightHasToll) ? ' + Ped' : ''})</li>`;
 
         const actionButtons = load.destinations && load.destinations.length > 0 
             ? `<div class="mt-2 space-y-1">
@@ -471,18 +472,22 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
       if (load.destinations && load.destinations.length > 0) {
         load.destinations.forEach(dest => {
             const leg = dest.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: load.driverFreightValuePerTon };
-            const pj = (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            const pf = (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const hasTollPJ = leg.driverFreightHasTollPJ ?? leg.driverFreightHasToll ?? load.driverFreightHasTollPJ ?? load.driverFreightHasToll;
+            const hasTollPF = leg.driverFreightHasTollPF ?? leg.driverFreightHasToll ?? load.driverFreightHasTollPF ?? load.driverFreightHasToll;
+            const pj = `R$ ${(leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${hasTollPJ ? ' + Ped' : ''}`;
+            const pf = `R$ ${(leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${hasTollPF ? ' + Ped' : ''}`;
             const isPFDisabled = leg.disableDriverFreightPF || load.disableDriverFreightPF;
-            const priceDisplay = isPFDisabled ? `_PJ ${pj}_` : `_PJ ${pj}/PF ${pf}_`;
+            const priceDisplay = isPFDisabled ? `_PJ ${pj}_` : `_PJ ${pj} / PF ${pf}_`;
             text += `\n* *${dest.city}* 💲 *${priceDisplay}*`;
             if (dest.mapLink) text += `\n${dest.mapLink}`;
         });
       } else {
-        const pj = (load.driverFreightValuePerTonPJ ?? load.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const pf = (load.driverFreightValuePerTonPF ?? load.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const hasTollPJ = load.driverFreightHasTollPJ ?? load.driverFreightHasToll;
+        const hasTollPF = load.driverFreightHasTollPF ?? load.driverFreightHasToll;
+        const pj = `R$ ${(load.driverFreightValuePerTonPJ ?? load.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${hasTollPJ ? ' + Ped' : ''}`;
+        const pf = `R$ ${(load.driverFreightValuePerTonPF ?? load.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${hasTollPF ? ' + Ped' : ''}`;
         const isPFDisabled = load.disableDriverFreightPF;
-        const priceDisplay = isPFDisabled ? `_PJ ${pj}_` : `_PJ ${pj}/PF ${pf}_`;
+        const priceDisplay = isPFDisabled ? `_PJ ${pj}_` : `_PJ ${pj} / PF ${pf}_`;
         text += `\n* *${load.destination}* 💲 *${priceDisplay}*`;
         if (load.destinationMapLink) text += `\n${load.destinationMapLink}`;
       }
@@ -668,13 +673,14 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
                             load.destinations.map((d, i) => {
                                 const leg = d.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: load.driverFreightValuePerTon };
                                 const pj = leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon;
+                                const hasToll = leg.driverFreightHasTollPJ ?? leg.driverFreightHasToll ?? load.driverFreightHasTollPJ ?? load.driverFreightHasToll;
                                 return (
                                     <div key={i} className="flex justify-between items-center text-[10px] font-bold text-gray-700 dark:text-gray-200 ml-1">
                                       <div className="flex items-center">
                                           <div className="w-1.5 h-1.5 rounded-full bg-red-500 mr-2"></div>
                                           <span className="truncate max-w-[120px]">{d.city}</span>
                                       </div>
-                                      <span className="text-[10px] text-green-600 dark:text-green-400">R$ {pj.toFixed(2)}</span>
+                                      <span className="text-[10px] text-green-600 dark:text-green-400">R$ {pj.toFixed(2)}{hasToll ? ' + Ped' : ''}</span>
                                     </div>
                                 )
                             })
@@ -684,7 +690,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
                                   <div className="w-1.5 h-1.5 rounded-full bg-red-500 mr-2"></div>
                                   <span>{load.destination}</span>
                               </div>
-                              <span className="text-[10px] text-green-600 dark:text-green-400">R$ {load.driverFreightValuePerTon.toFixed(2)}</span>
+                              <span className="text-[10px] text-green-600 dark:text-green-400">R$ {load.driverFreightValuePerTon.toFixed(2)}{(load.driverFreightHasTollPJ ?? load.driverFreightHasToll) ? ' + Ped' : ''}</span>
                             </div>
                         )}
                       </div>

@@ -308,6 +308,8 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
               
           const totalDriverFreightPJ = freightLegsToDisplay.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? load.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
           const totalDriverFreightPF = freightLegsToDisplay.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? load.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
+          const hasTollPJ = freightLegsToDisplay.some(leg => leg.driverFreightHasTollPJ ?? leg.driverFreightHasToll) || load.driverFreightHasTollPJ || load.driverFreightHasToll;
+          const hasTollPF = freightLegsToDisplay.some(leg => leg.driverFreightHasTollPF ?? leg.driverFreightHasToll) || load.driverFreightHasTollPF || load.driverFreightHasToll;
           const totalNetCompanyValue = freightLegsToDisplay.reduce((sum, leg) => {
               const icmsRate = leg.hasIcms ? leg.icmsPercentage / 100 : 0;
               return sum + (leg.companyFreightValuePerTon * (1 - icmsRate));
@@ -553,7 +555,9 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                       <div className="flex flex-col items-end gap-0.5">
                         <div className="flex items-center gap-1">
                           <span className="text-[8px] font-bold text-emerald-500 uppercase">PJ</span>
-                          <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300" title={(load.destinations && load.destinations.length > 1) ? 'Valor do primeiro destino' : ''}>{formatCurrency(totalDriverFreightPJ)}{(load.destinations && load.destinations.length > 1) ? '*' : ''}</span>
+                          <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300" title={(load.destinations && load.destinations.length > 1) ? 'Valor do primeiro destino' : ''}>
+                            {formatCurrency(totalDriverFreightPJ)}{hasTollPJ ? ' + Ped' : ''}{(load.destinations && load.destinations.length > 1) ? '*' : ''}
+                          </span>
                           <span
                             className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${marginColorClassPJ}`}
                             title={commission > 0 ? `Margem PJ (inclui comissão de ${formatCurrency(commission)}/ton)` : 'Margem PJ'}
@@ -562,7 +566,9 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                         {!freightLegsToDisplay.some(leg => leg.disableDriverFreightPF) ? (
                           <div className="flex items-center gap-1">
                             <span className="text-[8px] font-bold text-orange-500 uppercase">PF</span>
-                            <span className="text-xs font-bold text-orange-700 dark:text-orange-300" title={(load.destinations && load.destinations.length > 1) ? 'Valor do primeiro destino' : ''}>{formatCurrency(totalDriverFreightPF)}{(load.destinations && load.destinations.length > 1) ? '*' : ''}</span>
+                            <span className="text-xs font-bold text-orange-700 dark:text-orange-300" title={(load.destinations && load.destinations.length > 1) ? 'Valor do primeiro destino' : ''}>
+                              {formatCurrency(totalDriverFreightPF)}{hasTollPF ? ' + Ped' : ''}{(load.destinations && load.destinations.length > 1) ? '*' : ''}
+                            </span>
                             <span
                               className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${marginColorClassPF}`}
                               title={commission > 0 ? `Margem PF (inclui comissão de ${formatCurrency(commission)}/ton)` : 'Margem PF'}
@@ -660,6 +666,8 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                              const leg = dest.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: 0, companyFreightValuePerTon: 0 };
                              const pj = leg.driverFreightValuePerTonPJ ?? load.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon;
                              const pf = leg.driverFreightValuePerTonPF ?? load.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon;
+                             const destHasTollPJ = leg.driverFreightHasTollPJ ?? leg.driverFreightHasToll ?? load.driverFreightHasTollPJ ?? load.driverFreightHasToll;
+                             const destHasTollPF = leg.driverFreightHasTollPF ?? leg.driverFreightHasToll ?? load.driverFreightHasTollPF ?? load.driverFreightHasToll;
                              
                              const destShipments = shipments.filter(s => s.cargoId === load.id && s.route === dest.city && s.status !== ShipmentStatus.Cancelado);
                              const scheduledDest = destShipments.filter(s => [ShipmentStatus.PreCadastro, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoSeguradora, ShipmentStatus.AguardandoCarregamento].includes(s.status)).reduce((sum, s) => sum + (s.shipmentTonnage || 0), 0);
@@ -682,13 +690,13 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                                              <div className="flex flex-col gap-0.5 mt-0.5">
                                                  <div className="flex items-center gap-1">
                                                      <span className="text-[7px] font-bold text-emerald-500 uppercase">PJ</span>
-                                                     <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(pj)}</span>
+                                                     <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(pj)}{destHasTollPJ ? ' + Ped' : ''}</span>
                                                      <span className={`text-[8px] font-medium px-1 py-0.5 rounded ${destMarginColorPJ}`}>{destMarginStrPJ}</span>
                                                  </div>
                                                  {!leg.disableDriverFreightPF ? (
                                                      <div className="flex items-center gap-1">
                                                          <span className="text-[7px] font-bold text-orange-500 uppercase">PF</span>
-                                                         <span className="text-[10px] font-bold text-orange-700 dark:text-orange-300">{formatCurrency(pf)}</span>
+                                                         <span className="text-[10px] font-bold text-orange-700 dark:text-orange-300">{formatCurrency(pf)}{destHasTollPF ? ' + Ped' : ''}</span>
                                                          <span className={`text-[8px] font-medium px-1 py-0.5 rounded ${destMarginColorPF}`}>{destMarginStrPF}</span>
                                                      </div>
                                                  ) : (
@@ -709,9 +717,13 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                                                             destinationMapLink: dest.mapLink || load.destinationMapLink,
                                                             driverFreightValuePerTon: leg?.driverFreightValuePerTon ?? load.driverFreightValuePerTon,
                                                             driverFreightValuePerTonPJ: leg?.driverFreightValuePerTonPJ ?? load.driverFreightValuePerTonPJ,
+                                                            driverFreightHasTollPJ: destHasTollPJ,
                                                             driverFreightValuePerTonPF: leg?.driverFreightValuePerTonPF ?? load.driverFreightValuePerTonPF,
+                                                            driverFreightHasTollPF: destHasTollPF,
+                                                            driverFreightHasToll: destHasTollPJ || destHasTollPF,
                                                             disableDriverFreightPF: leg?.disableDriverFreightPF ?? load.disableDriverFreightPF,
                                                             companyFreightValuePerTon: leg?.companyFreightValuePerTon ?? load.companyFreightValuePerTon,
+                                                            companyFreightHasToll: leg?.companyFreightHasToll ?? load.companyFreightHasToll,
                                                         };
                                                         onCreateShipment(modifiedCargo);
                                                     }} 
