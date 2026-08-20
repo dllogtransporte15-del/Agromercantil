@@ -1562,10 +1562,8 @@ const App: React.FC = () => {
         delete loadData.branchId;
     }
 
-    if ('id' in loadData) {
-      const oldCargo = cargos.find(l => l.id === loadData.id);
-
-      if (!oldCargo) return;
+    if ('id' in loadData && loadData.id && cargos.some(l => l.id === loadData.id)) {
+      const oldCargo = cargos.find(l => l.id === loadData.id)!;
 
       if (loadData.status === CargoStatus.Fechada || loadData.status === CargoStatus.Suspensa) {
         const today = new Date().toISOString().split('T')[0];

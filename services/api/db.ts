@@ -488,16 +488,13 @@ export async function upsertCargo(cargo: Cargo): Promise<void> {
   const payload = fromCargo(cargo);
   console.log('[upsertCargo] Saving cargo:', cargo.id, payload);
   let error;
-  if (cargo.id) {
-    // Existing record: use update to guarantee the row is written
-    const result = await supabase.from('cargos').update(payload).eq('id', cargo.id);
+  if (cargo.id && !cargo.id.startsWith('TEMP-')) {
+    const result = await supabase.from('cargos').upsert(payload, { onConflict: 'id' });
     error = result.error;
   } else {
-    const result = await supabase.from('cargos').insert(payload).select().single();
+    const result = await supabase.from('cargos').upsert(payload, { onConflict: 'id' }).select().single();
     error = result.error;
     if (!error && result.data) {
-      // Update the input object with the generated ID if possible
-      // (though this function returns void, so the caller might not see it)
       (cargo as any).id = result.data.id;
     }
   }
@@ -511,11 +508,11 @@ export async function upsertCargo(cargo: Cargo): Promise<void> {
 export async function upsertShipment(shipment: Shipment): Promise<void> {
   const payload = fromShipment(shipment);
   let error;
-  if (shipment.id) {
-    const result = await supabase.from('shipments').update(payload).eq('id', shipment.id);
+  if (shipment.id && !shipment.id.startsWith('TEMP-')) {
+    const result = await supabase.from('shipments').upsert(payload, { onConflict: 'id' });
     error = result.error;
   } else {
-    const result = await supabase.from('shipments').insert(payload);
+    const result = await supabase.from('shipments').upsert(payload, { onConflict: 'id' });
     error = result.error;
   }
   if (error) {
@@ -538,10 +535,10 @@ export async function upsertTicket(ticket: Ticket): Promise<void> {
   const payload = fromTicket(ticket);
   let error;
   if ((ticket as Ticket).id) {
-    const result = await supabase.from('tickets').update(payload).eq('id', (ticket as Ticket).id);
+    const result = await supabase.from('tickets').upsert(payload, { onConflict: 'id' });
     error = result.error;
   } else {
-    const result = await supabase.from('tickets').insert(payload);
+    const result = await supabase.from('tickets').upsert(payload, { onConflict: 'id' });
     error = result.error;
   }
   if (error) {
@@ -553,7 +550,7 @@ export async function upsertTicket(ticket: Ticket): Promise<void> {
 export async function insertCargo(cargo: Cargo | Omit<Cargo, 'id'>): Promise<Cargo> {
   const payload = fromCargo(cargo);
   console.log('[insertCargo] Inserting new cargo:', (cargo as Cargo).id || 'NEW');
-  const { data, error } = await supabase.from('cargos').insert(payload).select().single();
+  const { data, error } = await supabase.from('cargos').upsert(payload, { onConflict: 'id' }).select().single();
   if (error) {
     console.error('[insertCargo] Error:', error);
     throw error;
@@ -564,7 +561,7 @@ export async function insertCargo(cargo: Cargo | Omit<Cargo, 'id'>): Promise<Car
 
 export async function insertShipment(shipment: Shipment): Promise<void> {
   const payload = fromShipment(shipment);
-  const { error } = await supabase.from('shipments').insert(payload);
+  const { error } = await supabase.from('shipments').upsert(payload, { onConflict: 'id' });
   if (error) {
     console.error('[insertShipment] Error:', error);
     throw error;
