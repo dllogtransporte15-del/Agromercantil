@@ -2090,7 +2090,7 @@ const App: React.FC = () => {
       case 'layover-calculator':
         return <LayoverCalculatorPage currentUser={currentUser} shipments={shipments} cargos={cargos} clients={clients} />;
       case 'freight-quote':
-        return <FreightQuotePage currentUser={currentUser} />;
+        return <FreightQuotePage currentUser={currentUser} cargos={cargos} />;
       case 'tools-history':
         return <ToolsHistoryPage currentUser={currentUser} shipments={shipments} cargos={cargos} clients={clients} />;
       case 'branches':

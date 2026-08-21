@@ -11,11 +11,13 @@ import {
   Percent, Scale, Fuel, Info, Save, Download, 
   FileText, CheckCircle2, AlertCircle, Loader2,
   ArrowRight, Settings2, Building2, Calculator,
-  FileCode, Clock, Search, Package, History, ExternalLink
+  FileCode, Clock, Search, Package, History, ExternalLink,
+  Zap, Sparkles, Calendar
 } from 'lucide-react';
 import Header from '../components/Header';
 import { saveToolQuote, getToolQuotes, getToolClients, saveToolClient, ToolClient, QuoteRecord } from '../services/api/toolsApi';
-import type { User as AppUser } from '../types';
+import type { User as AppUser, Cargo } from '../types';
+import { findRouteHistorySuggestion, RouteSuggestion } from '../utils/routeHistorySuggester';
 
 // Fix Leaflet icon issue by using CDN directly to prevent webpack/vite breaking the image paths
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -62,6 +64,7 @@ interface RouteInfo {
 
 interface FreightQuotePageProps {
   currentUser: AppUser | null;
+  cargos?: Cargo[];
 }
 
 function MapUpdater({ origin, dest, routeCoords }: { origin?: Location | null, dest?: Location | null, routeCoords?: [number, number][] }) {
@@ -88,7 +91,7 @@ function MapUpdater({ origin, dest, routeCoords }: { origin?: Location | null, d
   return null;
 }
 
-export default function FreightQuotePage({ currentUser }: FreightQuotePageProps) {
+export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQuotePageProps) {
   const [clients, setClients] = useState<ToolClient[]>([]);
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -98,6 +101,10 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recentQuotes, setRecentQuotes] = useState<QuoteRecord[]>([]);
+  const [allQuotes, setAllQuotes] = useState<QuoteRecord[]>([]);
+  const [suggestion, setSuggestion] = useState<RouteSuggestion | null>(null);
+  const [loadingSuggestion, setLoadingSuggestion] = useState(false);
+  const [appliedSuggestionId, setAppliedSuggestionId] = useState<string | null>(null);
 
   const loadClients = useCallback(async () => {
     if (!currentUser) return;
@@ -108,6 +115,7 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
   const loadRecentQuotes = useCallback(async () => {
     if (!currentUser) return;
     const data = await getToolQuotes(currentUser.authId || currentUser.id);
+    setAllQuotes(data);
     setRecentQuotes(data.slice(0, 10));
   }, [currentUser]);
 
@@ -165,6 +173,54 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
     }
   };
 
+  const checkRouteSuggestion = useCallback(async (orig: string, dest: string) => {
+    if (!orig || !dest || orig.trim().length < 3 || dest.trim().length < 3) {
+      setSuggestion(null);
+      return;
+    }
+    setLoadingSuggestion(true);
+    try {
+      const res = await findRouteHistorySuggestion({
+        origin: orig,
+        destination: dest,
+        cargos: cargos || [],
+        quotes: allQuotes.length > 0 ? allQuotes : recentQuotes,
+        userId: currentUser?.authId || currentUser?.id,
+        maxRadiusKm: 150
+      });
+      setSuggestion(res);
+    } catch (err) {
+      console.error('Error finding route suggestion:', err);
+    } finally {
+      setLoadingSuggestion(false);
+    }
+  }, [cargos, allQuotes, recentQuotes, currentUser]);
+
+  const handleApplySuggestion = (s: RouteSuggestion) => {
+    setFormData(prev => {
+      const updated = { ...prev };
+      if (s.driverFreightRate > 0) {
+        updated.driverValue = s.driverFreightRate.toFixed(2);
+        updated.inputMode = 'PER_TON';
+      }
+      if (s.companyFreightRate > 0) {
+        updated.companyFreightPerTon = s.companyFreightRate.toFixed(2);
+        if (s.driverFreightRate > 0 && s.companyFreightRate > s.driverFreightRate) {
+          const calculatedMargin = ((s.companyFreightRate - s.driverFreightRate) / s.companyFreightRate) * 100;
+          updated.margin = calculatedMargin.toFixed(1);
+        } else if (s.margin !== undefined && s.margin > 0) {
+          updated.margin = s.margin.toFixed(1);
+        }
+      }
+      if (s.tollValue !== undefined && s.tollValue > 0) {
+        updated.tollValue = s.tollValue.toFixed(2);
+      }
+      return updated;
+    });
+    setAppliedSuggestionId(s.id);
+    setTimeout(() => setAppliedSuggestionId(null), 3500);
+  };
+
   const calculateRoute = async () => {
     if (!formData.origin || !formData.destination) {
       setError('Informe a origem e o destino para calcular a rota.');
@@ -174,6 +230,9 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
     setLoading(true);
     setError(null);
     setRouteInfo(null);
+
+    // Trigger suggestion check concurrently
+    checkRouteSuggestion(formData.origin, formData.destination);
 
     try {
       const origin = await fetchCoordinates(formData.origin);
@@ -507,6 +566,118 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
               </div>
             )}
           </div>
+
+          {/* Card de Sugestão Inteligente por Histórico de Rota (Raio 150km) */}
+          {loadingSuggestion && (
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-gray-700 flex items-center justify-center space-x-2 text-slate-500 text-xs animate-pulse">
+              <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+              <span>Buscando histórico de rotas num raio de até 150km...</span>
+            </div>
+          )}
+
+          {suggestion && (
+            <div className={`bg-gradient-to-br ${
+              suggestion.isExactRoute
+                ? 'from-emerald-50/95 via-white to-indigo-50/80 dark:from-gray-800 dark:via-gray-800 dark:to-emerald-950/30 border-emerald-400 dark:border-emerald-500/40 shadow-emerald-100/50 dark:shadow-none'
+                : 'from-amber-50/90 via-white to-indigo-50/70 dark:from-gray-800 dark:via-gray-800 dark:to-indigo-950/30 border-amber-300/80 dark:border-amber-500/30'
+            } rounded-2xl p-5 shadow-sm border-2 relative overflow-hidden transition-all animate-in fade-in duration-300`}>
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2.5">
+                  <span className={`flex h-8 w-8 items-center justify-center rounded-xl text-white shadow-sm shrink-0 ${
+                    suggestion.isExactRoute ? 'bg-emerald-600' : 'bg-amber-500'
+                  }`}>
+                    <Zap className="w-4 h-4 fill-current" />
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className={`text-xs font-black uppercase tracking-wider ${
+                        suggestion.isExactRoute ? 'text-emerald-900 dark:text-emerald-300' : 'text-amber-900 dark:text-amber-300'
+                      }`}>
+                        {suggestion.isExactRoute ? '🎯 Rota Exata Encontrada (Último Preço)' : 'Histórico Encontrado (Raio de 150km)'}
+                      </h3>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        suggestion.isExactRoute
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700'
+                          : suggestion.type === 'cargo'
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300'
+                          : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300'
+                      }`}>
+                        {suggestion.sourceTitle}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 dark:text-gray-400 mt-0.5">
+                      {suggestion.isExactRoute ? (
+                        <span className="font-semibold text-slate-800 dark:text-gray-200">
+                          {suggestion.matchedOrigin} → {suggestion.matchedDestination}
+                        </span>
+                      ) : (
+                        <>
+                          {suggestion.matchedOrigin} <span className="font-semibold text-slate-600 dark:text-slate-300">({suggestion.originDistanceKm} km da origem)</span> → {suggestion.matchedDestination} <span className="font-semibold text-slate-600 dark:text-slate-300">({suggestion.destinationDistanceKm} km do destino)</span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                {suggestion.date && (
+                  <span className="text-[10px] text-slate-400 dark:text-gray-500 shrink-0 font-medium">
+                    {format(new Date(suggestion.date), 'dd/MM/yyyy')}
+                  </span>
+                )}
+              </div>
+
+              {/* Informações de Valores Praticados */}
+              <div className="grid grid-cols-3 gap-2 my-3.5 bg-white/90 dark:bg-gray-900/70 p-3 rounded-xl border border-slate-200/80 dark:border-gray-700/80 shadow-xs">
+                <div>
+                  <span className="block text-[10px] uppercase font-bold text-slate-400 dark:text-gray-400">
+                    {suggestion.isExactRoute ? 'Último Frete Empresa' : 'Frete Empresa'}
+                  </span>
+                  <span className="text-sm font-black text-slate-800 dark:text-white">
+                    {formatCurrency(suggestion.companyFreightRate)} <span className="text-[10px] font-normal text-slate-400">/ton</span>
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[10px] uppercase font-bold text-slate-400 dark:text-gray-400">
+                    {suggestion.isExactRoute ? 'Último Frete Motorista' : 'Frete Motorista'}
+                  </span>
+                  <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                    {formatCurrency(suggestion.driverFreightRate)} <span className="text-[10px] font-normal text-slate-400">/ton</span>
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[10px] uppercase font-bold text-slate-400 dark:text-gray-400">Pedágio</span>
+                  <span className="text-sm font-bold text-slate-700 dark:text-gray-200">
+                    {suggestion.tollValue ? formatCurrency(suggestion.tollValue) : (suggestion.hasCompanyToll ? 'Incluso' : 'R$ 0,00')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Botão Aplicar Valores */}
+              <button
+                type="button"
+                onClick={() => handleApplySuggestion(suggestion)}
+                className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-xs transition-all shadow-sm ${
+                  appliedSuggestionId === suggestion.id
+                    ? 'bg-emerald-600 text-white'
+                    : suggestion.isExactRoute
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200 dark:shadow-none cursor-pointer'
+                    : 'bg-amber-500 hover:bg-amber-600 text-slate-950 hover:text-white dark:text-slate-900 cursor-pointer'
+                }`}
+              >
+                {appliedSuggestionId === suggestion.id ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" /> Valores Aplicados com Sucesso!
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4 fill-current" /> 
+                    {suggestion.isExactRoute
+                      ? `Aplicar Último Preço Cotado (${formatCurrency(suggestion.companyFreightRate)}/ton)`
+                      : `Aplicar Valores da Última ${suggestion.type === 'cargo' ? 'Carga' : 'Cotação'}`}
+                  </>
+                )}
+              </button>
+            </div>
+          )}
 
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 p-6">
             <h2 className="text-lg font-medium flex items-center text-slate-800 dark:text-white mb-6">

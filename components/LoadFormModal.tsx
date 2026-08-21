@@ -6,10 +6,12 @@ import { PlusIcon } from './icons/PlusIcon';
 import { XIcon } from './icons/XIcon';
 import { PaperclipIcon } from './icons/PaperclipIcon';
 import { UserPlusIcon } from './icons/UserPlusIcon';
+import { Zap, CheckCircle2, Loader2 } from 'lucide-react';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { geocodeCity } from '../utils/geocoding';
 import { useToast } from '../hooks/useToast';
 import { formatCityState } from '../utils/formatters';
+import { findRouteHistorySuggestion, RouteSuggestion } from '../utils/routeHistorySuggester';
 import DatePicker, { DateObject } from "react-multi-date-picker";
 
 interface LoadFormModalProps {
@@ -102,11 +104,51 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
   const [currentBodyTypes, setCurrentBodyTypes] = useState<VehicleBodyType[]>([]);
   const { showToast } = useToast();
 
+  const [suggestion, setSuggestion] = useState<RouteSuggestion | null>(null);
+  const [loadingSuggestion, setLoadingSuggestion] = useState(false);
+  const [appliedSuggestion, setAppliedSuggestion] = useState(false);
+
   const commercialUsers = useMemo(() => {
     return users.filter(u => u.profile === UserProfile.Comercial);
   }, [users]);
 
   const prevIsOpen = useRef(isOpen);
+
+  const checkHistorySuggestion = async (originCity: string, destCity: string) => {
+    if (!originCity || !destCity || originCity.trim().length < 3 || destCity.trim().length < 3) {
+      setSuggestion(null);
+      return;
+    }
+    setLoadingSuggestion(true);
+    try {
+      const res = await findRouteHistorySuggestion({
+        origin: originCity,
+        destination: destCity,
+        cargos: loads || [],
+        userId: currentUser.authId || currentUser.id,
+        maxRadiusKm: 150
+      });
+      setSuggestion(res);
+    } catch (err) {
+      console.error('Error finding route suggestion in LoadFormModal:', err);
+    } finally {
+      setLoadingSuggestion(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const destCity = load.destinations?.[0]?.city || load.destination || '';
+    const originCity = load.origin || '';
+    if (originCity.trim().length >= 3 && destCity.trim().length >= 3) {
+      const timer = setTimeout(() => {
+        checkHistorySuggestion(originCity, destCity);
+      }, 400);
+      return () => clearTimeout(timer);
+    } else {
+      setSuggestion(null);
+    }
+  }, [load.origin, load.destinations?.[0]?.city, load.destination, isOpen, loads]);
 
   useEffect(() => {
     if (isOpen && !prevIsOpen.current) {
@@ -396,6 +438,188 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
       }));
   };
 
+  const handleApplySuggestion = (s: RouteSuggestion) => {
+    if (!load.destinations || load.destinations.length === 0) return;
+
+    setLoad(prev => {
+      const newDests = [...(prev.destinations || [])];
+      const firstDest = { ...newDests[0] };
+      const newLegs = [...(firstDest.freightLegs || [])];
+      const leg0 = { ...(newLegs[0] || { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 }) };
+
+      if (s.companyFreightRate > 0) {
+        leg0.companyFreightValuePerTon = s.companyFreightRate;
+      }
+      if (s.driverFreightRatePJ !== undefined && s.driverFreightRatePJ > 0) {
+        leg0.driverFreightValuePerTonPJ = s.driverFreightRatePJ;
+      } else if (s.driverFreightRate > 0) {
+        leg0.driverFreightValuePerTonPJ = s.driverFreightRate;
+      }
+      if (s.driverFreightRatePF !== undefined && s.driverFreightRatePF > 0) {
+        leg0.driverFreightValuePerTonPF = s.driverFreightRatePF;
+      } else if (s.driverFreightRate > 0) {
+        leg0.driverFreightValuePerTonPF = s.driverFreightRate;
+      }
+      if (s.driverFreightRate > 0) {
+        leg0.driverFreightValuePerTon = s.driverFreightRate;
+      }
+      if (s.hasCompanyToll !== undefined) {
+        leg0.companyFreightHasToll = s.hasCompanyToll;
+      }
+      if (s.hasDriverTollPJ !== undefined) {
+        leg0.driverFreightHasTollPJ = s.hasDriverTollPJ;
+      }
+      if (s.hasDriverTollPF !== undefined) {
+        leg0.driverFreightHasTollPF = s.hasDriverTollPF;
+      }
+      if (s.hasIcms !== undefined) {
+        leg0.hasIcms = s.hasIcms;
+      }
+      if (s.icmsPercentage !== undefined && s.icmsPercentage > 0) {
+        leg0.icmsPercentage = s.icmsPercentage;
+      }
+
+      newLegs[0] = leg0;
+      firstDest.freightLegs = newLegs;
+      newDests[0] = firstDest;
+
+      return {
+        ...prev,
+        companyFreightValuePerTon: s.companyFreightRate || prev.companyFreightValuePerTon,
+        driverFreightValuePerTon: s.driverFreightRate || prev.driverFreightValuePerTon,
+        driverFreightValuePerTonPJ: s.driverFreightRatePJ ?? s.driverFreightRate ?? prev.driverFreightValuePerTonPJ,
+        driverFreightValuePerTonPF: s.driverFreightRatePF ?? s.driverFreightRate ?? prev.driverFreightValuePerTonPF,
+        companyFreightHasToll: s.hasCompanyToll ?? prev.companyFreightHasToll,
+        driverFreightHasTollPJ: s.hasDriverTollPJ ?? prev.driverFreightHasTollPJ,
+        driverFreightHasTollPF: s.hasDriverTollPF ?? prev.driverFreightHasTollPF,
+        hasIcms: s.hasIcms ?? prev.hasIcms,
+        icmsPercentage: s.icmsPercentage ?? prev.icmsPercentage,
+        destinations: newDests,
+        freightLegs: newLegs
+      };
+    });
+
+    setAppliedSuggestion(true);
+    showToast('Valores do histórico sugeridos foram aplicados com sucesso!', 'success');
+    setTimeout(() => setAppliedSuggestion(false), 3500);
+  };
+
+  const renderSuggestionBanner = () => {
+    if (loadingSuggestion) {
+      return (
+        <div className="p-3 my-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300 animate-pulse">
+          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+          <span>Buscando histórico de fretes no raio de 150km...</span>
+        </div>
+      );
+    }
+
+    if (!suggestion) return null;
+
+    const formatCurr = (val: number) =>
+      new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+
+    return (
+      <div className={`p-4 my-3 bg-gradient-to-r ${
+        suggestion.isExactRoute
+          ? 'from-emerald-50 to-teal-50 dark:from-gray-800 dark:to-emerald-950/40 border-emerald-400 dark:border-emerald-600/50'
+          : 'from-amber-50 to-orange-50 dark:from-gray-800 dark:to-gray-900 border-amber-300 dark:border-amber-600/50'
+      } border-2 rounded-xl shadow-sm`}>
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2">
+            <span className={`p-1 text-white rounded-md shrink-0 ${suggestion.isExactRoute ? 'bg-emerald-600' : 'bg-amber-500'}`}>
+              <Zap className="w-3.5 h-3.5 fill-current" />
+            </span>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-xs font-bold uppercase ${suggestion.isExactRoute ? 'text-emerald-900 dark:text-emerald-300' : 'text-amber-900 dark:text-amber-300'}`}>
+                  {suggestion.isExactRoute ? '🎯 Rota Exata Encontrada (Último Preço)' : 'Sugestão por Histórico (≤ 150km)'}
+                </span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                  suggestion.isExactRoute
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700'
+                    : suggestion.type === 'cargo'
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300'
+                    : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300'
+                }`}>
+                  {suggestion.sourceTitle}
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-600 dark:text-gray-400 mt-0.5">
+                {suggestion.isExactRoute ? (
+                  <span className="font-semibold text-gray-800 dark:text-gray-200">
+                    {suggestion.matchedOrigin} → {suggestion.matchedDestination}
+                  </span>
+                ) : (
+                  <>
+                    {suggestion.matchedOrigin} ({suggestion.originDistanceKm} km da origem) → {suggestion.matchedDestination} ({suggestion.destinationDistanceKm} km do destino)
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+          {suggestion.date && (
+            <span className="text-[10px] text-gray-400 shrink-0 font-medium">
+              {new Date(suggestion.date).toLocaleDateString('pt-BR')}
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 my-2.5 bg-white/80 dark:bg-gray-800/80 p-2.5 rounded-lg border border-amber-200 dark:border-gray-700 text-xs">
+          <div>
+            <span className="block text-[10px] text-gray-500 uppercase font-semibold">
+              {suggestion.isExactRoute ? 'Último Frete Empresa' : 'Frete Empresa'}
+            </span>
+            <span className="font-bold text-gray-900 dark:text-white">
+              {formatCurr(suggestion.companyFreightRate)}/ton
+            </span>
+          </div>
+          <div>
+            <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 uppercase font-semibold">
+              {suggestion.isExactRoute ? 'Último Frete Mot. PJ' : 'Frete Motorista PJ'}
+            </span>
+            <span className="font-bold text-emerald-700 dark:text-emerald-300">
+              {formatCurr(suggestion.driverFreightRatePJ || suggestion.driverFreightRate)}/ton
+            </span>
+          </div>
+          <div>
+            <span className="block text-[10px] text-orange-600 dark:text-orange-400 uppercase font-semibold">
+              {suggestion.isExactRoute ? 'Último Frete Mot. PF' : 'Frete Motorista PF'}
+            </span>
+            <span className="font-bold text-orange-700 dark:text-orange-300">
+              {formatCurr(suggestion.driverFreightRatePF || suggestion.driverFreightRate)}/ton
+            </span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => handleApplySuggestion(suggestion)}
+          className={`w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer ${
+            appliedSuggestion
+              ? 'bg-emerald-600 text-white'
+              : suggestion.isExactRoute
+              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+              : 'bg-amber-500 hover:bg-amber-600 text-gray-900 hover:text-white'
+          }`}
+        >
+          {appliedSuggestion ? (
+            <>
+              <CheckCircle2 className="w-4 h-4" /> Valores Aplicados!
+            </>
+          ) : (
+            <>
+              <Zap className="w-3.5 h-3.5 fill-current" /> 
+              {suggestion.isExactRoute
+                ? `Aplicar Último Preço Cotado (${formatCurr(suggestion.companyFreightRate)}/ton)`
+                : 'Aplicar Valores do Histórico'}
+            </>
+          )}
+        </button>
+      </div>
+    );
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -662,6 +886,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                     </datalist>
                 </div>
 
+                {renderSuggestionBanner()}
+
                 <div className="border-t dark:border-gray-600 pt-4 space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Observações</label>
@@ -867,6 +1093,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                             {hasMultiLeg ? (<><XIcon className="h-4 w-4" /><span>Remover Perna</span></>) : (<><PlusIcon className="h-4 w-4" /><span>Adicionar Perna</span></>)}
                         </button>
                     </div>
+                    {renderSuggestionBanner()}
                     {/* Loop through destinations */}
                     {(load.destinations || []).map((dest, destIdx) => {
                         const leg1 = dest.freightLegs?.[0] || { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightHasTollPJ: false, driverFreightValuePerTonPF: 0, driverFreightHasTollPF: false, hasIcms: false, icmsPercentage: 0 };
