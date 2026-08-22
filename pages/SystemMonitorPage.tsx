@@ -131,7 +131,7 @@ const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Header title="Monitoramento do Sistema" />
+      <Header title="Saúde do Sistema & Auditoria" />
       
       <div className="p-6 max-w-4xl mx-auto space-y-8">
 

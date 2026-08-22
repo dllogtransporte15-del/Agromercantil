@@ -816,7 +816,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-4xl w-full max-h-[90vh] flex flex-col">
-        <h2 className="text-2xl font-bold mb-2 text-gray-800 dark:text-white">{loadToEdit ? 'Editar Carga' : 'Nova Carga'}</h2>
+        <h2 className="text-2xl font-bold mb-2 text-gray-800 dark:text-white">{loadToEdit ? 'Editar Ordem de Carga' : 'Cadastrar Nova Carga'}</h2>
 
         {/* Stepper */}
         <div className="mb-6 flex items-center justify-center border-b dark:border-gray-700 pb-4">
@@ -1479,7 +1479,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
             <div className="flex items-center space-x-4">
                 <button type="button" onClick={onClose} className="py-2 px-4 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">Cancelar</button>
                 {step < STEPS.length && <button type="button" onClick={nextStep} className="py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary-dark">Próximo</button>}
-                {step === STEPS.length && <button type="submit" onClick={handleSubmit} className="py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary-dark">Salvar Carga</button>}
+                {step === STEPS.length && <button type="submit" onClick={handleSubmit} className="py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary-dark">Salvar Alterações</button>}
             </div>
         </div>
       </div>

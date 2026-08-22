@@ -2,6 +2,7 @@
 import React from 'react';
 import { ShipmentStatus } from '../types';
 import type { Shipment, Cargo } from '../types';
+import { getShipmentStatusLabel } from '../utils';
 
 interface ShipmentHistoryFilterProps {
   shipments: Shipment[];
@@ -131,7 +132,7 @@ const ShipmentHistoryFilter: React.FC<ShipmentHistoryFilterProps> = ({
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-500'
               }`}
             >
-              {status}
+              {getShipmentStatusLabel(status)}
               <span className={`ml-2 inline-block py-0.5 px-2 rounded-full text-xs font-semibold ${
                  activeStatus === status
                   ? 'bg-primary text-white'

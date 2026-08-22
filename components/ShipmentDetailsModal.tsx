@@ -6,6 +6,7 @@ import { FileTextIcon, Trash2 } from 'lucide-react';
 import { getToolStaysByShipment, StayRecord } from '../services/api/toolsApi';
 import { getShipmentAttachmentUrl } from '../services/api/db';
 import { formatCpfCnpj, formatPhone } from '../utils/formatters';
+import { getShipmentStatusLabel } from '../utils';
 
 
 interface ShipmentDetailsModalProps {
@@ -157,7 +158,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                 <DetailItem label="Destino da Carga" value={cargo?.destination} />
                 <DetailItem label="Produto" value={product?.name} />
                 <DetailItem label="Carga Vinculada" value={cargo?.sequenceId ? `#${cargo.sequenceId}` : cargo?.id} />
-                <DetailItem label="Status Atual" value={shipment.status} />
+                <DetailItem label="Status Atual" value={getShipmentStatusLabel(shipment.status)} />
                 <DetailItem label="Comercial (Embarcador)" value={embarcador?.name || 'N/A'} />
                 {shipment.status === 'Cancelado' && shipment.cancellationReason && (
                     <div className="md:col-span-2 mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/50 rounded-md">

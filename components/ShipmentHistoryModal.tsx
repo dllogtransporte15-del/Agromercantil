@@ -2,6 +2,7 @@
 import React from 'react';
 import { X, Calendar, Package, MapPin, TrendingUp, Info } from 'lucide-react';
 import type { Shipment, Cargo, ShipmentStatus } from '../types';
+import { getShipmentStatusLabel } from '../utils';
 
 interface ShipmentHistoryModalProps {
   isOpen: boolean;
@@ -128,7 +129,7 @@ const ShipmentHistoryModal: React.FC<ShipmentHistoryModalProps> = ({
                       </td>
                       <td className="py-4 px-2">
                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${getStatusColor(shipment.status)}`}>
-                          {shipment.status}
+                          {getShipmentStatusLabel(shipment.status)}
                         </span>
                       </td>
                       <td className="py-4 px-2 text-right">

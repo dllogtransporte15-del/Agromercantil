@@ -301,7 +301,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
 
   return (
     <>
-      <Header title="Cargas em Operação">
+      <Header title="Painel de Cargas Ativas">
         {currentUser.profile !== UserProfile.Cliente && (
           <div className="flex items-center gap-2">
             <button
@@ -322,7 +322,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         )}
       </Header>
       
-      <h2 className="text-2xl font-semibold text-gray-800 dark:text-white mb-4">Lista de Cargas em Andamento</h2>
+      <h2 className="text-2xl font-semibold text-gray-800 dark:text-white mb-4">Demandas Ativas em Execução</h2>
       <LoadTable 
         loads={loads} 
         clients={clients} 

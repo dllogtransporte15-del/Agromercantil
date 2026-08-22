@@ -83,3 +83,30 @@ export const formatWeightPtBr = (num: number): string => {
 
   return (result || 'zero toneladas').toUpperCase();
 };
+
+export const getShipmentStatusLabel = (status: string): string => {
+  switch (status) {
+    case 'Pré-cadastro':
+      return 'Triagem / Pré-Cadastro';
+    case 'Ag. Seguradora':
+      return 'Análise de Risco (PGR)';
+    case 'Ag. Carregamento':
+      return 'Aguardando Check-in / Carga';
+    case 'Ag. Nota':
+      return 'Emissão Fiscal (CT-e / NF-e)';
+    case 'Ag. Adiantamento':
+      return 'Liberação de Adiantamento';
+    case 'Ag. Agendamento':
+      return 'Agendamento de Descarga (Slot)';
+    case 'Ag. Descarga':
+      return 'Em Trânsito / Aguardando Descarga';
+    case 'Ag. Saldo':
+      return 'Liquidação de Saldo';
+    case 'Finalizado':
+      return 'Operação Concluída';
+    case 'Cancelado':
+      return 'Cancelado';
+    default:
+      return status;
+  }
+};

@@ -76,7 +76,7 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
         <div className="p-6 border-b dark:border-gray-700">
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Trocar Carga do Embarque</h2>
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Remanejar Carga do Embarque</h2>
           <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800/50">
             <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase mb-1">Embarque Atual</p>
             <div className="flex justify-between items-center">
@@ -148,9 +148,13 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
                     <div className="grid grid-cols-2 gap-y-2 mt-3 text-xs">
                       <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                         <MapPin size={14} className="text-gray-400" />
-                        <span>{cargo.origin} → {cargo.destination}</span>
+                        <span className="truncate">Origem: {cargo.origin}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 justify-end">
+                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                        <MapPin size={14} className="text-gray-400" />
+                        <span className="truncate">Destino: {cargo.destination}</span>
+                      </div>
+                      <div className="col-span-2 flex items-center gap-2 text-gray-600 dark:text-gray-400 justify-end mt-2">
                         <DollarSign size={14} className="text-gray-400" />
                         <div className="flex flex-col items-end gap-0.5">
                           <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
@@ -187,7 +191,7 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
                 : 'bg-gray-300 text-gray-500 cursor-not-allowed scale-95 opacity-50'
             }`}
           >
-            Confirmar Troca
+            Confirmar Remanejamento
           </button>
         </div>
       </div>

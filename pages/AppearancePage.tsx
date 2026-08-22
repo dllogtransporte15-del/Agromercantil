@@ -13,7 +13,7 @@ interface AppearancePageProps {
 const AppearancePage: React.FC<AppearancePageProps> = ({ currentLogo, onSaveLogo, currentTheme, onSaveTheme }) => {
   return (
     <>
-      <Header title="Gestão de Aparência" />
+      <Header title="Identidade Visual & Customização" />
       <div className="space-y-8">
         <ImageUploader
           title="Logo da Empresa"

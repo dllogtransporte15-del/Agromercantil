@@ -149,7 +149,7 @@ const OwnersPage: React.FC<OwnersPageProps> = ({ owners, setOwners, onSaveOwner,
 
   return (
     <>
-      <Header title="Cadastro de Proprietários">
+      <Header title="Frotistas & Proprietários">
         {canCreate && (
           <>
             <button
@@ -166,9 +166,9 @@ const OwnersPage: React.FC<OwnersPageProps> = ({ owners, setOwners, onSaveOwner,
             </button>
             <button
               onClick={handleOpenModal}
-              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary font-medium"
             >
-              Adicionar Proprietário
+              Cadastrar Proprietário
             </button>
           </>
         )}

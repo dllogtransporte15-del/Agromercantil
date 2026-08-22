@@ -48,21 +48,21 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
 
   return (
     <>
-      <Header title="Gerenciar Usuários">
+      <Header title="Gestão de Acessos & Usuários">
           {canUpdateUser && (
               <button
                   onClick={() => setIsPermissionsModalOpen(true)}
-                  className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                  className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 font-medium"
               >
-                  Gerenciar Permissões
+                  Matriz de Permissões
               </button>
           )}
           {canCreateUser && (
               <button
                   onClick={handleOpenUserModal}
-                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary font-medium"
               >
-                  Adicionar Usuário
+                  Cadastrar Usuário
               </button>
           )}
       </Header>

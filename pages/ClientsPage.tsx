@@ -173,7 +173,7 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
 
   return (
     <>
-      <Header title="Cadastro de Clientes">
+      <Header title="Clientes & Tomadores">
         {canCreate && (
           <>
             <button
@@ -190,9 +190,9 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
             </button>
             <button
               onClick={handleOpenModal}
-              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary font-medium"
             >
-              Adicionar Cliente
+              Cadastrar Cliente
             </button>
           </>
         )}

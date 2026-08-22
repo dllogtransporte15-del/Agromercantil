@@ -239,7 +239,7 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] flex flex-col">
         <div className="flex justify-between items-start mb-4">
             <div>
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Detalhes da Carga: {cargo.sequenceId}</h2>
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Detalhes da Ordem de Carga #{cargo.sequenceId}</h2>
                 <p className="text-xs text-gray-400 font-mono">{cargo.id}</p>
             </div>
             <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">&times;</button>

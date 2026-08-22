@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { ShipmentStatus, UserProfile } from '../types';
 import type { Shipment, User } from '../types';
 import { Zap } from 'lucide-react';
+import { getShipmentStatusLabel } from '../utils';
 
 interface ShipmentStatusFilterProps {
   shipments: Shipment[];
@@ -64,7 +65,7 @@ const ShipmentStatusFilter: React.FC<ShipmentStatusFilterProps> = ({
 
   const getStatusLabel = (status: ShipmentStatus | 'all') => {
     if (status === 'all') return 'Todos';
-    return status;
+    return getShipmentStatusLabel(status);
   };
 
   return (

@@ -415,7 +415,7 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
 
   return (
     <>
-      <Header title="Cotação de Frete" />
+      <Header title="Precificação & Cotações" />
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 font-sans">
         {/* Painel de Configurações */}
         <div className="xl:col-span-4 space-y-6">
@@ -474,7 +474,7 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
               </div>
 
               <button onClick={calculateRoute} disabled={loading} className="w-full flex items-center justify-center px-4 py-2.5 bg-slate-900 dark:bg-gray-700 text-white rounded-xl hover:bg-slate-800 transition-colors font-medium text-sm disabled:opacity-50 mt-4">
-                {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />} BUSCAR ROTA
+                {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />} Processar Rota & Custos
               </button>
 
               {error && (

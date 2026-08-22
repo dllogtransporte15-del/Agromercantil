@@ -14,6 +14,7 @@ import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
 import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, Lock } from 'lucide-react';
 import { tryAcquireShipmentLock } from '../services/api/db';
+import { getShipmentStatusLabel } from '../utils';
 
 import MultiSelectDropdown from './MultiSelectDropdown';
 import ShipmentDetailsModal from './ShipmentDetailsModal';
@@ -349,7 +350,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
                   </div>
                   <div className="text-right">
                     <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                      {shipment.status}
+                      {getShipmentStatusLabel(shipment.status)}
                     </span>
                     {shipment.status === ShipmentStatus.Cancelado && shipment.cancellationReason && (
                         <div className="text-[10px] text-red-500 font-semibold mt-1 max-w-[120px] break-words">
@@ -738,30 +739,44 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
                                               >
                                                   <div className="py-1" role="menu" aria-orientation="vertical">
                                                       {onShowHistory && <ActionMenuItem icon={HistoryIcon} text="Ver Histórico" onClick={() => onShowHistory(shipment)} />}
+                                                      {shipment.driverContact && (
+                                                        <ActionMenuItem 
+                                                          icon={WhatsAppIcon} 
+                                                          text="Contato Motorista" 
+                                                          onClick={() => handleWhatsAppClick(shipment.driverContact!)} 
+                                                        />
+                                                      )}
+                                                      {shipment.ownerContact && (
+                                                        <ActionMenuItem 
+                                                          icon={WhatsAppIcon} 
+                                                          text="Contato Proprietário" 
+                                                          onClick={() => handleWhatsAppClick(shipment.ownerContact!)} 
+                                                        />
+                                                      )}
                                                       {shipment.status !== ShipmentStatus.Cancelado && (
                                                           <>
                                                               {isActionable && onAttach && (
                                                                 <ActionMenuItem 
                                                                     icon={PaperclipIcon} 
-                                                                    text="Anexa e Avançar" 
+                                                                    text="Anexar e Avançar Etapa" 
                                                                     onClick={() => onAttach(shipment)} 
                                                                     disabled={!canAdvance && shipment.status !== ShipmentStatus.AguardandoAdiantamento} 
                                                                     title={(!canAdvance && shipment.status !== ShipmentStatus.AguardandoAdiantamento) ? disabledReason : undefined} 
                                                                 />
                                                               )}
-                                                              {shipment.status === ShipmentStatus.PreCadastro && <ActionMenuItem icon={ExternalLinkIcon} text="Fazer Cadastro" onClick={() => handleFazerCadastroClick(shipment)} />}
-                                                              {isActionable && onEditPrice && <ActionMenuItem icon={DollarSignIcon} text="Alterar Preço" onClick={() => onEditPrice(shipment)} />}
+                                                              {shipment.status === ShipmentStatus.PreCadastro && <ActionMenuItem icon={ExternalLinkIcon} text="Completar Cadastro" onClick={() => handleFazerCadastroClick(shipment)} />}
+                                                              {isActionable && onEditPrice && <ActionMenuItem icon={DollarSignIcon} text="Ajustar Frete" onClick={() => onEditPrice(shipment)} />}
                                                               {isActionable && onTransfer && <ActionMenuItem icon={TransferIcon} text="Transferir Embarque" onClick={() => onTransfer(shipment)} />}
-                                                              {isActionable && (shipment.status === ShipmentStatus.PreCadastro || shipment.status === ShipmentStatus.AguardandoSeguradora) && onSwapCargo && <ActionMenuItem icon={Package} text="Trocar Carga" onClick={() => onSwapCargo(shipment)} />}
-                                                              {onOpenEditScheduledDateTime && <ActionMenuItem icon={Clock} text="Alterar Data/Hora" onClick={() => onOpenEditScheduledDateTime(shipment)} />}
-                                                              {shipment.status === ShipmentStatus.Finalizado && onAttach && <ActionMenuItem icon={PaperclipIcon} text="Gestor de Anexos" onClick={() => onAttach(shipment)} />}
+                                                              {isActionable && (shipment.status === ShipmentStatus.PreCadastro || shipment.status === ShipmentStatus.AguardandoSeguradora) && onSwapCargo && <ActionMenuItem icon={Package} text="Remanejar Carga" onClick={() => onSwapCargo(shipment)} />}
+                                                              {onOpenEditScheduledDateTime && <ActionMenuItem icon={Clock} text="Reprogramar Data/Horário" onClick={() => onOpenEditScheduledDateTime(shipment)} />}
+                                                              {shipment.status === ShipmentStatus.Finalizado && onAttach && <ActionMenuItem icon={PaperclipIcon} text="Central de Anexos" onClick={() => onAttach(shipment)} />}
                                                               {isActionable && onCancel && (currentUser.profile !== UserProfile.Fiscal || shipment.status === ShipmentStatus.AguardandoSeguradora) && <ActionMenuItem icon={XIcon} text="Cancelar Embarque" onClick={() => onCancel(shipment)} isDestructive />}
                                                           </>
                                                       )}
                                                       {onRevertStatus && statusHistoryCount > 1 && (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.Diretor) && (
                                                           <ActionMenuItem 
                                                               icon={RotateCcw} 
-                                                              text="Voltar Status Anterior" 
+                                                              text="Reverter Etapa Anterior" 
                                                               onClick={() => {
                                                                   if (window.confirm("Atenção: Reverter o status removerá os anexos do último passo e ajustará os volumes da carga. Deseja continuar?")) {
                                                                       onRevertStatus(shipment.id);
@@ -769,7 +784,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
                                                               }} 
                                                           />
                                                       )}
-                                                      {onDelete && can('delete', currentUser, 'shipments', profilePermissions || INITIAL_PERMISSIONS) && <ActionMenuItem icon={Trash2} text="Excluir Embarque" onClick={() => onDelete(shipment.id)} isDestructive />}
+                                                      {onDelete && can('delete', currentUser, 'shipments', profilePermissions || INITIAL_PERMISSIONS) && <ActionMenuItem icon={Trash2} text="Remover Registro" onClick={() => onDelete(shipment.id)} isDestructive />}
                                                   </div>
                                               </div>,
                                               document.body

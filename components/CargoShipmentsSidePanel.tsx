@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Truck, Calendar, Weight, Info } from 'lucide-react';
 import type { Cargo, Shipment, User, Client, Product, Vehicle } from '../types';
+import { getShipmentStatusLabel } from '../utils';
 import ShipmentDetailsModal from './ShipmentDetailsModal';
 
 interface CargoShipmentsSidePanelProps {
@@ -111,7 +112,7 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
                       shipment.status === 'Cancelado' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' :
                       'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
                     }`}>
-                      {shipment.status}
+                      {getShipmentStatusLabel(shipment.status)}
                     </span>
                   </div>
 
