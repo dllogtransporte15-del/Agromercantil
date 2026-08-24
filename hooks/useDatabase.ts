@@ -20,19 +20,25 @@ import { useGeneralStore } from './store/useGeneralStore';
 
 function getMaxId(items: any[], startOffset: number): number {
   if (!items || items.length === 0) {
-    console.log(`[getMaxId] No items found, returning startOffset: ${startOffset}`);
     return startOffset;
   }
   let maxNum = startOffset - 1;
   for (const item of items) {
-    if (item?.id && typeof item.id === 'string' && item.id.includes('-')) {
-      const num = parseInt(item.id.split('-')[1], 10);
-      if (!isNaN(num) && num > maxNum) maxNum = num;
+    if (typeof item?.sequenceId === 'number' && item.sequenceId > maxNum) {
+      maxNum = item.sequenceId;
+    } else if (typeof item?.sequence_id === 'number' && item.sequence_id > maxNum) {
+      maxNum = item.sequence_id;
+    } else if (item?.id && typeof item.id === 'string') {
+      if (item.id.startsWith('CRG-')) {
+        const num = parseInt(item.id.replace('CRG-', ''), 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      } else if (item.id.includes('-') && !item.id.startsWith('TEMP-')) {
+        const num = parseInt(item.id.split('-')[1], 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
     }
   }
-  const nextId = maxNum + 1;
-  console.log(`[getMaxId] Items count: ${items.length}, Max found: ${maxNum}, Next ID: ${nextId}`);
-  return nextId;
+  return maxNum + 1;
 }
 
 function calculateNextIds(

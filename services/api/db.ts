@@ -412,7 +412,21 @@ export async function fetchProducts(): Promise<Product[]> {
 export async function fetchCargos(): Promise<Cargo[]> {
   const { data, error } = await supabase.from('cargos').select('*').order('created_at', { ascending: false });
   if (error) return handleAuthError(error, []);
-  return (data || []).map(toCargo);
+  
+  const seenIds = new Set<string>();
+  const seenSeqs = new Set<number>();
+  const result: Cargo[] = [];
+
+  for (const row of (data || [])) {
+    const c = toCargo(row);
+    if (!seenIds.has(c.id) && (!c.sequenceId || !seenSeqs.has(c.sequenceId))) {
+      seenIds.add(c.id);
+      if (c.sequenceId) seenSeqs.add(c.sequenceId);
+      result.push(c);
+    }
+  }
+
+  return result;
 }
 
 export async function fetchShipments(): Promise<Shipment[]> {
@@ -491,8 +505,18 @@ export async function upsertVehicle(vehicle: Vehicle): Promise<void> {
 export async function upsertCargo(cargo: Cargo): Promise<void> {
   const payload = fromCargo(cargo);
   console.log('[upsertCargo] Saving cargo:', cargo.id, payload);
+
+  // If previous cargo had a TEMP- ID, delete old temp row to prevent duplication
+  if (cargo.id && cargo.id.startsWith('TEMP-')) {
+    try {
+      await supabase.from('cargos').delete().eq('id', cargo.id);
+    } catch (e) {
+      console.warn('[upsertCargo] Could not clean up old temp cargo id:', cargo.id);
+    }
+  }
+
   let error;
-  if (cargo.id && !cargo.id.startsWith('TEMP-')) {
+  if (payload.id && !payload.id.startsWith('TEMP-')) {
     const result = await supabase.from('cargos').upsert(payload, { onConflict: 'id' });
     error = result.error;
   } else {
@@ -506,7 +530,7 @@ export async function upsertCargo(cargo: Cargo): Promise<void> {
     console.error('[upsertCargo] Error:', error);
     throw error;
   }
-  console.log('[upsertCargo] Success for cargo:', cargo.id);
+  console.log('[upsertCargo] Success for cargo:', payload.id || cargo.id);
 }
 
 export async function upsertShipment(shipment: Shipment): Promise<void> {
@@ -554,6 +578,15 @@ export async function upsertTicket(ticket: Ticket): Promise<void> {
 export async function insertCargo(cargo: Cargo | Omit<Cargo, 'id'>): Promise<Cargo> {
   const payload = fromCargo(cargo);
   console.log('[insertCargo] Inserting new cargo:', (cargo as Cargo).id || 'NEW');
+  
+  if ((cargo as any).id && String((cargo as any).id).startsWith('TEMP-')) {
+    try {
+      await supabase.from('cargos').delete().eq('id', (cargo as any).id);
+    } catch (e) {
+      // ignore
+    }
+  }
+
   const { data, error } = await supabase.from('cargos').upsert(payload, { onConflict: 'id' }).select().single();
   if (error) {
     console.error('[insertCargo] Error:', error);

@@ -1562,8 +1562,9 @@ const App: React.FC = () => {
         delete loadData.branchId;
     }
 
-    if ('id' in loadData && loadData.id && cargos.some(l => l.id === loadData.id)) {
-      const oldCargo = cargos.find(l => l.id === loadData.id)!;
+    const isExisting = 'id' in loadData && loadData.id && cargos.some(l => l.id === loadData.id || (loadData.sequenceId && l.sequenceId === loadData.sequenceId));
+    if (isExisting) {
+      const oldCargo = cargos.find(l => l.id === loadData.id || (loadData.sequenceId && l.sequenceId === loadData.sequenceId))!;
 
       if (loadData.status === CargoStatus.Fechada || loadData.status === CargoStatus.Suspensa) {
         const today = new Date().toISOString().split('T')[0];
@@ -1643,7 +1644,7 @@ const App: React.FC = () => {
         updatedCargo = { ...oldCargo, ...loadData, history: baseHistory } as Cargo;
       }
 
-      setCargos(prev => prev.map(l => l.id === loadData.id ? updatedCargo : l));
+      setCargos(prev => prev.map(l => (l.id === oldCargo.id || (oldCargo.sequenceId && l.sequenceId === oldCargo.sequenceId)) ? updatedCargo : l));
       try {
         await upsertCargo(updatedCargo);
       } catch (err: any) {
