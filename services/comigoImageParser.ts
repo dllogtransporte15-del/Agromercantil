@@ -179,8 +179,7 @@ export async function processComigoImage(
   if (fullDataUrl.startsWith('data:image/png')) mimeType = 'image/png';
   else if (fullDataUrl.startsWith('data:image/webp')) mimeType = 'image/webp';
 
-  // 1. Tentar Gemini Vision se houver apiKey
-  const key = apiKey || localStorage.getItem('gemini_api_key') || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+  const key = (apiKey || localStorage.getItem('gemini_api_key') || (import.meta as any).env?.VITE_GEMINI_API_KEY || 'AIzaSyD9WTYJJcBcswabE3cAE3gX6fAz3FLZGyA').trim();
 
   if (key) {
     try {
@@ -203,7 +202,7 @@ Retorne SOMENTE um JSON válido com a seguinte estrutura:
 }`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.6-flash',
         contents: [
           {
             role: 'user',

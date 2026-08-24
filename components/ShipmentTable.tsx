@@ -60,6 +60,13 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, cargos, users,
   const actionMenuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
+  const handleWhatsAppClick = (phone: string) => {
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone) {
+      window.open(`https://wa.me/55${cleanPhone}`, '_blank');
+    }
+  };
+
   const [showFilters, setShowFilters] = useState(false);
   const [filterPlate, setFilterPlate] = useState<string[]>([]);
   const [filterName, setFilterName] = useState<string[]>([]);

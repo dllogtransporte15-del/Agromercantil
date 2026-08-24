@@ -3,6 +3,7 @@ import type { Cargo, Client, Product, User, DailyScheduleEntry } from '../types'
 import { CargoStatus, CargoType, VehicleSetType, VehicleBodyType, DailyScheduleType } from '../types';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { processComigoImage, formatComigoObservations, ComigoExtractedData } from '../services/comigoImageParser';
+import { processAgromercantilImage, formatAgromercantilObservations, generateAgromercantilDailySchedule } from '../services/agromercantilImageParser';
 
 // ─────────────────────────────────────────────
 // Types
@@ -29,6 +30,8 @@ export interface ParsedCargo {
   vehicleTypes?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[];
   observations?: string;
   loadingStartDate?: string;
+  loadingDeadline?: string;
+  cadenciaDia?: number;
   dailySchedule?: DailyScheduleEntry[];
   type: CargoType;
   tollIncluded: boolean;
@@ -762,6 +765,10 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [isProcessingImages, setIsProcessingImages] = useState(false);
   const [processingStatus, setProcessingStatus] = useState('');
+  const [apiKey, setApiKey] = useState((import.meta as any).env?.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || 'AIzaSyD9WTYJJcBcswabE3cAE3gX6fAz3FLZGyA');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [apiKeySavedSuccess, setApiKeySavedSuccess] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   
   const [editedCargos, setEditedCargos] = useState<ParsedCargo[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -785,13 +792,19 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
     return name.includes('comigo');
   }, [selectedClient]);
 
+  const isAgromercantilClient = useMemo(() => {
+    if (!selectedClient) return false;
+    const name = (selectedClient.nomeFantasia || selectedClient.razaoSocial || '').toLowerCase();
+    return name.includes('agromercantil') || name.includes('agro mercantil') || name.includes('mercantil');
+  }, [selectedClient]);
+
   useEffect(() => {
-    if (isComigoClient) {
+    if (isComigoClient || isAgromercantilClient) {
       setImportMode('image');
     } else {
       setImportMode('text');
     }
-  }, [isComigoClient]);
+  }, [isComigoClient, isAgromercantilClient]);
 
   // Paste image handler (Ctrl+V)
   useEffect(() => {
@@ -822,48 +835,117 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
   const handleProcessImages = async () => {
     if (attachedFiles.length === 0) return;
     setIsProcessingImages(true);
+    setImportError(null);
     const parsedList: ParsedCargo[] = [];
 
-    const fertProduct = findProduct('Fertilizante', products, false, true);
+    const effectiveApiKey = apiKey || localStorage.getItem('gemini_api_key') || (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
 
-    for (let i = 0; i < attachedFiles.length; i++) {
-      const file = attachedFiles[i];
-      setProcessingStatus(`Digitalizando e aprimorando imagem ${i + 1} de ${attachedFiles.length}...`);
-      try {
-        const extracted = await processComigoImage(file);
-        const obs = formatComigoObservations(extracted);
-        const baseCompanyVal = extracted.freteEmpresaSugerido || 0;
-        const { company, pj, pf } = calcFreight(baseCompanyVal, false, false, 0);
+    if (isAgromercantilClient) {
+      for (let i = 0; i < attachedFiles.length; i++) {
+        const file = attachedFiles[i];
+        setProcessingStatus(`Digitalizando e interpretando lotes da Agromercantil (Imagem ${i + 1} de ${attachedFiles.length})...`);
+        try {
+          const extracted = await processAgromercantilImage(file, effectiveApiKey);
 
-        const cargo: ParsedCargo = {
-          rawText: extracted.rawText || '',
-          origin: 'Rio Verde, GO',
-          originLocation: 'COMIGO - Rio Verde',
-          destination: normalizeCityFormat(extracted.destinoSugerido || 'Aparecida do Rio Doce, GO'),
-          destinationLocation: extracted.destinoLocal || extracted.fazenda,
-          productName: fertProduct?.name || 'Fertilizante',
-          productId: fertProduct?.id,
-          totalVolume: extracted.toneladas || 0,
-          baseValue: baseCompanyVal,
-          companyFreightValuePerTon: company,
-          driverFreightValuePerTonPJ: pj,
-          driverFreightValuePerTonPF: pf,
-          driverFreightValuePerTon: pj,
-          hasIcms: false,
-          icmsPercentage: 12,
-          observations: obs || undefined,
-          loadingStartDate: extracted.dataEntrega ? parseLoadingDate(extracted.dataEntrega) : new Date().toISOString().split('T')[0],
-          dailySchedule: getInitialDailySchedule(),
-          type: CargoType.Spot,
-          tollIncluded: false,
-          imageDataUrl: extracted.imageDataUrl,
-          errors: [],
-          warnings: baseCompanyVal === 0 ? ['Informe o Frete Empresa para calcular os fretes dos motoristas.'] : [],
-        };
+          // REGRA AGROMERCANTIL: cadastrar apenas linhas onde o Status for "Proposta Final"
+          const propostaFinalRows = extracted.rows.filter(r =>
+            (r.status || '').toLowerCase().includes('proposta final')
+          );
 
-        parsedList.push(cargo);
-      } catch (err: any) {
-        console.error(`Erro ao processar imagem ${file.name}:`, err);
+          if (extracted.errorMessage && propostaFinalRows.length === 0) {
+            setImportError(extracted.errorMessage);
+          }
+
+          for (const row of propostaFinalRows) {
+            const prod = findProduct(row.produto, products, false, false);
+            const baseVal = row.precoNegociado || 0;
+            const { company, pj, pf } = calcFreight(baseVal, false, false, 0);
+            const schedule = generateAgromercantilDailySchedule(row.volNegociado || 0, row.cadenciaDia, row.inicioEmbarque);
+            const obs = formatAgromercantilObservations(row);
+
+            const todayStr = new Date().toISOString().split('T')[0];
+            const effectiveStartDate = (row.inicioEmbarque && row.inicioEmbarque >= todayStr) ? row.inicioEmbarque : todayStr;
+
+            const cargo: ParsedCargo = {
+              rawText: row.rawText || '',
+              origin: normalizeCityFormat(row.cidadeOrigem || ''),
+              originLocation: row.origem || undefined,
+              destination: normalizeCityFormat(row.cidadeDestino || ''),
+              destinationLocation: row.destino || undefined,
+              productName: prod?.name || row.produto || 'Milho em Grãos',
+              productId: prod?.id,
+              totalVolume: row.volNegociado || 0,
+              baseValue: baseVal,
+              cadenciaDia: row.cadenciaDia,
+              companyFreightValuePerTon: company,
+              driverFreightValuePerTonPJ: pj,
+              driverFreightValuePerTonPF: pf,
+              driverFreightValuePerTon: pj,
+              hasIcms: false,
+              icmsPercentage: 12,
+              vehicleTypes: getMilhaoDefaultVehicleTypes(),
+              observations: obs || undefined,
+              loadingStartDate: effectiveStartDate,
+              loadingDeadline: row.fimEmbarque || undefined,
+              dailySchedule: schedule,
+              type: CargoType.Spot,
+              tollIncluded: false,
+              imageDataUrl: extracted.imageDataUrl,
+              errors: [],
+              warnings: baseVal === 0 ? ['Informe o Frete Empresa para calcular os fretes dos motoristas.'] : [],
+            };
+
+            parsedList.push(cargo);
+          }
+        } catch (err: any) {
+          console.error(`Erro ao processar imagem ${file.name}:`, err);
+          setImportError(`Erro ao processar ${file.name}: ${err?.message || 'Falha na leitura da imagem'}`);
+        }
+      }
+    } else {
+      // COMIGO e outros clientes
+      const fertProduct = findProduct('Fertilizante', products, false, true);
+
+      for (let i = 0; i < attachedFiles.length; i++) {
+        const file = attachedFiles[i];
+        setProcessingStatus(`Digitalizando e aprimorando imagem ${i + 1} de ${attachedFiles.length}...`);
+        try {
+          const extracted = await processComigoImage(file, effectiveApiKey);
+          const obs = formatComigoObservations(extracted);
+          const baseCompanyVal = extracted.freteEmpresaSugerido || 0;
+          const { company, pj, pf } = calcFreight(baseCompanyVal, false, false, 0);
+
+          const cargo: ParsedCargo = {
+            rawText: extracted.rawText || '',
+            origin: 'Rio Verde, GO',
+            originLocation: 'COMIGO - Rio Verde',
+            destination: normalizeCityFormat(extracted.destinoSugerido || 'Aparecida do Rio Doce, GO'),
+            destinationLocation: extracted.destinoLocal || extracted.fazenda,
+            productName: fertProduct?.name || 'Fertilizante',
+            productId: fertProduct?.id,
+            totalVolume: extracted.toneladas || 0,
+            baseValue: baseCompanyVal,
+            companyFreightValuePerTon: company,
+            driverFreightValuePerTonPJ: pj,
+            driverFreightValuePerTonPF: pf,
+            driverFreightValuePerTon: pj,
+            hasIcms: false,
+            icmsPercentage: 12,
+            observations: obs || undefined,
+            loadingStartDate: extracted.dataEntrega ? parseLoadingDate(extracted.dataEntrega) : new Date().toISOString().split('T')[0],
+            dailySchedule: getInitialDailySchedule(),
+            type: CargoType.Spot,
+            tollIncluded: false,
+            imageDataUrl: extracted.imageDataUrl,
+            errors: [],
+            warnings: baseCompanyVal === 0 ? ['Informe o Frete Empresa para calcular os fretes dos motoristas.'] : [],
+          };
+
+          parsedList.push(cargo);
+        } catch (err: any) {
+          console.error(`Erro ao processar imagem ${file.name}:`, err);
+          setImportError(`Erro ao processar ${file.name}: ${err?.message || 'Falha na leitura da imagem'}`);
+        }
       }
     }
 
@@ -872,7 +954,10 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
 
     if (parsedList.length > 0) {
       setEditedCargos(parsedList);
+      setImportError(null);
       setStep(2);
+    } else {
+      setImportError(prev => prev || 'Nenhuma carga com status "Proposta Final" foi identificada na imagem. Para processar imagens de tabelas com IA multimodal, certifique-se de configurar sua Chave de API Gemini abaixo.');
     }
   };
 
@@ -884,6 +969,14 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
         val = normalizeCityFormat(value);
       }
       const cargo: any = { ...next[index], [field]: val };
+
+      // Se for Agromercantil e mudar data de início ou volume, recalcula a programação diária
+      if (isAgromercantilClient && (field === 'loadingStartDate' || field === 'totalVolume' || field === 'cadenciaDia')) {
+        const total = field === 'totalVolume' ? (Number(val) || 0) : (cargo.totalVolume || 0);
+        const cadencia = field === 'cadenciaDia' ? (Number(val) || 0) : (cargo.cadenciaDia || 0);
+        const start = field === 'loadingStartDate' ? val : cargo.loadingStartDate;
+        cargo.dailySchedule = generateAgromercantilDailySchedule(total, cadencia, start);
+      }
 
       // Se mudar o frete empresa ou parâmetros de ICMS, recalcula tudo imediatamente
       if (field === 'companyFreightValuePerTon' || field === 'baseValue' || field === 'hasIcms' || field === 'icmsPercentage') {
@@ -942,6 +1035,7 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
         type: c.type,
         status: CargoStatus.EmAndamento,
         loadingStartDate: c.loadingStartDate,
+        loadingDeadline: c.loadingDeadline,
         dailySchedule: c.dailySchedule && c.dailySchedule.length > 0 ? c.dailySchedule : getInitialDailySchedule(),
         allowedVehicleTypes: c.vehicleTypes && c.vehicleTypes.length > 0 ? c.vehicleTypes : undefined,
         observations: c.observations,
@@ -1038,6 +1132,39 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                 </select>
               </div>
 
+              {/* Informações da regra AGROMERCANTIL */}
+              {isAgromercantilClient && (
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl mt-0.5">🌱</span>
+                    <div className="space-y-1">
+                      <p className="text-sm font-bold text-emerald-800 dark:text-emerald-200">Cliente Agromercantil — Importação de Lotes por Imagem da Tabela</p>
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                        • <strong>Filtro de Status:</strong> Cadastra apenas os lotes com Status = <code>"Proposta Final"</code> (demais status como "Negociação em Curso" são filtrados automaticamente).
+                      </p>
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                        • <strong>Frete Empresa:</strong> Preço Negociado (calcula margens PJ -8% e PF -12%).
+                      </p>
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                        • <strong>Volume Total (ton):</strong> Vol. Negociado.
+                      </p>
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                        • <strong>Origem e Destino:</strong> Cidade Origem / Cidade Destino + Endereços e Fazendas locais.
+                      </p>
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                        • <strong>Datas de Embarque:</strong> Início do Carregamento e Prazo de Carregamento.
+                      </p>
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                        • <strong>Programação Diária (Cadência / Dia):</strong> Adiciona automaticamente cotas fixas por dia nos próximos dias compatíveis com o volume total (Ex: 600t com 120t/dia = 5 dias com 120t).
+                      </p>
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                        • <strong>Produto:</strong> Identificado a partir da coluna Produto (ex: Milho em Grãos, Soja em Grãos).
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Informações da regra COMIGO */}
               {isComigoClient && (
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4">
@@ -1115,7 +1242,7 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                 <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                   <span className="font-semibold text-primary">{selectedClient?.nomeFantasia}</span>
                   <span>·</span>
-                  <span>{importMode === 'image' ? 'Anexe os roteiros em imagem' : 'Cole o texto das cargas'}</span>
+                  <span>{importMode === 'image' ? (isAgromercantilClient ? 'Anexe os prints/fotos das planilhas de lotes' : 'Anexe os roteiros em imagem') : 'Cole o texto das cargas'}</span>
                 </div>
 
                 {/* Mode Selector Tabs */}
@@ -1173,7 +1300,7 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                         📸
                       </div>
                       <p className="font-semibold text-gray-900 dark:text-white text-base">
-                        Clique para selecionar ou arraste as fotos/prints dos roteiros
+                        {isAgromercantilClient ? 'Clique para selecionar ou arraste os prints das tabelas de lotes' : 'Clique para selecionar ou arraste as fotos/prints dos roteiros'}
                       </p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
                         Você também pode colar direto com <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded font-mono text-[11px]">Ctrl + V</kbd>
@@ -1228,6 +1355,101 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                     </div>
                   )}
 
+                  {/* Mensagem de Erro / Alerta de Processamento */}
+                  {importError && (
+                    <div className="p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-red-800 dark:text-red-200 text-xs space-y-2 animate-fade-in">
+                      <div className="flex items-start gap-2">
+                        <span className="text-base mt-0.5">⚠️</span>
+                        <div className="space-y-1 flex-1">
+                          <p className="font-bold text-sm">Não foi possível processar as cargas da imagem</p>
+                          <p className="leading-relaxed">{importError}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Configuração de Chave de API Gemini */}
+                  <div className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/20 rounded-xl border border-emerald-200 dark:border-emerald-800 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">✨</span>
+                        <span className="text-xs font-bold text-gray-900 dark:text-white">Reconhecimento Inteligente por IA (Gemini Vision)</span>
+                      </div>
+                      <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${
+                        apiKey.trim() ? 'bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300'
+                      }`}>
+                        {apiKey.trim() ? '✓ Chave Configurada (Pronta)' : '⚠️ Chave Não Informada'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type={showApiKey ? "text" : "password"}
+                          value={apiKey}
+                          onChange={e => {
+                            const val = e.target.value.trim();
+                            setApiKey(val);
+                            localStorage.setItem('gemini_api_key', val);
+                            setApiKeySavedSuccess(true);
+                            setTimeout(() => setApiKeySavedSuccess(false), 2500);
+                          }}
+                          placeholder="Cole aqui sua chave de API do Gemini (AIzaSy...)"
+                          className="w-full pl-3 pr-9 py-2 text-xs font-mono border border-emerald-300 dark:border-emerald-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowApiKey(!showApiKey)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs"
+                          title={showApiKey ? "Ocultar chave" : "Mostrar chave"}
+                        >
+                          {showApiKey ? "🙈" : "👁️"}
+                        </button>
+                      </div>
+
+                      {typeof navigator !== 'undefined' && navigator.clipboard && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const clipText = await navigator.clipboard.readText();
+                              if (clipText) {
+                                const clean = clipText.trim();
+                                setApiKey(clean);
+                                localStorage.setItem('gemini_api_key', clean);
+                                setApiKeySavedSuccess(true);
+                                setTimeout(() => setApiKeySavedSuccess(false), 2500);
+                              }
+                            } catch (e) {
+                              console.warn('Clipboard error', e);
+                            }
+                          }}
+                          className="px-3 py-2 bg-white dark:bg-gray-800 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 rounded-lg text-xs font-medium hover:bg-emerald-50 dark:hover:bg-gray-700 transition-colors whitespace-nowrap shadow-sm"
+                        >
+                          📋 Colar
+                        </button>
+                      )}
+                    </div>
+
+                    {apiKeySavedSuccess && (
+                      <p className="text-[11px] text-green-600 dark:text-green-400 font-semibold animate-fade-in">
+                        ✓ Chave salva com sucesso no navegador!
+                      </p>
+                    )}
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 gap-1 pt-0.5">
+                      <span>A chave fica salva com segurança no seu navegador para estruturar as tabelas por IA.</span>
+                      <a
+                        href="https://aistudio.google.com/app/apikey"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold whitespace-nowrap"
+                      >
+                        Obter Chave Gratuita ↗
+                      </a>
+                    </div>
+                  </div>
+
                   {/* Action buttons */}
                   <div className="flex gap-3 pt-2">
                     <button
@@ -1247,7 +1469,7 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                           <span>{processingStatus || 'Processando Imagens...'}</span>
                         </>
                       ) : (
-                        `Processar ${attachedFiles.length} Roteiro(s) →`
+                        `Processar ${attachedFiles.length} Imagem(ns) →`
                       )}
                     </button>
                   </div>
@@ -1392,6 +1614,9 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                             onBlur={e => updateEdited(idx, 'origin', normalizeCityFormat(e.target.value))}
                             className="w-full px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
                           />
+                          {cargo.originLocation && (
+                            <p className="text-xs text-gray-500 mt-0.5 truncate" title={cargo.originLocation}>Origem Local: {cargo.originLocation}</p>
+                          )}
                         </div>
 
                         <div>
@@ -1408,7 +1633,7 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                             className="w-full px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
                           />
                           {cargo.destinationLocation && (
-                            <p className="text-xs text-gray-500 mt-0.5">Local / Fazenda: {cargo.destinationLocation}</p>
+                            <p className="text-xs text-gray-500 mt-0.5 truncate" title={cargo.destinationLocation}>Destino Local: {cargo.destinationLocation}</p>
                           )}
                         </div>
 
@@ -1435,6 +1660,31 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                             value={cargo.totalVolume || ''}
                             onChange={e => updateEdited(idx, 'totalVolume', parseFloat(e.target.value) || 0)}
                             placeholder="Ex: 134"
+                            className="w-full px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+
+                        {/* Datas de Embarque (Início e Prazo) */}
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                            📅 Data de Início do Carregamento
+                          </label>
+                          <input
+                            type="date"
+                            value={cargo.loadingStartDate || ''}
+                            onChange={e => updateEdited(idx, 'loadingStartDate', e.target.value)}
+                            className="w-full px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                            ⏱️ Prazo de Carregamento (Fim)
+                          </label>
+                          <input
+                            type="date"
+                            value={cargo.loadingDeadline || ''}
+                            onChange={e => updateEdited(idx, 'loadingDeadline', e.target.value)}
                             className="w-full px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
                           />
                         </div>
@@ -1531,14 +1781,22 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                         )}
                       </div>
 
-                      {/* Programação Diária Badge */}
+                      {/* Programação Diária Badge com detalhamento de todos os dias */}
                       {cargo.dailySchedule && cargo.dailySchedule.length > 0 && (
-                        <div className="flex items-center gap-2 text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-2.5 text-amber-800 dark:text-amber-200">
-                          <span className="text-base">📅</span>
-                          <div>
-                            <span className="font-bold">Programação Diária Automática:</span> Data{' '}
-                            <strong>{cargo.dailySchedule[0].date.split('-').reverse().join('/')}</strong> —{' '}
-                            <span className="font-semibold">{cargo.dailySchedule[0].type}</span> ({cargo.dailySchedule[0].tonnage} ton)
+                        <div className="flex flex-col gap-1.5 text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-2.5 text-amber-800 dark:text-amber-200">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">📅</span>
+                            <div>
+                              <span className="font-bold">Programação Diária:</span> {cargo.dailySchedule.length} dia(s) programado(s) — Total:{' '}
+                              <strong>{cargo.dailySchedule.reduce((acc, curr) => acc + (curr.tonnage || 0), 0).toFixed(2)} ton</strong>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 pt-1 pl-6">
+                            {cargo.dailySchedule.map((ds, sIdx) => (
+                              <span key={sIdx} className="bg-amber-100 dark:bg-amber-800/40 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded text-[11px] font-mono font-medium">
+                                {ds.date.split('-').reverse().join('/')}: {ds.tonnage} ton ({ds.type})
+                              </span>
+                            ))}
                           </div>
                         </div>
                       )}

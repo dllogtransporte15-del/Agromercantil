@@ -392,38 +392,38 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                       load.status === CargoStatus.Suspensa ? 'bg-yellow-100 text-yellow-800' :
                       load.status === CargoStatus.Fechada ? 'bg-gray-100 text-gray-800' :
                       (() => {
-                        const today = new Date().toISOString().split('T')[0];
-                        const hasCurrentOrFutureSchedule = load.dailySchedule?.some(ds => ds.date >= today);
-                        if (load.status === CargoStatus.EmAndamento && !hasCurrentOrFutureSchedule) {
+                        const hasSchedule = (load.dailySchedule || []).length > 0;
+                        if (load.status === CargoStatus.EmAndamento && !hasSchedule) {
                           return 'bg-red-100 text-red-800 border border-red-200';
                         }
-                        return dailyScheduleInfo ? statusSymbolColors[dailyScheduleInfo.type] : 'bg-gray-100 text-gray-400';
+                        const firstType = dailyScheduleInfo?.type || (load.dailySchedule && load.dailySchedule[0]?.type);
+                        return firstType ? statusSymbolColors[firstType] : 'bg-gray-100 text-gray-400';
                       })()
                     }`}
                     title={
                       load.status === CargoStatus.Suspensa ? 'Carga Suspensa' :
                       load.status === CargoStatus.Fechada ? 'Carga Fechada' :
                       (() => {
-                        const today = new Date().toISOString().split('T')[0];
-                        const hasCurrentOrFutureSchedule = load.dailySchedule?.some(ds => ds.date >= today);
-                        if (load.status === CargoStatus.EmAndamento && !hasCurrentOrFutureSchedule) {
+                        const hasSchedule = (load.dailySchedule || []).length > 0;
+                        if (load.status === CargoStatus.EmAndamento && !hasSchedule) {
                           return 'Sem Programação (Lançar programação para liberar)';
                         }
-                        if (dailyScheduleInfo) {
+                        const firstType = dailyScheduleInfo?.type || (load.dailySchedule && load.dailySchedule[0]?.type);
+                        if (firstType) {
                           const meanings: Record<string, string> = { 'L': 'Livre', 'F': 'Fixo', 'V': 'Verificar' };
-                          return `Programação: ${meanings[statusSymbols[dailyScheduleInfo.type]] || statusSymbols[dailyScheduleInfo.type]}`;
+                          return `Programação: ${meanings[statusSymbols[firstType]] || statusSymbols[firstType]}`;
                         }
-                        return 'Sem programação para esta data';
+                        return 'Programação Lançada';
                       })()
                     }
                   >
                     {(() => {
-                      const today = new Date().toISOString().split('T')[0];
-                      const hasCurrentOrFutureSchedule = load.dailySchedule?.some(ds => ds.date >= today);
                       if (load.status === CargoStatus.Suspensa) return 'S';
                       if (load.status === CargoStatus.Fechada) return 'F';
-                      if (load.status === CargoStatus.EmAndamento && !hasCurrentOrFutureSchedule) return 'SP';
-                      return dailyScheduleInfo ? statusSymbols[dailyScheduleInfo.type] : '-';
+                      const hasSchedule = (load.dailySchedule || []).length > 0;
+                      if (load.status === CargoStatus.EmAndamento && !hasSchedule) return 'SP';
+                      const firstType = dailyScheduleInfo?.type || (load.dailySchedule && load.dailySchedule[0]?.type);
+                      return firstType ? statusSymbols[firstType] : '-';
                     })()}
                   </span>
 
@@ -446,12 +446,12 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                   <div className="flex flex-wrap gap-1.5 w-full justify-start">
                     {(() => {
                       const today = new Date().toISOString().split('T')[0];
-                      const upcoming = (load.dailySchedule || [])
-                        .filter(ds => ds.date >= today)
-                        .sort((a, b) => a.date.localeCompare(b.date));
+                      const allEntries = (load.dailySchedule || []).sort((a, b) => a.date.localeCompare(b.date));
+                      const upcoming = allEntries.filter(ds => ds.date >= today);
+                      const entriesToShow = upcoming.length > 0 ? upcoming : allEntries;
                         
-                      const toShow = upcoming.slice(0, 3);
-                      if (upcoming.length === 0) {
+                      const toShow = entriesToShow.slice(0, 3);
+                      if (entriesToShow.length === 0) {
                          return <span className={`text-[11px] text-gray-400 font-medium italic mt-1 pb-1 ${onEditSchedule ? 'group-hover:text-gray-500 dark:group-hover:text-gray-300' : ''}`}>Sem lançamentos</span>;
                       }
 
@@ -475,9 +475,9 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                                </div>
                              );
                           })}
-                          {upcoming.length > 3 && (
-                             <div className="flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md w-[32px] h-[36px] shrink-0" title={`Mais ${upcoming.length - 3} lançamentos`}>
-                               <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400">+{upcoming.length - 3}</span>
+                          {entriesToShow.length > 3 && (
+                             <div className="flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md w-[32px] h-[36px] shrink-0" title={`Mais ${entriesToShow.length - 3} lançamentos`}>
+                               <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400">+{entriesToShow.length - 3}</span>
                              </div>
                           )}
                         </>
