@@ -8,6 +8,7 @@ import 'leaflet/dist/leaflet.css';
 import { format } from 'date-fns';
 import { saveQuote, getClients, saveClient, Client } from '../utils/storage';
 import { useToast } from '../hooks/useToast';
+import { geocodeCity } from '../utils/geocoding';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -108,19 +109,18 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
     setRouteError(null);
 
     try {
-      const getCoordinates = async (address: string) => {
-        // Limpar endereço e forçar busca no Brasil para maior precisão
-        const cleanAddress = address.trim().replace(/\s+-\s+Brasil$/i, '').replace(/,\s*Brasil$/i, '');
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanAddress + ', Brasil')}&limit=1&accept-language=pt-br&countrycodes=br`);
-        const data = await response.json();
-        if (data && data.length > 0) {
-          return [parseFloat(data[0].lat), parseFloat(data[0].lon)] as [number, number];
-        }
-        throw new Error(`Não foi possível encontrar as coordenadas para: ${address}. Tente especificar bairro ou cidade mais precisamente.`);
-      };
+      const originResult = await geocodeCity(formData.origin);
+      if (!originResult) {
+        throw new Error(`Não foi possível localizar o endereço de origem: "${formData.origin}". Verifique a grafia ou tente incluir a UF (ex: Cidade, UF).`);
+      }
 
-      const originCoords = await getCoordinates(formData.origin);
-      const destCoords = await getCoordinates(formData.destination);
+      const destResult = await geocodeCity(formData.destination);
+      if (!destResult) {
+        throw new Error(`Não foi possível localizar o endereço de destino: "${formData.destination}". Verifique a grafia ou tente incluir a UF (ex: Cidade, UF).`);
+      }
+
+      const originCoords: [number, number] = [originResult.lat, originResult.lng];
+      const destCoords: [number, number] = [destResult.lat, destResult.lng];
 
       const routeResponse = await fetch(`https://router.project-osrm.org/route/v1/driving/${originCoords[1]},${originCoords[0]};${destCoords[1]},${destCoords[0]}?overview=simplified&geometries=geojson`);
       const routeJson = await routeResponse.json();

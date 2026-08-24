@@ -18,6 +18,7 @@ import Header from '../components/Header';
 import { saveToolQuote, getToolQuotes, getToolClients, saveToolClient, ToolClient, QuoteRecord } from '../services/api/toolsApi';
 import type { User as AppUser, Cargo } from '../types';
 import { findRouteHistorySuggestion, RouteSuggestion } from '../utils/routeHistorySuggester';
+import { geocodeCity } from '../utils/geocoding';
 
 // Fix Leaflet icon issue by using CDN directly to prevent webpack/vite breaking the image paths
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -30,7 +31,7 @@ L.Icon.Default.mergeOptions({
 interface Location {
   lat: number;
   lng: number;
-  label: string;
+  label?: string;
 }
 
 interface QuoteData {
@@ -154,25 +155,6 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
     setSaveSuccess(false);
   };
 
-  const fetchCoordinates = async (address: string) => {
-    try {
-      const cleanAddress = address.trim().replace(/\s+-\s+Brasil$/i, '').replace(/,\s*Brasil$/i, '');
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanAddress + ', Brasil')}&limit=1&accept-language=pt-br&countrycodes=br`);
-      const data = await response.json();
-      if (data && data.length > 0) {
-        return {
-          lat: parseFloat(data[0].lat),
-          lng: parseFloat(data[0].lon),
-          label: data[0].display_name
-        };
-      }
-      return null;
-    } catch (err) {
-      console.error('Geocoding error:', err);
-      return null;
-    }
-  };
-
   const checkRouteSuggestion = useCallback(async (orig: string, dest: string) => {
     if (!orig || !dest || orig.trim().length < 3 || dest.trim().length < 3) {
       setSuggestion(null);
@@ -235,11 +217,17 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
     checkRouteSuggestion(formData.origin, formData.destination);
 
     try {
-      const origin = await fetchCoordinates(formData.origin);
-      const dest = await fetchCoordinates(formData.destination);
+      const origin = await geocodeCity(formData.origin);
+      const dest = await geocodeCity(formData.destination);
 
       if (!origin || !dest) {
-        setError('Não foi possível localizar um dos endereços.');
+        if (!origin && !dest) {
+          setError(`Não foi possível localizar a origem ("${formData.origin}") nem o destino ("${formData.destination}").`);
+        } else if (!origin) {
+          setError(`Não foi possível localizar o endereço de origem: "${formData.origin}".`);
+        } else {
+          setError(`Não foi possível localizar o endereço de destino: "${formData.destination}".`);
+        }
         setLoading(false);
         return;
       }
