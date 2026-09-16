@@ -216,9 +216,9 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
   }
 
   return (
-    <header className="bg-white/95 dark:bg-[#0b1328]/90 shadow-lg shadow-blue-950/20 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-200/80 dark:border-slate-700/60 relative">
+    <header className="bg-white/95 dark:bg-[#061e13]/95 shadow-lg shadow-emerald-950/30 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-200/80 dark:border-emerald-900/60 relative">
       {/* Top Border Glow (Same as Login Card) */}
-      <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-400 to-transparent opacity-80 pointer-events-none" />
+      <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent opacity-80 pointer-events-none" />
 
       <div className="w-full max-w-[1920px] mx-auto px-3 sm:px-5 lg:px-6">
         <div className="flex items-center justify-between h-16 sm:h-18 lg:h-20 gap-4">
@@ -227,21 +227,21 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
           <div className="flex items-center gap-2.5 lg:gap-3 shrink-0">
             <a href="#" onClick={(e) => { e.preventDefault(); handlePageSelect('dashboard')}} className="flex items-center py-1">
                 {companyLogo ? (
-                    <img src={companyLogo} alt="Logo" className="h-9 sm:h-11 md:h-12 w-auto object-contain max-w-[140px] sm:max-w-[180px] transition-all filter drop-shadow-[0_2px_10px_rgba(11,102,228,0.3)]" />
+                    <img src={companyLogo} alt="Logo" className="h-9 sm:h-11 md:h-12 w-auto object-contain max-w-[140px] sm:max-w-[180px] transition-all filter drop-shadow-[0_2px_10px_rgba(22,163,74,0.3)]" />
                 ) : (
                     <h1 className="text-lg md:text-xl xl:text-2xl font-black text-primary dark:text-white tracking-tighter uppercase whitespace-nowrap">
-                      TRANS<span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-blue-500">CUNHA</span>
+                      AGRO<span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-amber-400">MERCANTIL</span>
                     </h1>
                 )}
             </a>
 
             {/* Badge Status Online */}
-            <div className="hidden 2xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700/60 shadow-inner backdrop-blur-md shrink-0">
+            <div className="hidden 2xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-[#03130b]/90 border border-slate-200 dark:border-emerald-800/60 shadow-inner backdrop-blur-md shrink-0">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 tracking-wider uppercase">Online</span>
+              <span className="text-[10px] font-bold text-slate-600 dark:text-emerald-200 tracking-wider uppercase">Online</span>
             </div>
           </div>
 
@@ -256,24 +256,24 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                                 onClick={() => handleDropdownToggle(item.id)}
                                 className={`flex items-center px-3 xl:px-4 py-2 text-xs xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap cursor-pointer ${
                                     isActive 
-                                      ? 'bg-gradient-to-r from-blue-600 via-primary to-blue-700 text-white shadow-md shadow-blue-900/40 scale-[1.02]' 
-                                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
+                                      ? 'bg-gradient-to-r from-emerald-600 via-primary to-green-700 text-white shadow-md shadow-emerald-950/40 scale-[1.02]' 
+                                      : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-950/70 hover:text-slate-900 dark:hover:text-white'
                                 }`}
                             >
                                 <span>{item.label}</span>
                                 <ChevronDownIcon className={`w-3.5 h-3.5 xl:w-4 xl:h-4 ml-1 transition-transform ${openDropdown === item.id ? 'rotate-180' : ''}`} />
                             </button>
                             {openDropdown === item.id && (
-                                <div className="absolute mt-2 w-60 origin-top-left bg-white/95 dark:bg-[#0b1328]/95 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
+                                <div className="absolute mt-2 w-60 origin-top-left bg-white/95 dark:bg-[#061e13]/95 border border-slate-200 dark:border-emerald-800/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
                                     {item.children.map(child => {
                                       if (child.children) {
                                         return (
-                                          <div key={child.id} className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-t border-slate-100 dark:border-slate-800 mt-1 first:mt-0 first:border-0">
+                                          <div key={child.id} className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-t border-slate-100 dark:border-emerald-950 mt-1 first:mt-0 first:border-0">
                                             {child.label}
                                             <div className="mt-1 normal-case font-normal text-sm space-y-0.5">
                                               {child.children.map(grandChild => (
                                                 <a key={grandChild.id} href="#" onClick={(e) => { e.preventDefault(); handlePageSelect(grandChild.id as Page); }}
-                                                   className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all ${currentPage === grandChild.id ? 'text-white bg-blue-600 shadow-sm' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'}`}
+                                                   className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all ${currentPage === grandChild.id ? 'text-white bg-emerald-600 shadow-sm' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-900/60'}`}
                                                 >
                                                    <grandChild.icon className="w-4 h-4" />
                                                    {grandChild.label}
@@ -285,7 +285,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                                       }
                                       return (
                                         <a key={child.id} href="#" onClick={(e) => { e.preventDefault(); handlePageSelect(child.id as Page); }}
-                                           className={`flex items-center gap-3 px-3.5 py-2 mx-1 rounded-xl text-sm font-medium transition-all ${currentPage === child.id ? 'text-white bg-blue-600 shadow-sm' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'}`}
+                                           className={`flex items-center gap-3 px-3.5 py-2 mx-1 rounded-xl text-sm font-medium transition-all ${currentPage === child.id ? 'text-white bg-emerald-600 shadow-sm' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-900/60'}`}
                                         >
                                            <child.icon className="w-4 h-4" />
                                            {child.label}
@@ -301,8 +301,8 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                     <a href="#" key={item.id} onClick={(e) => { e.preventDefault(); handlePageSelect(item.id as Page); }}
                        className={`px-3 xl:px-4 py-2 text-xs xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap cursor-pointer ${
                            isActive 
-                             ? 'bg-gradient-to-r from-blue-600 via-primary to-blue-700 text-white shadow-md shadow-blue-900/40 scale-[1.02]' 
-                             : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
+                             ? 'bg-gradient-to-r from-emerald-600 via-primary to-green-700 text-white shadow-md shadow-emerald-950/40 scale-[1.02]' 
+                             : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-950/70 hover:text-slate-900 dark:hover:text-white'
                        }`}
                     >{item.label}</a>
                 )
@@ -316,15 +316,15 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
              )}
              
              {/* Seletor de Fundo: Escuro / Claro */}
-             <div className="flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-700/70 shadow-inner shrink-0">
+             <div className="flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-[#03130b]/90 border border-slate-200 dark:border-emerald-800/70 shadow-inner shrink-0">
                <button
                  type="button"
                  title="Ativar Fundo Claro"
                  onClick={() => onThemeModeChange && onThemeModeChange('light')}
                  className={`p-1.5 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                    themeMode === 'light'
-                     ? 'bg-white text-blue-600 shadow-sm'
-                     : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                     ? 'bg-white text-emerald-600 shadow-sm'
+                     : 'text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100'
                  }`}
                >
                  <Sun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
@@ -336,11 +336,11 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                  onClick={() => onThemeModeChange && onThemeModeChange('dark')}
                  className={`p-1.5 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                    themeMode === 'dark'
-                     ? 'bg-gradient-to-r from-blue-600 to-sky-600 text-white shadow-md shadow-blue-900/40'
-                     : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                     ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950/40'
+                     : 'text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100'
                  }`}
                >
-                 <Moon className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                 <Moon className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
                  <span className="hidden 2xl:inline text-[11px]">Escuro</span>
                </button>
              </div>
@@ -377,30 +377,30 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
               </div>
 
             <div className="relative shrink-0" ref={openDropdown === 'user' ? dropdownRef : null}>
-              <button onClick={() => handleDropdownToggle('user')} className="flex items-center gap-1.5 xl:gap-2 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all shrink-0 cursor-pointer">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-sky-400 text-white flex items-center justify-center font-bold shadow-md text-xs shrink-0">
+              <button onClick={() => handleDropdownToggle('user')} className="flex items-center gap-1.5 xl:gap-2 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-emerald-950/80 transition-all shrink-0 cursor-pointer">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-amber-400 text-white flex items-center justify-center font-bold shadow-md text-xs shrink-0">
                   {user.name.charAt(0)}
                 </div>
                 <div className="hidden lg:block text-left min-w-0">
                     <p className="text-xs xl:text-sm font-semibold text-slate-800 dark:text-white truncate max-w-[85px] xl:max-w-[130px] leading-tight">{user.name}</p>
-                    <p className="text-[10px] xl:text-xs text-slate-500 dark:text-slate-400 truncate max-w-[85px] xl:max-w-[130px] leading-tight">{user.profile}</p>
+                    <p className="text-[10px] xl:text-xs text-slate-500 dark:text-emerald-300 truncate max-w-[85px] xl:max-w-[130px] leading-tight">{user.profile}</p>
                 </div>
                  <ChevronDownIcon className={`hidden lg:block w-3.5 h-3.5 xl:w-4 xl:h-4 text-slate-500 shrink-0 transition-transform ${openDropdown === 'user' ? 'rotate-180' : ''}`} />
               </button>
               {openDropdown === 'user' && (
-                <div className="absolute mt-2 w-52 right-0 origin-top-right bg-white/95 dark:bg-[#0b1328]/95 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
+                <div className="absolute mt-2 w-52 right-0 origin-top-right bg-white/95 dark:bg-[#061e13]/95 border border-slate-200 dark:border-emerald-800/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
                     <button 
                       onClick={() => {
                         handleDropdownToggle('user');
                         onOpenUpdates && onOpenUpdates();
                       }} 
-                      className="w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer"
+                      className="w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-900/60 transition-all cursor-pointer"
                     >
                         <Sparkles className="w-4 h-4 text-amber-500" />
                         <span>Novidades da Versão</span>
                     </button>
-                    <div className="h-px bg-slate-200 dark:bg-slate-700/60 my-1"></div>
-                    <button onClick={onLogout} className="w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer">
+                    <div className="h-px bg-slate-200 dark:bg-emerald-900/60 my-1"></div>
+                    <button onClick={onLogout} className="w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-900/60 transition-all cursor-pointer">
                         <LogOutIcon className="w-4 h-4 text-red-400" />
                         <span>Sair do Sistema</span>
                     </button>
@@ -430,7 +430,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
       {isMobileMenuOpen && (
         <div 
           ref={mobileMenuRef}
-          className="lg:hidden border-t dark:border-gray-700 bg-white dark:bg-gray-800 absolute left-0 right-0 top-full shadow-2xl max-h-[calc(100vh-4rem)] overflow-y-auto z-50 transition-all duration-300"
+          className="lg:hidden border-t dark:border-emerald-900 bg-white dark:bg-[#061e13] absolute left-0 right-0 top-full shadow-2xl max-h-[calc(100vh-4rem)] overflow-y-auto z-50 transition-all duration-300"
         >
           <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
              {filteredNavItems.map((item) => {
@@ -441,7 +441,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                          <button
                             onClick={() => handleDropdownToggle(item.id)}
                             className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium ${
-                                isActive ? 'text-primary dark:text-blue-400 bg-blue-50 dark:bg-blue-900/50' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                isActive ? 'text-primary dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                             }`}
                          >
                             <div className="flex items-center">
@@ -460,7 +460,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                                               <div className="space-y-1">
                                                 {child.children.map(grandchild => (
                                                     <a key={grandchild.id} href="#" onClick={(e) => { e.preventDefault(); handlePageSelect(grandchild.id as Page); }}
-                                                       className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${currentPage === grandchild.id ? 'text-primary dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                                                       className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${currentPage === grandchild.id ? 'text-primary dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                                                     >
                                                         <grandchild.icon className="w-4 h-4 mr-3" />
                                                         {grandchild.label}
@@ -472,7 +472,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                                   }
                                   return (
                                       <a key={child.id} href="#" onClick={(e) => { e.preventDefault(); handlePageSelect(child.id as Page); }}
-                                         className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${currentPage === child.id ? 'text-primary dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                                         className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${currentPage === child.id ? 'text-primary dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                                       >
                                           <child.icon className="w-4 h-4 mr-3" />
                                           {child.label}
@@ -487,7 +487,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                 return (
                     <a key={item.id} href="#" onClick={(e) => { e.preventDefault(); handlePageSelect(item.id as Page); }}
                        className={`flex items-center px-3 py-2 rounded-md text-base font-medium ${
-                           isActive ? 'text-primary dark:text-blue-400 bg-blue-50 dark:bg-blue-900/50' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                           isActive ? 'text-primary dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                        }`}
                     >
                         <item.icon className="w-5 h-5 mr-3" />
@@ -498,7 +498,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
           </div>
           <div className="pt-4 pb-3 border-t border-gray-200 dark:border-gray-700">
              <div className="flex items-center px-5 space-x-3">
-                <div className="w-10 h-10 rounded-full bg-blue-200 text-primary flex items-center justify-center font-bold text-lg">
+                <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold text-lg">
                    {user.name.charAt(0)}
                 </div>
                 <div>

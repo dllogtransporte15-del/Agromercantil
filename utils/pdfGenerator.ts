@@ -67,9 +67,9 @@ export const generateLoadingOrderPDF = (
   const normalizePlate = (p: string | undefined | null) => p ? p.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() : "";
   const mainVehicle = vehicles.find((v) => normalizePlate(v.plate) === normalizePlate(shipment.horsePlate));
 
-  // Brand Colors
-  const primaryBlue: [number, number, number] = [11, 102, 228]; // #0B66E4 Agromercantil Vivid Electric Blue
-  const accentBlue: [number, number, number] = [2, 132, 199];  // #0284C7 Agromercantil Sky Accent
+  // Brand Colors (Agromercantil Palette)
+  const primaryGreen: [number, number, number] = [22, 163, 74]; // #16A34A Agromercantil Emerald Green
+  const accentAmber: [number, number, number] = [245, 158, 11];  // #F59E0B Agromercantil Amber/Gold Accent
   const secondaryGray: [number, number, number] = [100, 116, 139]; // #64748B
 
   // Constants
@@ -109,19 +109,19 @@ export const generateLoadingOrderPDF = (
   doc.text(`Emissão: ${new Date().toLocaleString('pt-BR')}`, pageWidth - margin, 24, { align: 'right' });
 
   // Divider
-  doc.setDrawColor(accentBlue[0], accentBlue[1], accentBlue[2]);
+  doc.setDrawColor(accentAmber[0], accentAmber[1], accentAmber[2]);
   doc.setLineWidth(1.5);
   doc.line(margin, 40, pageWidth - margin, 40);
 
   // Title Section
   doc.setFontSize(16);
-  doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+  doc.setTextColor(primaryGreen[0], primaryGreen[1], primaryGreen[2]);
   doc.setFont("helvetica", "bold");
   doc.text("ORDEM DE CARREGAMENTO", pageWidth / 2, 53, { align: 'center' });
 
   // --- Carga Info ---
   doc.setFontSize(11);
-  doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+  doc.setTextColor(primaryGreen[0], primaryGreen[1], primaryGreen[2]);
   doc.text("1. INFORMAÇÕES DA CARGA", margin, 68);
 
   autoTable(doc, {
@@ -136,16 +136,16 @@ export const generateLoadingOrderPDF = (
       ["DATA PROGRAMADA", shipment.scheduledDate ? new Date(`${shipment.scheduledDate}T00:00:00`).toLocaleDateString('pt-BR') : 'N/A'],
     ],
     theme: "striped",
-    headStyles: { fillColor: primaryBlue, fontSize: 10, fontStyle: 'bold' },
+    headStyles: { fillColor: primaryGreen, fontSize: 10, fontStyle: 'bold' },
     bodyStyles: { fontSize: 9 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: primaryBlue } }
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: primaryGreen } }
   });
 
   const driverY = (doc as any).lastAutoTable.finalY + 12;
 
   // --- Motorista & Veiculo Info ---
   doc.setFontSize(11);
-  doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+  doc.setTextColor(primaryGreen[0], primaryGreen[1], primaryGreen[2]);
   doc.text("2. INFORMAÇÕES DO TRANSPORTADOR", margin, driverY);
 
   autoTable(doc, {
@@ -162,16 +162,16 @@ export const generateLoadingOrderPDF = (
       ["PROPRIETÁRIO / TITULAR", (shipment.anttOwnerIdentifier || shipment.ownerContact || "N/A").toUpperCase()],
     ],
     theme: "striped",
-    headStyles: { fillColor: primaryBlue, fontSize: 10, fontStyle: 'bold' },
+    headStyles: { fillColor: primaryGreen, fontSize: 10, fontStyle: 'bold' },
     bodyStyles: { fontSize: 9 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: primaryBlue } }
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: primaryGreen } }
   });
 
   const paymentY = (doc as any).lastAutoTable.finalY + 8;
 
   // --- Pagamento & Adiantamento ---
   doc.setFontSize(11);
-  doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+  doc.setTextColor(primaryGreen[0], primaryGreen[1], primaryGreen[2]);
   doc.text("3. CONDIÇÕES DE PAGAMENTO E ADIANTAMENTO", margin, paymentY);
 
   autoTable(doc, {
@@ -183,9 +183,9 @@ export const generateLoadingOrderPDF = (
       ["CHAVE PIX / DADOS BANCÁRIOS", (shipment.paymentMethod === 'PIX - E-FRETE' ? (shipment.pixKey || shipment.bankDetails || "N/A") : (shipment.bankDetails || shipment.pixKey || "N/A")).toUpperCase()],
     ],
     theme: "striped",
-    headStyles: { fillColor: primaryBlue, fontSize: 10, fontStyle: 'bold' },
+    headStyles: { fillColor: primaryGreen, fontSize: 10, fontStyle: 'bold' },
     bodyStyles: { fontSize: 9 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: primaryBlue } }
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: primaryGreen } }
   });
 
   let currentY = (doc as any).lastAutoTable.finalY + 8;

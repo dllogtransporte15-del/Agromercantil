@@ -21,6 +21,49 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_16_v2_6_5',
+    version: 'v2.6.5',
+    date: '16/09/2026',
+    title: 'Tema Escuro Verde Floresta Agro & Novo Slogan "Soluções Inteligentes para o Agro"',
+    summary: 'Refinamento do tema escuro de azul/marinho para tons profundos de verde floresta agro (#04150e / #061e13) e atualização do slogan oficial na tela de login.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Fundo Escuro Verde Floresta Profunda',
+        description: 'Substituição das tonalidades azuis/marinho por verde agro profundo (#04150e e #061e13), trazendo atmosfera autêntica do agronegócio para todo o sistema e portal do motorista.'
+      },
+      {
+        category: 'improvement',
+        title: 'Slogan Atualizado na Tela de Login',
+        description: 'Frase de impacto atualizada para "Soluções Inteligentes para o Agro.", com tipografia em gradiente esmeralda e dourado.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_16_v2_6_4',
+    version: 'v2.6.4',
+    date: '16/09/2026',
+    title: 'Nova Identidade Visual Agromercantil & Design Glassmorphism da Tela de Login em Todo o Sistema',
+    summary: 'Adoção da paleta de cores oficial da marca Agromercantil (Verde Esmeralda e Ouro Âmbar) e replicação da estética dark glassmorphism futurista da tela de login em todas as telas internas.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Paleta Oficial da Logo Agromercantil',
+        description: 'Atualização das cores primárias e de destaque para Verde Agro (#16A34A), Dourado/Âmbar (#F59E0B) e fundo dark obsidian (#060A14), harmonizados com a marca.'
+      },
+      {
+        category: 'improvement',
+        title: 'Design da Tela de Login Replicado no Sistema',
+        description: 'Barras de navegação superior, menu lateral (Sidebar), cartões com efeito de vidro translúcido, iluminação radial ambiente e bordas iluminadas agora integrados em toda a plataforma.'
+      },
+      {
+        category: 'improvement',
+        title: 'Portal do Motorista & Documentos Atualizados',
+        description: 'Interface de oportunidades de frete para motoristas, relatórios em PDF e ordens de carregamento com design e cores sincronizados.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_16_v2_6_3',
     version: 'v2.6.3',
     date: '16/09/2026',

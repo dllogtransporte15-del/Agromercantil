@@ -3417,7 +3417,7 @@ const App: React.FC = () => {
 
   return (
     <div 
-      className="relative flex flex-col h-screen bg-[#f8fafc] dark:bg-[#070c18] text-slate-800 dark:text-slate-100 overflow-hidden font-sans portal-theme-bg"
+      className="relative flex flex-col h-screen bg-[#f8fafc] dark:bg-[#04150e] text-slate-800 dark:text-slate-100 overflow-hidden font-sans portal-theme-bg"
       style={{ '--theme-bg': themeImage ? `url("${themeImage.replace(/"/g, '\\"')}")` : 'none' } as React.CSSProperties}
     >
       {/* Background Grid Pattern & Ambient Lighting (Model identical to Login Page) */}
@@ -3427,16 +3427,16 @@ const App: React.FC = () => {
             className="absolute inset-0 pointer-events-none z-0"
             style={{
               backgroundImage: `
-                linear-gradient(to right, rgba(59, 130, 246, 0.05) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(59, 130, 246, 0.05) 1px, transparent 1px)
+                linear-gradient(to right, rgba(22, 163, 74, 0.06) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(22, 163, 74, 0.06) 1px, transparent 1px)
               `,
               backgroundSize: '48px 48px'
             }}
           />
           {/* Soft Radial Ambient Lighting */}
-          <div className="absolute top-0 left-1/4 w-[600px] h-[500px] bg-blue-600/10 rounded-full blur-[140px] pointer-events-none z-0" />
-          <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-sky-500/10 rounded-full blur-[140px] pointer-events-none z-0" />
-          <div className="absolute top-1/2 right-10 w-[350px] h-[350px] bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none z-0" />
+          <div className="absolute top-0 left-1/4 w-[600px] h-[500px] bg-emerald-600/15 rounded-full blur-[140px] pointer-events-none z-0" />
+          <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-[140px] pointer-events-none z-0" />
+          <div className="absolute top-1/2 right-10 w-[350px] h-[350px] bg-emerald-700/10 rounded-full blur-[100px] pointer-events-none z-0" />
         </>
       )}
 

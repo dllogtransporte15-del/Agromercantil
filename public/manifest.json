@@ -3,8 +3,8 @@
   "short_name": "Agromercantil",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#0B66E4",
+  "background_color": "#060A14",
+  "theme_color": "#16A34A",
   "icons": [
     {
       "src": "/icon.png",

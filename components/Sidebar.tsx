@@ -140,14 +140,14 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurre
           setCurrentPage(id);
         }}
         title={isCollapsed ? label : undefined}
-        className={`flex items-center px-4 py-2 mt-1 text-gray-600 dark:text-gray-400 transition-colors duration-300 transform rounded-lg ${marginLeft} ${
+        className={`flex items-center px-4 py-2.5 mt-1 transition-all duration-200 rounded-xl ${marginLeft} ${
           isActive
-            ? 'bg-blue-200 dark:bg-blue-900 text-gray-700 dark:text-gray-200'
-            : 'hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200'
+            ? 'bg-gradient-to-r from-emerald-600 via-primary to-green-700 text-white shadow-md shadow-emerald-950/40 font-bold'
+            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-white'
         } ${isCollapsed ? 'justify-center' : ''}`}
       >
-        <Icon className="w-5 h-5" />
-        <span className={`mx-4 font-medium ${isCollapsed ? 'hidden' : ''}`}>{label}</span>
+        <Icon className="w-5 h-5 shrink-0" />
+        <span className={`mx-3 text-sm font-medium ${isCollapsed ? 'hidden' : ''}`}>{label}</span>
       </a>
     );
   };
@@ -160,21 +160,21 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurre
 
   return (
     <div 
-        className={`relative flex flex-col h-screen py-8 bg-white dark:bg-gray-800 border-r dark:border-gray-700 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20 px-2' : 'w-64 px-4'}`}
+        className={`relative flex flex-col h-screen py-6 bg-white/95 dark:bg-[#04150e]/95 backdrop-blur-2xl border-r border-slate-200 dark:border-emerald-900/60 shadow-2xl transition-all duration-300 ease-in-out z-30 ${isCollapsed ? 'w-20 px-2' : 'w-64 px-4'}`}
         onMouseEnter={() => setIsCollapsed(false)}
         onMouseLeave={() => setIsCollapsed(true)}
     >
-      <div className="h-20 flex items-center justify-center">
+      <div className="h-16 flex items-center justify-center">
         {companyLogo ? (
-            <img src={companyLogo} alt="Logo da Empresa" className={`transition-all duration-300 mx-auto object-contain ${isCollapsed ? 'h-12 max-w-[60px]' : 'h-16 max-w-[190px]'}`} />
+            <img src={companyLogo} alt="Logo da Empresa" className={`transition-all duration-300 mx-auto object-contain filter drop-shadow-[0_2px_10px_rgba(22,163,74,0.3)] ${isCollapsed ? 'h-10 max-w-[50px]' : 'h-14 max-w-[190px]'}`} />
         ) : (
-            <h2 className="text-3xl font-semibold text-center text-primary dark:text-white">
-            {isCollapsed ? 'Agromercantil' : 'Agromercantil Logística'}
+            <h2 className="text-2xl font-black text-center text-primary dark:text-white uppercase tracking-tight">
+            {isCollapsed ? 'AGRO' : 'AGROMERCANTIL'}
             </h2>
         )}
       </div>
-      <div className="flex flex-col justify-between flex-1 mt-6">
-        <nav>
+      <div className="flex flex-col justify-between flex-1 mt-6 overflow-y-auto no-scrollbar">
+        <nav className="space-y-1">
           {filteredNavItems.map((item) => {
             if (item.children) {
               const isParentActive = getParentId(currentPage) === item.id;
@@ -184,20 +184,20 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurre
                   <button
                     onClick={() => !isCollapsed && handleMenuClick(item.id)}
                     title={isCollapsed ? item.label : undefined}
-                    className={`flex items-center w-full px-4 py-2 mt-2 text-gray-600 dark:text-gray-400 transition-colors duration-300 transform rounded-lg ${
+                    className={`flex items-center w-full px-4 py-2.5 mt-1 transition-all duration-200 rounded-xl ${
                       isParentActive && !isOpen && !isCollapsed
-                        ? 'bg-blue-200 dark:bg-blue-900 text-gray-700 dark:text-gray-200'
-                        : 'hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200'
+                        ? 'bg-gradient-to-r from-emerald-600 via-primary to-green-700 text-white shadow-md shadow-emerald-950/40 font-bold'
+                        : 'text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-950/70 hover:text-slate-900 dark:hover:text-white'
                     } ${isCollapsed ? 'justify-center' : 'justify-between'}`}
                   >
                     <div className="flex items-center">
-                      <item.icon className="w-5 h-5" />
-                      <span className={`mx-4 font-medium ${isCollapsed ? 'hidden' : ''}`}>{item.label}</span>
+                      <item.icon className="w-5 h-5 shrink-0" />
+                      <span className={`mx-3 text-sm font-medium ${isCollapsed ? 'hidden' : ''}`}>{item.label}</span>
                     </div>
                     {!isCollapsed && <ChevronDownIcon className={`transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />}
                   </button>
                   {!isCollapsed && isOpen && (
-                    <div className="pt-1">
+                    <div className="pt-1 pl-2 space-y-0.5">
                       {item.children.map((child) => (
                           <NavLink
                             key={child.id}
@@ -225,17 +225,17 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurre
         </nav>
       </div>
 
-      <div className="absolute bottom-0 left-0 w-full border-t dark:border-gray-700 px-4 py-2">
+      <div className="pt-4 mt-auto border-t border-slate-200 dark:border-emerald-900/60">
         <div className={`flex items-center ${isCollapsed ? 'justify-center' : ''}`}>
-          <div className="w-8 h-8 rounded-full bg-blue-200 text-primary flex items-center justify-center font-bold">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-emerald-600 to-amber-400 text-white flex items-center justify-center font-bold text-xs shadow-md shrink-0">
             {user.name.charAt(0)}
           </div>
-          <div className={`flex-1 ml-3 ${isCollapsed ? 'hidden' : ''}`}>
-            <p className="text-sm font-semibold text-gray-800 dark:text-white truncate">{user.name}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.profile}</p>
+          <div className={`flex-1 ml-3 min-w-0 ${isCollapsed ? 'hidden' : ''}`}>
+            <p className="text-sm font-semibold text-slate-800 dark:text-white truncate">{user.name}</p>
+            <p className="text-xs text-slate-500 dark:text-emerald-300 truncate">{user.profile}</p>
           </div>
-          <button onClick={onLogout} title="Sair" className={`ml-2 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 ${isCollapsed ? '' : ''}`}>
-             <LogOutIcon className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+          <button onClick={onLogout} title="Sair" className={`ml-2 p-2 rounded-xl text-slate-400 hover:text-red-400 hover:bg-slate-100 dark:hover:bg-emerald-900/60 transition-all ${isCollapsed ? 'hidden' : ''}`}>
+             <LogOutIcon className="w-4 h-4" />
           </button>
         </div>
       </div>

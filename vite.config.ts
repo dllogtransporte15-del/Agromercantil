@@ -16,8 +16,8 @@ export default defineConfig({
         name: 'Agromercantil Logística',
         short_name: 'Agromercantil',
         description: 'Sistema de Gestão Logística Agromercantil',
-        theme_color: '#0B66E4',
-        background_color: '#ffffff',
+        theme_color: '#16A34A',
+        background_color: '#060A14',
         display: 'standalone',
         icons: [
           {

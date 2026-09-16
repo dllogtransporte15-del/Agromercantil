@@ -500,7 +500,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
 
   return (
     <div 
-      className="relative min-h-screen w-full bg-[#070c18] text-slate-100 flex flex-col justify-between overflow-x-hidden font-sans"
+      className="relative min-h-screen w-full bg-[#04150e] text-slate-100 flex flex-col justify-between overflow-x-hidden font-sans"
       style={{ zoom: 0.81 }}
     >
       {/* Background Grid Pattern & Ambient Glows */}
@@ -508,17 +508,17 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
         className="absolute inset-0 pointer-events-none z-0"
         style={{
           backgroundImage: `
-            linear-gradient(to right, rgba(59, 130, 246, 0.05) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(59, 130, 246, 0.05) 1px, transparent 1px)
+            linear-gradient(to right, rgba(22, 163, 74, 0.06) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(22, 163, 74, 0.06) 1px, transparent 1px)
           `,
           backgroundSize: '48px 48px'
         }}
       />
       
       {/* Soft Radial Ambient Lighting */}
-      <div className="absolute top-0 left-1/4 w-[600px] h-[500px] bg-blue-600/10 rounded-full blur-[140px] pointer-events-none z-0" />
-      <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-sky-500/10 rounded-full blur-[140px] pointer-events-none z-0" />
-      <div className="absolute top-1/2 right-10 w-[350px] h-[350px] bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none z-0" />
+      <div className="absolute top-0 left-1/4 w-[600px] h-[500px] bg-emerald-600/15 rounded-full blur-[140px] pointer-events-none z-0" />
+      <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-[140px] pointer-events-none z-0" />
+      <div className="absolute top-1/2 right-10 w-[350px] h-[350px] bg-emerald-700/10 rounded-full blur-[100px] pointer-events-none z-0" />
 
       {/* Main Container */}
       <div className="relative z-10 w-full max-w-7xl mx-auto px-5 sm:px-8 lg:px-12 py-8 lg:py-12 flex-1 flex flex-col justify-center">
@@ -530,28 +530,28 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
               <img 
                 src={companyLogo} 
                 alt="Logo Agromercantil" 
-                className="h-24 sm:h-28 lg:h-32 max-w-[320px] sm:max-w-[380px] object-contain filter drop-shadow-[0_4px_20px_rgba(11,102,228,0.45)] transition-all" 
+                className="h-24 sm:h-28 lg:h-32 max-w-[320px] sm:max-w-[380px] object-contain filter drop-shadow-[0_4px_20px_rgba(22,163,74,0.35)] transition-all" 
               />
             ) : (
               <div className="flex items-center gap-3">
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-tr from-blue-700 via-primary to-sky-400 p-0.5 shadow-xl shadow-blue-500/25 flex items-center justify-center">
-                  <div className="w-full h-full bg-[#080e1e] rounded-[14px] flex items-center justify-center">
-                    <Truck className="w-8 h-8 sm:w-10 sm:h-10 text-sky-400" />
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-tr from-emerald-700 via-primary to-amber-400 p-0.5 shadow-xl shadow-emerald-950/40 flex items-center justify-center">
+                  <div className="w-full h-full bg-[#061e13] rounded-[14px] flex items-center justify-center">
+                    <Truck className="w-8 h-8 sm:w-10 sm:h-10 text-emerald-400" />
                   </div>
                 </div>
                 <span className="text-4xl sm:text-5xl font-black tracking-tight text-white">
-                  AGRO<span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-blue-500">MERCANTIL</span>
+                  AGRO<span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-amber-400">MERCANTIL</span>
                 </span>
               </div>
             )}
           </div>
 
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-slate-700/60 shadow-inner backdrop-blur-md">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#062014]/90 border border-emerald-800/60 shadow-inner backdrop-blur-md">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span className="text-[11px] font-bold text-slate-300 tracking-wider uppercase">Sistema Online</span>
+            <span className="text-[11px] font-bold text-emerald-200 tracking-wider uppercase">Sistema Online</span>
           </div>
         </div>
 
@@ -562,17 +562,17 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
           {/* LEFT SECTION: Portal de Acesso (Auth Card)               */}
           {/* ========================================================= */}
           <div className="lg:col-span-5 flex justify-center w-full">
-            <div className={`w-full ${isRegisteringDriver ? 'max-w-xl' : 'max-w-md'} p-6 sm:p-8 rounded-3xl bg-[#0b1328]/85 border border-slate-700/60 shadow-2xl shadow-blue-950/50 backdrop-blur-2xl transition-all duration-300 relative overflow-hidden`}>
+            <div className={`w-full ${isRegisteringDriver ? 'max-w-xl' : 'max-w-md'} p-6 sm:p-8 rounded-3xl bg-[#061e13]/90 border border-emerald-800/60 shadow-2xl shadow-emerald-950/60 backdrop-blur-2xl transition-all duration-300 relative overflow-hidden`}>
               
               {/* Card Top Border Glow */}
-              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-400 to-transparent opacity-80" />
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent opacity-80" />
 
               {/* Header Title */}
               <div className="text-center mb-6">
                 <h2 className="text-2xl font-black text-white tracking-tight">
                   {isRegisteringDriver ? 'Cadastro de Motorista' : 'Portal de Acesso'}
                 </h2>
-                <p className="text-xs text-slate-400 mt-1">
+                <p className="text-xs text-slate-300 mt-1">
                   {isRegisteringDriver 
                     ? 'Preencha seus dados para criar sua conta no aplicativo' 
                     : 'Entre com suas credenciais corporativas ou CPF'}
@@ -581,12 +581,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
 
               {/* Tab Switcher (Acesso Interno / Sou Motorista) */}
               {!isRegisteringDriver && profilePermissions?.system_settings?.driver_portal_enabled !== false && (
-                <div className="flex p-1 mb-6 rounded-xl bg-slate-950/70 border border-slate-800">
+                <div className="flex p-1 mb-6 rounded-xl bg-[#03130b]/80 border border-emerald-900/80">
                   <button
                     type="button"
                     className={`flex-1 py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
                       loginType === 'interno'
-                        ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md shadow-blue-900/40'
+                        ? 'bg-gradient-to-r from-emerald-600 to-green-700 text-white shadow-md shadow-emerald-900/40'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                     onClick={() => { setLoginType('interno'); setError(''); }}
@@ -598,7 +598,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                     type="button"
                     className={`flex-1 py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
                       loginType === 'motorista'
-                        ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-md shadow-blue-900/40'
+                        ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-md shadow-emerald-900/40'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                     onClick={() => { setLoginType('motorista'); setError(''); }}
@@ -984,7 +984,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                       <button
                         type="button"
                         onClick={() => { setIsRegisteringDriver(true); setError(''); }}
-                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-sky-500/50 bg-sky-500/5 hover:bg-sky-500/10 text-sky-400 font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-emerald-500/50 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-400 font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
                       >
                         <UserPlus className="w-4 h-4" />
                         <span>Não é cadastrado? Criar conta de motorista</span>
@@ -1003,7 +1003,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                     <button
                       type="submit"
                       disabled={isLoading}
-                      className="w-full py-3.5 px-4 rounded-xl font-extrabold text-sm sm:text-base text-white bg-gradient-to-r from-blue-600 via-primary to-blue-700 hover:from-blue-500 hover:to-blue-600 shadow-lg shadow-blue-900/50 hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 disabled:opacity-50 tracking-wide uppercase"
+                      className="w-full py-3.5 px-4 rounded-xl font-extrabold text-sm sm:text-base text-white bg-gradient-to-r from-emerald-600 via-primary to-green-700 hover:from-emerald-500 hover:to-green-600 shadow-lg shadow-emerald-950/50 hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 disabled:opacity-50 tracking-wide uppercase"
                     >
                       {isLoading ? (
                         <span>PROCESSANDO...</span>
@@ -1032,9 +1032,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                 <button
                   type="button"
                   onClick={handlePwaInstall}
-                  className="hover:text-sky-400 transition-colors flex items-center gap-1"
+                  className="hover:text-emerald-400 transition-colors flex items-center gap-1"
                 >
-                  <Download className="w-3.5 h-3.5 text-sky-400" />
+                  <Download className="w-3.5 h-3.5 text-emerald-400" />
                   <span>Instalar PWA</span>
                 </button>
               </div>
@@ -1048,21 +1048,21 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
           <div className="lg:col-span-7 flex flex-col space-y-6 lg:space-y-8 text-left">
             
             {/* Tag Pill */}
-            <div className="inline-flex items-center gap-2 self-start px-3 py-1.5 rounded-full bg-blue-950/60 border border-blue-500/30 text-sky-400 text-xs font-bold tracking-wide shadow-sm">
-              <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+            <div className="inline-flex items-center gap-2 self-start px-3 py-1.5 rounded-full bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 text-xs font-bold tracking-wide shadow-sm">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
               <span>LOGÍSTICA INTELIGENTE & GESTÃO DE CARGAS</span>
             </div>
 
             {/* Main Headline */}
             <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight leading-[1.15]">
-              Eficiência, controle e pontualidade{' '}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-sky-300 to-blue-400">
-                na estrada.
+              Soluções Inteligentes{' '}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-green-300 to-amber-400">
+                para o Agro.
               </span>
             </h1>
 
             {/* Description */}
-            <p className="text-sm sm:text-base text-slate-400 leading-relaxed max-w-2xl">
+            <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl">
               A plataforma definitiva para transportadores, embarcadores e motoristas. Acompanhe fretes, pedidos, emissões e rotas com transparência em tempo real.
             </p>
 
@@ -1070,70 +1070,70 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4 pt-2">
               
               {/* Card 1: Operações ao Vivo */}
-              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-sm">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0 group-hover:bg-blue-500/20 transition-colors">
-                  <Activity className="w-5 h-5 text-sky-400" />
+              <div className="p-4 rounded-2xl bg-[#061e13]/80 border border-emerald-900/70 hover:border-emerald-700/80 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-md shadow-emerald-950/40">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0 group-hover:bg-emerald-500/20 transition-colors">
+                  <Activity className="w-5 h-5 text-emerald-400" />
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-white mb-0.5">Operações ao Vivo</h2>
-                  <p className="text-xs text-slate-400 leading-relaxed">Controle completo de status e carregamento em tempo real.</p>
+                  <p className="text-xs text-slate-300 leading-relaxed">Controle completo de status e carregamento em tempo real.</p>
                 </div>
               </div>
 
               {/* Card 2: Segurança & ANTT */}
-              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-sm">
+              <div className="p-4 rounded-2xl bg-[#061e13]/80 border border-emerald-900/70 hover:border-emerald-700/80 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-md shadow-emerald-950/40">
                 <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 group-hover:bg-amber-500/20 transition-colors">
                   <ShieldCheck className="w-5 h-5 text-amber-400" />
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-white mb-0.5">Segurança & ANTT</h2>
-                  <p className="text-xs text-slate-400 leading-relaxed">Validação rigorosa de documentos e conformidade fiscal.</p>
+                  <p className="text-xs text-slate-300 leading-relaxed">Validação rigorosa de documentos e conformidade fiscal.</p>
                 </div>
               </div>
 
               {/* Card 3: Cálculo de Estadias */}
-              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-sm">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0 group-hover:bg-emerald-500/20 transition-colors">
-                  <Clock className="w-5 h-5 text-emerald-400" />
+              <div className="p-4 rounded-2xl bg-[#061e13]/80 border border-emerald-900/70 hover:border-emerald-700/80 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-md shadow-emerald-950/40">
+                <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0 group-hover:bg-teal-500/20 transition-colors">
+                  <Clock className="w-5 h-5 text-teal-400" />
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-white mb-0.5">Cálculo de Estadias</h2>
-                  <p className="text-xs text-slate-400 leading-relaxed">Cálculos precisos da Lei 11.442 e relatórios transparentes.</p>
+                  <p className="text-xs text-slate-300 leading-relaxed">Cálculos precisos da Lei 11.442 e relatórios transparentes.</p>
                 </div>
               </div>
 
               {/* Card 4: App para Motoristas */}
-              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-sm">
-                <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0 group-hover:bg-purple-500/20 transition-colors">
-                  <Smartphone className="w-5 h-5 text-purple-400" />
+              <div className="p-4 rounded-2xl bg-[#061e13]/80 border border-emerald-900/70 hover:border-emerald-700/80 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-md shadow-emerald-950/40">
+                <div className="w-10 h-10 rounded-xl bg-lime-500/10 border border-lime-500/20 flex items-center justify-center shrink-0 group-hover:bg-lime-500/20 transition-colors">
+                  <Smartphone className="w-5 h-5 text-lime-400" />
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-white mb-0.5">App para Motoristas</h2>
-                  <p className="text-xs text-slate-400 leading-relaxed">Acesso via PWA sem complicação diretamente do celular.</p>
+                  <p className="text-xs text-slate-300 leading-relaxed">Acesso via PWA sem complicação diretamente do celular.</p>
                 </div>
               </div>
 
             </div>
 
             {/* Agromercantil Pillars / Lema */}
-            <div className="pt-2 flex flex-wrap items-center gap-6 sm:gap-8 text-xs font-bold tracking-wider uppercase text-slate-400">
-              <div className="flex items-center gap-2 text-slate-300">
-                <div className="w-4 h-4 rounded-full bg-orange-500/20 border border-orange-500/40 flex items-center justify-center">
-                  <Check className="w-2.5 h-2.5 text-orange-400" />
+            <div className="pt-2 flex flex-wrap items-center gap-6 sm:gap-8 text-xs font-bold tracking-wider uppercase text-slate-300">
+              <div className="flex items-center gap-2 text-slate-200">
+                <div className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+                  <Check className="w-2.5 h-2.5 text-emerald-400" />
                 </div>
                 <span>Transparência</span>
               </div>
-              <div className="flex items-center gap-2 text-slate-300">
-                <div className="w-4 h-4 rounded-full bg-sky-500/20 border border-sky-500/40 flex items-center justify-center">
-                  <Check className="w-2.5 h-2.5 text-sky-400" />
+              <div className="flex items-center gap-2 text-slate-200">
+                <div className="w-4 h-4 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center">
+                  <Check className="w-2.5 h-2.5 text-amber-400" />
                 </div>
-                <span>Cuidado</span>
+                <span>Cuidado & Qualidade</span>
               </div>
-              <div className="flex items-center gap-2 text-slate-300">
-                <div className="w-4 h-4 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center">
-                  <Check className="w-2.5 h-2.5 text-blue-400" />
+              <div className="flex items-center gap-2 text-slate-200">
+                <div className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+                  <Check className="w-2.5 h-2.5 text-emerald-400" />
                 </div>
-                <span>Prazo</span>
+                <span>Pontualidade</span>
               </div>
             </div>
 
@@ -1144,12 +1144,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
       </div>
 
       {/* Footer Bottom Bar */}
-      <div className="relative z-10 w-full border-t border-slate-800/80 bg-[#060a14]/90 py-4 px-6 text-[11px] text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2 max-w-7xl mx-auto">
+      <div className="relative z-10 w-full border-t border-emerald-950/80 bg-[#03130b]/90 py-4 px-6 text-[11px] text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2 max-w-7xl mx-auto">
         <div>
           © 2026 AGROMERCANTIL Logística. Todos os direitos reservados.
         </div>
-        <div className="font-mono text-slate-400">
-          v2.5 • Alta Performance
+        <div className="font-mono text-emerald-400/80">
+          v2.6.4 • Alta Performance
         </div>
       </div>
     </div>
