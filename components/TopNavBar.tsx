@@ -220,16 +220,16 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
       {/* Top Border Glow (Same as Login Card) */}
       <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent opacity-80 pointer-events-none" />
 
-      <div className="w-full max-w-[1920px] mx-auto px-2 sm:px-4 lg:px-5">
-        <div className="flex items-center justify-between h-16 lg:h-18 gap-2 xl:gap-3">
+      <div className="w-full max-w-[1920px] mx-auto px-2 sm:px-3 xl:px-5">
+        <div className="flex items-center justify-between h-16 lg:h-18 gap-1.5 xl:gap-3">
           
           {/* Logo e Nome da Empresa + Status Online (Lado Esquerdo) */}
-          <div className="flex items-center gap-2 lg:gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <a href="#" onClick={(e) => { e.preventDefault(); handlePageSelect('dashboard')}} className="flex items-center py-1">
                 {companyLogo ? (
-                    <img src={companyLogo} alt="Logo" className="h-8 sm:h-9 md:h-10 w-auto object-contain max-w-[120px] sm:max-w-[150px] transition-all filter drop-shadow-[0_2px_10px_rgba(22,163,74,0.3)]" />
+                    <img src={companyLogo} alt="Logo" className="h-8 sm:h-9 w-auto object-contain max-w-[110px] sm:max-w-[130px] transition-all filter drop-shadow-[0_2px_10px_rgba(22,163,74,0.3)]" />
                 ) : (
-                    <h1 className="text-base sm:text-lg xl:text-xl font-black text-primary dark:text-white tracking-tighter uppercase whitespace-nowrap">
+                    <h1 className="text-sm sm:text-base xl:text-lg font-black text-primary dark:text-white tracking-tighter uppercase whitespace-nowrap">
                       AGRO<span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-amber-400">MERCANTIL</span>
                     </h1>
                 )}
@@ -245,8 +245,8 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
             </div>
           </div>
 
-          {/* Navegação Principal (Centralizada e Ajustada) */}
-          <nav className="hidden lg:flex items-center justify-center gap-0.5 xl:gap-1.5 flex-1 min-w-0 px-1 overflow-x-auto no-scrollbar">
+          {/* Navegação Principal (Centralizada sem corte/overflow) */}
+          <nav className="hidden lg:flex items-center justify-center gap-1 xl:gap-1.5 flex-1 min-w-0 px-1">
             {filteredNavItems.map((item) => {
                 const isActive = currentPage === item.id || isParentOfCurrentPage(item);
                 if(item.children) {
@@ -254,14 +254,14 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                         <div className="relative shrink-0" key={item.id} ref={item.id === openDropdown ? dropdownRef : null}>
                             <button
                                 onClick={() => handleDropdownToggle(item.id)}
-                                className={`flex items-center px-2 py-1.5 xl:px-3 xl:py-2 text-[11px] xl:text-[13px] 2xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap cursor-pointer ${
+                                className={`flex items-center px-2 py-1.5 xl:px-2.5 2xl:px-3 text-xs 2xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap cursor-pointer ${
                                     isActive 
-                                      ? 'bg-gradient-to-r from-emerald-600 via-primary to-green-700 text-white shadow-md shadow-emerald-950/40 scale-[1.02]' 
+                                      ? 'bg-gradient-to-r from-emerald-600 via-primary to-green-700 text-white shadow-md shadow-emerald-950/40' 
                                       : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-950/70 hover:text-slate-900 dark:hover:text-white'
                                 }`}
                             >
                                 <span>{item.label}</span>
-                                <ChevronDownIcon className={`w-3 h-3 xl:w-3.5 xl:h-3.5 ml-0.5 xl:ml-1 opacity-70 transition-transform ${openDropdown === item.id ? 'rotate-180' : ''}`} />
+                                <ChevronDownIcon className={`w-3 h-3 2xl:w-3.5 2xl:h-3.5 ml-1 opacity-70 transition-transform ${openDropdown === item.id ? 'rotate-180' : ''}`} />
                             </button>
                             {openDropdown === item.id && (
                                 <div className="absolute mt-2 w-60 origin-top-left bg-white/95 dark:bg-[#061e13]/95 border border-slate-200 dark:border-emerald-800/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
@@ -299,9 +299,9 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                 }
                 return (
                     <a href="#" key={item.id} onClick={(e) => { e.preventDefault(); handlePageSelect(item.id as Page); }}
-                       className={`px-2 py-1.5 xl:px-3 xl:py-2 text-[11px] xl:text-[13px] 2xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap shrink-0 cursor-pointer ${
+                       className={`px-2 py-1.5 xl:px-2.5 2xl:px-3 text-xs 2xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap shrink-0 cursor-pointer ${
                            isActive 
-                             ? 'bg-gradient-to-r from-emerald-600 via-primary to-green-700 text-white shadow-md shadow-emerald-950/40 scale-[1.02]' 
+                             ? 'bg-gradient-to-r from-emerald-600 via-primary to-green-700 text-white shadow-md shadow-emerald-950/40' 
                              : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-950/70 hover:text-slate-900 dark:hover:text-white'
                        }`}
                     >{item.label}</a>
@@ -310,7 +310,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
           </nav>
 
           {/* Ícones, Seletor de Fundo e Menu do Usuário (Lado Direito) */}
-          <div className="flex items-center justify-end gap-1.5 xl:gap-2.5 shrink-0">
+          <div className="flex items-center justify-end gap-1.5 xl:gap-2 shrink-0">
              {user.profile === UserProfile.Motorista && (
                 <DriverLocationTracker user={user} />
              )}
@@ -321,7 +321,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                  type="button"
                  title="Ativar Fundo Claro"
                  onClick={() => onThemeModeChange && onThemeModeChange('light')}
-                 className={`p-1 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                 className={`p-1.5 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                    themeMode === 'light'
                      ? 'bg-white text-emerald-600 shadow-sm'
                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100'
@@ -334,7 +334,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                  type="button"
                  title="Ativar Fundo Escuro"
                  onClick={() => onThemeModeChange && onThemeModeChange('dark')}
-                 className={`p-1 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                 className={`p-1.5 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                    themeMode === 'dark'
                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950/40'
                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100'
@@ -350,7 +350,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                 type="button"
                 onClick={onOpenUpdates}
                 title="Novidades e Atualizações do Sistema"
-                className="p-1 xl:px-2 xl:py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-sm shrink-0"
+                className="p-1.5 xl:px-2 xl:py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-sm shrink-0"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse shrink-0" />
                 <span className="hidden 2xl:inline text-[11px]">Novidades</span>
