@@ -1,0 +1,92 @@
+[
+  {
+    "id": "prod_1",
+    "name": "Soja a Granel",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-103",
+    "name": "Bauxita",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-105",
+    "name": "Calcario",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-104",
+    "name": "Milho em Graos",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-106",
+    "name": "GESSO",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-110",
+    "name": "DDG´S",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-111",
+    "name": "Casca de Soja Paletizada",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-112",
+    "name": "Trigo",
+    "unit": "ton"
+  },
+  {
+    "id": "prod_3",
+    "name": "Fertilizante",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-113",
+    "name": "Farelo de Algodão",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-114",
+    "name": "Torta de Algodão",
+    "unit": "ton"
+  },
+  {
+    "id": "prod_2",
+    "name": "Fertilizantes",
+    "unit": "sc"
+  },
+  {
+    "id": "PRD-115",
+    "name": "Escória",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-108",
+    "name": "Caroço de Algodão",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-107",
+    "name": "Farelo de Soja",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-109",
+    "name": "Sorgo",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-116",
+    "name": "Laranja",
+    "unit": "ton"
+  },
+  {
+    "id": "PRD-117",
+    "name": "Ração",
+    "unit": "ton"
+  }
+]

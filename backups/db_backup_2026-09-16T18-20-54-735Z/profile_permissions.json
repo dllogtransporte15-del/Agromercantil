@@ -1,0 +1,1115 @@
+[
+  {
+    "id": 1,
+    "permissions": {
+      "Fiscal": {
+        "loads": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "owners": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "clients": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "drivers": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "reports": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "branches": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "vehicles": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "dashboard": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "financial": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "shipments": {
+          "read": true,
+          "create": false,
+          "delete": true,
+          "update": false
+        },
+        "appearance": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "commissions": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "ai-assistant": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "embarcadores": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "load-history": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "freight-quote": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "tools-history": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "system-monitor": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "users-register": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "operational-map": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "shipment-history": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "operational-loads": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "layover-calculator": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        }
+      },
+      "Cliente": {
+        "loads": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "owners": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "clients": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "drivers": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "reports": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "branches": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "vehicles": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "dashboard": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "financial": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "shipments": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "appearance": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "commissions": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "ai-assistant": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "embarcadores": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "load-history": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "freight-quote": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "tools-history": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "system-monitor": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "users-register": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "operational-map": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "shipment-history": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "operational-loads": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "layover-calculator": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        }
+      },
+      "Diretor": {
+        "loads": {
+          "read": true,
+          "create": true,
+          "delete": false,
+          "update": true
+        },
+        "owners": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "clients": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "drivers": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "reports": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "branches": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "vehicles": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "dashboard": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "financial": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "shipments": {
+          "read": true,
+          "create": true,
+          "delete": false,
+          "update": true
+        },
+        "appearance": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "commissions": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "ai-assistant": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "embarcadores": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "load-history": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "freight-quote": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "tools-history": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "system-monitor": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "users-register": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "operational-map": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "shipment-history": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "operational-loads": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "layover-calculator": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        }
+      },
+      "Comercial": {
+        "loads": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "owners": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "clients": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "drivers": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "reports": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "branches": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "vehicles": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "dashboard": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "financial": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "shipments": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "appearance": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "commissions": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "ai-assistant": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "embarcadores": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "load-history": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "freight-quote": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "tools-history": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "system-monitor": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "users-register": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "operational-map": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "shipment-history": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "operational-loads": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "layover-calculator": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        }
+      },
+      "Embarcador": {
+        "loads": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "owners": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "clients": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "drivers": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "reports": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "branches": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "vehicles": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "dashboard": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "financial": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "shipments": {
+          "read": true,
+          "create": true,
+          "delete": false,
+          "update": false
+        },
+        "appearance": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "commissions": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "ai-assistant": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "embarcadores": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "load-history": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "freight-quote": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "tools-history": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "system-monitor": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "users-register": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "operational-map": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "shipment-history": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "operational-loads": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "layover-calculator": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        }
+      },
+      "Financeiro": {
+        "loads": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "owners": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "clients": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "drivers": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "reports": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "branches": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "vehicles": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "dashboard": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "financial": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "shipments": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "appearance": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "commissions": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "ai-assistant": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "embarcadores": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "load-history": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "freight-quote": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "tools-history": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "system-monitor": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "users-register": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "operational-map": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "shipment-history": {
+          "read": true,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "operational-loads": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "layover-calculator": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        }
+      },
+      "Supervisor": {
+        "loads": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "owners": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "clients": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "drivers": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "reports": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "vehicles": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "dashboard": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "financial": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "shipments": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "appearance": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "commissions": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "ai-assistant": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "embarcadores": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "load-history": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "freight-quote": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "tools-history": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "users-register": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "operational-map": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "shipment-history": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "operational-loads": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "layover-calculator": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        }
+      },
+      "Coordenador": {
+        "loads": {
+          "read": true,
+          "create": true,
+          "delete": false,
+          "update": true
+        },
+        "owners": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "clients": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "drivers": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "reports": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "branches": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "vehicles": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "dashboard": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "financial": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "shipments": {
+          "read": true,
+          "create": true,
+          "delete": false,
+          "update": true
+        },
+        "appearance": {
+          "read": false,
+          "create": false,
+          "delete": false,
+          "update": false
+        },
+        "commissions": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "ai-assistant": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "embarcadores": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "load-history": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "freight-quote": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "tools-history": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "system-monitor": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "users-register": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "operational-map": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "shipment-history": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "operational-loads": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        },
+        "layover-calculator": {
+          "read": true,
+          "create": true,
+          "delete": true,
+          "update": true
+        }
+      }
+    }
+  }
+]

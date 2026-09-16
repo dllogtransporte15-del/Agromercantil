@@ -1,0 +1,34 @@
+[
+  {
+    "id": "OWN-001",
+    "name": "João da Silva Transportes ME",
+    "cpf_cnpj": "22.111.333/0001-05",
+    "phone": "(66) 98765-4321",
+    "type": "Pessoa Jurídica",
+    "bank_details": "Banco Brasil | Ag: 1234 | CC: 56789-0"
+  },
+  {
+    "id": "OWN-002",
+    "name": "Maria Oliveira",
+    "cpf_cnpj": "123.456.789-00",
+    "phone": "(11) 91234-5678",
+    "type": "Pessoa Física",
+    "bank_details": "NuBank | Ag: 0001 | CC: 112233-4"
+  },
+  {
+    "id": "OWN-003",
+    "name": "Frota Rápida Logística LTDA",
+    "cpf_cnpj": "45.678.123/0001-21",
+    "phone": "(65) 99988-7766",
+    "type": "Pessoa Jurídica",
+    "bank_details": "Sicoob | Ag: 3322 | CC: 44556-7"
+  },
+  {
+    "id": "OWN-999",
+    "name": "PROPRIETÁRIO PADRÃO TERCEIRO",
+    "cpf_cnpj": "00.000.000/0000-00",
+    "phone": "",
+    "type": "Pessoa Jurídica",
+    "bank_details": ""
+  }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "5d63a38c-8277-4892-9eb4-80d96fc4d05f",
+    "user_id": "USR-001",
+    "name": "MMJV",
+    "created_at": "2026-04-08T02:41:35.019787+00:00"
+  },
+  {
+    "id": "f06bcffb-567a-4a39-ab6a-d670a987dacb",
+    "user_id": "USR-001",
+    "name": "OURO BRANCO MG",
+    "created_at": "2026-04-16T20:09:29.068911+00:00"
+  },
+  {
+    "id": "7a26c09d-0f92-4d75-a310-97df3efc810d",
+    "user_id": "USR-117",
+    "name": "OUROSAFRA",
+    "created_at": "2026-04-29T20:35:49.80689+00:00"
+  },
+  {
+    "id": "ed6420e8-516e-4903-b2a0-d03a9edec9c0",
+    "user_id": "USR-001",
+    "name": "OURO SAFRA",
+    "created_at": "2026-04-11T17:33:45.391748+00:00"
+  },
+  {
+    "id": "4653e98f-42c8-4629-92dd-2a882f9d30b2",
+    "user_id": "USR-117",
+    "name": "AGRONELLI",
+    "created_at": "2026-05-14T16:28:23.021859+00:00"
+  }
+]
