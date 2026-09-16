@@ -9,7 +9,7 @@ import { autoFormatInput } from '../utils/formatters';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import SwapCargoModal from './SwapCargoModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
-import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus } from '../utils';
+import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, formatShipmentStatus } from '../utils';
 import { isDemoUser } from '../auth';
 
 
@@ -243,11 +243,11 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         <button
                             type="button"
                             onClick={() => setIsSwapModalOpen(true)}
-                            title="Trocar Carga do Embarque"
+                            title="Remanejar Carga do Embarque"
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 rounded-md text-xs font-bold transition-all shadow-sm border border-blue-200 dark:border-blue-800/60 cursor-pointer"
                         >
                             <ArrowRightLeft size={14} />
-                            <span>Trocar Carga</span>
+                            <span>Remanejar Carga</span>
                         </button>
                     )}
                     {shipment && ![ShipmentStatus.AguardandoSeguradora, ShipmentStatus.PreCadastro, ShipmentStatus.Cancelado].includes(shipment.status) && (
@@ -283,15 +283,15 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                 type="button"
                                 onClick={() => setIsSwapModalOpen(true)}
                                 className="text-[11px] font-bold text-primary dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer bg-primary/10 dark:bg-primary/20 px-2 py-0.5 rounded"
-                                title="Trocar carga vinculada"
+                                title="Remanejar carga vinculada"
                             >
                                 <ArrowRightLeft size={12} />
-                                <span>Trocar</span>
+                                <span>Remanejar</span>
                             </button>
                         )}
                     </div>
                 </DetailItem>
-                <DetailItem label="Status Atual" value={shipment.status} />
+                <DetailItem label="Status Atual" value={formatShipmentStatus(shipment.status)} />
                 <DetailItem label="Comercial (Embarcador)" value={embarcador?.name || 'N/A'} />
                 {shipment.status === 'Cancelado' && shipment.cancellationReason && (
                     <div className="md:col-span-2 mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/50 rounded-md">

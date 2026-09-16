@@ -74,7 +74,7 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
         <div className="p-6 border-b dark:border-gray-700">
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Trocar Carga do Embarque</h2>
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Remanejar Carga do Embarque</h2>
           <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800/50">
             <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase mb-1">Embarque Atual</p>
             <div className="flex justify-between items-center">
@@ -103,54 +103,48 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
             />
           </div>
 
-          <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
             {availableCargos.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 text-gray-400">
-                <Info className="w-12 h-12 mb-2 opacity-20" />
-                <p>Nenhuma carga disponível encontrada.</p>
+              <div className="text-center py-8 text-gray-500">
+                Nenhuma outra carga disponível no momento.
               </div>
             ) : (
               availableCargos.map((cargo) => {
-                const client = clients.find(cl => cl.id === cargo.clientId);
+                const client = clients.find(c => c.id === cargo.clientId);
                 const product = products.find(p => p.id === cargo.productId);
                 const isSelected = selectedCargoId === cargo.id;
-                const remainingVol = cargo.totalVolume - cargo.scheduledVolume;
 
                 return (
                   <div 
                     key={cargo.id}
                     onClick={() => setSelectedCargoId(cargo.id)}
-                    className={`p-4 rounded-xl border transition-all cursor-pointer group ${
+                    className={`p-4 border rounded-xl cursor-pointer transition-all ${
                       isSelected 
-                        ? 'border-primary bg-primary/5 dark:bg-primary/10 ring-1 ring-primary' 
-                        : 'border-gray-100 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 bg-gray-50 dark:bg-gray-900/30'
+                        ? 'border-primary bg-blue-50/50 dark:bg-blue-900/20 shadow-md scale-[1.01]' 
+                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                     }`}
                   >
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isSelected ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-400 border dark:border-gray-700'}`}>
-                          <Package size={16} />
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-800 dark:text-white">#{cargo.sequenceId}</span>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                            {product?.name}
+                          </span>
                         </div>
-                        <div>
-                          <h4 className="font-bold text-gray-900 dark:text-white text-sm">#{cargo.sequenceId} - {client?.nomeFantasia}</h4>
-                          <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">{product?.name}</p>
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-200 mt-1">
+                          {client?.nomeFantasia}
+                        </p>
+                        <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          <MapPin size={12} className="text-gray-400" />
+                          <span>{cargo.origin} → {cargo.destination}</span>
                         </div>
                       </div>
                       <div className="text-right">
-                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${remainingVol > shipment.shipmentTonnage ? 'bg-green-100 text-green-700 dark:bg-green-900/40' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40'}`}>
-                            {remainingVol.toLocaleString('pt-BR')} ton livres
-                         </span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-y-2 mt-3 text-xs">
-                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                        <MapPin size={14} className="text-gray-400" />
-                        <span>{cargo.origin} → {cargo.destination}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 justify-end">
-                        <DollarSign size={14} className="text-gray-400" />
-                        <span className="font-semibold text-gray-900 dark:text-gray-200">
+                        <span className="text-xs text-emerald-600 dark:text-emerald-400 font-bold block">
+                          Disp: {((cargo.totalVolume || 0) - (cargo.scheduledVolume || 0)).toLocaleString('pt-BR')} ton
+                        </span>
+                        <span className="text-xs font-bold text-gray-700 dark:text-gray-300 mt-1 block">
                           {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTon)}/ton
                         </span>
                       </div>
@@ -180,7 +174,7 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
                 : 'bg-gray-300 text-gray-500 cursor-not-allowed scale-95 opacity-50'
             }`}
           >
-            Confirmar Troca
+            Confirmar Remanejamento
           </button>
         </div>
       </div>

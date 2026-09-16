@@ -1,3 +1,5 @@
+import { ShipmentStatus, DailyScheduleType } from './types';
+
 export const formatId = (num: number, prefix: string, pad: number = 3): string => {
   return `${prefix}-${String(num).padStart(pad, '0')}`;
 };
@@ -425,6 +427,79 @@ export function getStayEffectiveDate(
   return null;
 }
 
+/**
+ * Mapeia o status do embarque para a nomenclatura corporativa aprovada
+ */
+export const formatShipmentStatus = (status: string | ShipmentStatus): string => {
+  if (!status) return '';
+  const s = String(status).trim();
+  switch (s) {
+    case ShipmentStatus.PreCadastro:
+    case 'Ag. Cadastro':
+    case 'Pre-cadastro':
+    case 'Pré-cadastro':
+    case 'Triagem / Pré-Cadastro':
+      return 'Triagem / Pré-Cadastro';
+    case ShipmentStatus.AguardandoSeguradora:
+    case 'Ag. Seguradora':
+    case 'Análise de Risco (PGR)':
+      return 'Análise de Risco (PGR)';
+    case ShipmentStatus.AguardandoCarregamento:
+    case 'Ag. Carregamento':
+    case 'Aguardando Check-in / Carga':
+      return 'Aguardando Check-in / Carga';
+    case ShipmentStatus.AguardandoNota:
+    case ShipmentStatus.AguardandoFiscal:
+    case 'Ag. Nota':
+    case 'Ag. Fiscal':
+    case 'Emissão Fiscal (CT-e / NF-e)':
+      return 'Emissão Fiscal (CT-e / NF-e)';
+    case ShipmentStatus.AguardandoAdiantamento:
+    case 'Ag. Adiantamento':
+    case 'Liberação de Adiantamento':
+      return 'Liberação de Adiantamento';
+    case ShipmentStatus.AguardandoAgendamento:
+    case 'Ag. Agendamento':
+    case 'Agendamento de Descarga (Slot)':
+      return 'Agendamento de Descarga (Slot)';
+    case ShipmentStatus.AguardandoDescarga:
+    case 'Ag. Descarga':
+    case 'Em Trânsito / Aguardando Descarga':
+      return 'Em Trânsito / Aguardando Descarga';
+    case ShipmentStatus.AguardandoPagamentoSaldo:
+    case 'Ag. Saldo':
+    case 'Ag. Pagamento Saldo':
+    case 'Liquidação de Saldo':
+      return 'Liquidação de Saldo';
+    case ShipmentStatus.Finalizado:
+    case 'Finalizado':
+    case 'Operação Concluída':
+      return 'Operação Concluída';
+    case ShipmentStatus.Cancelado:
+    case 'Cancelado':
+      return 'Cancelado';
+    default:
+      return s;
+  }
+};
 
-
-
+/**
+ * Mapeia o tipo de demanda para a nomenclatura corporativa aprovada
+ */
+export const formatDemandType = (type: string | DailyScheduleType): string => {
+  if (!type) return '';
+  const t = String(type).trim();
+  switch (t) {
+    case 'Demanda Livre':
+    case 'Demanda Contínua':
+      return 'Demanda Contínua';
+    case 'Demanda Fixa':
+    case 'Cota Diária Programada':
+      return 'Cota Diária Programada';
+    case 'Demanda a Verificar':
+    case 'Demanda Sob Consulta':
+      return 'Demanda Sob Consulta';
+    default:
+      return t;
+  }
+};

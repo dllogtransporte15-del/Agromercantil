@@ -13,7 +13,7 @@ import { InfoIcon } from './icons/InfoIcon';
 import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
 import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, UserCheck, Building, Pencil, Check, Loader2, ExternalLink, Paperclip } from 'lucide-react';
-import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus } from '../utils';
+import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, formatShipmentStatus } from '../utils';
 import { backfillShipmentFiscalNumbers, uploadShipmentAttachment, getShipmentAttachmentUrl, upsertShipment } from '../lib/db';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 import { useToast } from '../hooks/useToast';
@@ -1427,7 +1427,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       </div>
                     </td>
                     <td className="px-6 py-[11px] whitespace-nowrap">
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">{shipment.status}</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">{formatShipmentStatus(shipment.status)}</p>
                       {shipment.status === ShipmentStatus.Cancelado && shipment.cancellationReason && (
                         <p className="text-[11px] text-red-600 dark:text-red-400 font-medium mt-1 max-w-[150px] whitespace-normal italic">
                           Motivo: {shipment.cancellationReason}
@@ -1582,7 +1582,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                                       {shipment.status === ShipmentStatus.PreCadastro && onOpenCadastroAntt && <ActionMenuItem icon={ExternalLinkIcon} text="Fazer Cadastro" onClick={() => onOpenCadastroAntt(shipment)} />}
                                                                       {isActionable && onEditPrice && <ActionMenuItem icon={DollarSignIcon} text="Alterar Preço" onClick={() => onEditPrice(shipment)} />}
                                                                       {isActionable && onTransfer && <ActionMenuItem icon={TransferIcon} text="Transferir Embarque" onClick={() => onTransfer(shipment)} />}
-                                                                      {isActionable && (shipment.status === ShipmentStatus.PreCadastro || shipment.status === ShipmentStatus.AguardandoSeguradora) && onSwapCargo && <ActionMenuItem icon={Package} text="Trocar Carga" onClick={() => onSwapCargo(shipment)} />}
+                                                                      {isActionable && (shipment.status === ShipmentStatus.PreCadastro || shipment.status === ShipmentStatus.AguardandoSeguradora) && onSwapCargo && <ActionMenuItem icon={Package} text="Remanejar Carga" onClick={() => onSwapCargo(shipment)} />}
                                                                       {onOpenEditScheduledDateTime && <ActionMenuItem icon={Clock} text="Alterar Data/Hora" onClick={() => onOpenEditScheduledDateTime(shipment)} />}
                                                                       {shipment.status === ShipmentStatus.Finalizado && onAttach && <ActionMenuItem icon={PaperclipIcon} text="Gestor de Anexos" onClick={() => onAttach(shipment)} />}
                                                                       {isActionable && onCancel && (currentUser.profile !== UserProfile.Fiscal || shipment.status === ShipmentStatus.AguardandoSeguradora) && <ActionMenuItem icon={XIcon} text="Cancelar Embarque" onClick={() => onCancel(shipment)} isDestructive />}
@@ -1599,7 +1599,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                                       }} 
                                                                   />
                                                               )}
-                                                              {onDelete && currentUser.profile === UserProfile.Admin && <ActionMenuItem icon={Trash2} text="Excluir Embarque" onClick={() => onDelete(shipment.id)} isDestructive />}
+                                                              {onDelete && currentUser.profile === UserProfile.Admin && <ActionMenuItem icon={Trash2} text="Inativar Registro / Remover" onClick={() => onDelete(shipment.id)} isDestructive />}
                                                           </div>
                                                       </div>,
                                                       document.body

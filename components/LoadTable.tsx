@@ -424,7 +424,7 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                           return 'Sem Programação (Lançar programação para liberar)';
                         }
                         if (dailyScheduleInfo) {
-                          const meanings: Record<string, string> = { 'L': 'Livre', 'F': 'Fixo', 'V': 'Verificar' };
+                          const meanings: Record<string, string> = { 'L': 'Demanda Contínua', 'F': 'Cota Diária Programada', 'V': 'Demanda Sob Consulta' };
                           return `Programação: ${meanings[statusSymbols[dailyScheduleInfo.type]] || statusSymbols[dailyScheduleInfo.type]}`;
                         }
                         return 'Sem programação para esta data';
@@ -671,7 +671,7 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                           )}
                           {onDelete && currentUser.profile === UserProfile.Admin && (
                             <button onClick={() => { onDelete(load.id); setOpenActionMenu(null); }} className="w-full text-left px-4 py-2 text-sm text-red-700 dark:text-red-500 font-bold hover:bg-red-50 dark:hover:bg-red-900/50 flex items-center gap-2">
-                              <Trash2 className="h-4 w-4" /> Excluir Carga
+                              <Trash2 className="h-4 w-4" /> Inativar Registro / Remover
                             </button>
                           )}
                         </div>

@@ -253,9 +253,9 @@ export interface FreightLeg {
 }
 
 export enum DailyScheduleType {
-  Livre = "Demanda Livre",
-  Fixo = "Demanda Fixa",
-  Verificar = "Demanda a Verificar",
+  Livre = "Demanda Contínua",
+  Fixo = "Cota Diária Programada",
+  Verificar = "Demanda Sob Consulta",
 }
 
 export interface DailyScheduleEntry {

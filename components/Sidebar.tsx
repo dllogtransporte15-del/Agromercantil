@@ -40,36 +40,50 @@ const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: DashboardIcon },
   {
     id: 'operational',
-    label: 'Operacional',
+    label: 'Gestão Operacional',
     icon: TruckIcon,
     children: [
       { id: 'shipments', label: 'Embarques', icon: PackageIcon },
-      { id: 'shipment-history', label: 'Histórico', icon: HistoryIcon },
-      { id: 'operational-loads', label: 'Cargas', icon: ChartIcon },
-      { id: 'operational-map', label: 'Mapa Operacional', icon: MapIcon },
+      { id: 'shipment-history', label: 'Histórico de Embarques', icon: HistoryIcon },
+      { id: 'load-history', label: 'Histórico de Cargas', icon: HistoryIcon },
+      { id: 'operational-loads', label: 'Painel de Cargas Ativas', icon: ChartIcon },
+      { id: 'operational-map', label: 'Monitoramento Logístico', icon: MapIcon },
       { id: 'risk-management', label: 'Gerenciadora de Risco', icon: ShieldCheck },
     ],
   },
   {
     id: 'cadastro',
-    label: 'Cadastro',
+    label: 'Cadastros Mestres',
     icon: FolderIcon,
     children: [
-        { id: 'clients', label: 'Clientes', icon: ClientsIcon },
-        { id: 'owners', label: 'Proprietários', icon: UsersIcon },
-        { id: 'drivers', label: 'Motoristas', icon: DriverIcon },
-        { id: 'vehicles', label: 'Veículos', icon: TruckIcon },
-        { id: 'loads', label: 'Cargas', icon: PackageIcon },
+        { id: 'clients', label: 'Clientes & Tomadores', icon: ClientsIcon },
+        { id: 'owners', label: 'Frotistas & Proprietários', icon: UsersIcon },
+        { id: 'drivers', label: 'Motoristas & Condutores', icon: DriverIcon },
+        { id: 'vehicles', label: 'Frotas & Veículos', icon: TruckIcon },
+        { id: 'loads', label: 'Ordens de Carga', icon: PackageIcon },
+        { id: 'products', label: 'Produtos', icon: PackageIcon },
     ]
   },
   { id: 'reports', label: 'Relatórios', icon: ChartIcon },
   {
+    id: 'ferramentas',
+    label: 'Módulos & Utilitários',
+    icon: TruckIcon,
+    children: [
+      { id: 'layover-calculator', label: 'Cálculo de Estadias', icon: TruckIcon },
+      { id: 'freight-quote', label: 'Precificação & Cotações', icon: MapIcon },
+      { id: 'tools-history', label: 'Histórico de Cotações', icon: HistoryIcon },
+    ]
+  },
+  {
     id: 'settings',
-    label: 'Configurações',
+    label: 'Administração & Governança',
     icon: UsersIcon,
     children: [
-      { id: 'users-register', label: 'Gerenciar Usuários', icon: UserPlusIcon },
-      { id: 'appearance', label: 'Aparência', icon: ImageIcon },
+      { id: 'users-register', label: 'Gestão de Acessos & Usuários', icon: UserPlusIcon },
+      { id: 'branches', label: 'Unidades Operacionais / Filiais', icon: FolderIcon },
+      { id: 'appearance', label: 'Identidade Visual & Customização', icon: ImageIcon },
+      { id: 'system-monitor', label: 'Saúde do Sistema & Auditoria', icon: ShieldCheck },
     ]
   }
 ];

@@ -63,27 +63,27 @@ const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: DashboardIcon },
   {
     id: 'operational',
-    label: 'Operacional',
+    label: 'Gestão Operacional',
     icon: TruckIcon,
     children: [
       { id: 'shipments', label: 'Embarques', icon: PackageIcon },
-      { id: 'shipment-history', label: 'Histórico Embarques', icon: HistoryIcon },
-      { id: 'load-history', label: 'Histórico Cargas', icon: ArchiveIcon },
-      { id: 'operational-loads', label: 'Cargas em Andamento', icon: ChartIcon },
-      { id: 'operational-map', label: 'Mapa Operacional', icon: MapIcon },
+      { id: 'shipment-history', label: 'Histórico de Embarques', icon: HistoryIcon },
+      { id: 'load-history', label: 'Histórico de Cargas', icon: ArchiveIcon },
+      { id: 'operational-loads', label: 'Painel de Cargas Ativas', icon: ChartIcon },
+      { id: 'operational-map', label: 'Monitoramento Logístico', icon: MapIcon },
       { id: 'risk-management', label: 'Gerenciadora de Risco', icon: ShieldCheck },
     ],
   },
   {
     id: 'cadastro',
-    label: 'Cadastro',
+    label: 'Cadastros Mestres',
     icon: FolderIcon,
     children: [
-        { id: 'clients', label: 'Clientes', icon: ClientsIcon },
-        { id: 'owners', label: 'Proprietários', icon: UsersIcon },
-        { id: 'drivers', label: 'Motoristas', icon: DriverIcon },
-        { id: 'vehicles', label: 'Veículos', icon: TruckIcon },
-        { id: 'loads', label: 'Cargas', icon: PackageIcon },
+        { id: 'clients', label: 'Clientes & Tomadores', icon: ClientsIcon },
+        { id: 'owners', label: 'Frotistas & Proprietários', icon: UsersIcon },
+        { id: 'drivers', label: 'Motoristas & Condutores', icon: DriverIcon },
+        { id: 'vehicles', label: 'Frotas & Veículos', icon: TruckIcon },
+        { id: 'loads', label: 'Ordens de Carga', icon: PackageIcon },
         { id: 'products', label: 'Produtos', icon: PackageIcon },
         { id: 'risk-query-types', label: 'Tipos de Consulta GR', icon: ShieldCheck },
     ]
@@ -91,24 +91,24 @@ const navItems: NavItem[] = [
   { id: 'reports', label: 'Relatórios', icon: ChartIcon },
   {
     id: 'ferramentas',
-    label: 'Ferramentas',
+    label: 'Módulos & Utilitários',
     icon: ToolIcon,
     children: [
       { id: 'layover-calculator', label: 'Cálculo de Estadias', icon: CalculatorIcon },
-      { id: 'freight-quote', label: 'Cotação de Frete', icon: MapIcon },
-      { id: 'tools-history', label: 'Histórico', icon: HistoryIcon },
+      { id: 'freight-quote', label: 'Precificação & Cotações', icon: MapIcon },
+      { id: 'tools-history', label: 'Histórico de Cotações', icon: HistoryIcon },
       { id: 'freight-offers-history', label: 'Histórico de Ofertas', icon: HistoryIcon },
     ]
   },
   {
     id: 'settings',
-    label: 'Configurações',
+    label: 'Administração & Governança',
     icon: UsersIcon,
     children: [
-      { id: 'users-register', label: 'Gerenciar Usuários', icon: UserPlusIcon },
-      { id: 'branches', label: 'Filiais', icon: FolderIcon },
-      { id: 'appearance', label: 'Aparência', icon: ImageIcon },
-      { id: 'system-monitor', label: 'Monitoramento', icon: Activity },
+      { id: 'users-register', label: 'Gestão de Acessos & Usuários', icon: UserPlusIcon },
+      { id: 'branches', label: 'Unidades Operacionais / Filiais', icon: FolderIcon },
+      { id: 'appearance', label: 'Identidade Visual & Customização', icon: ImageIcon },
+      { id: 'system-monitor', label: 'Saúde do Sistema & Auditoria', icon: Activity },
     ]
   }
 ];
@@ -220,48 +220,48 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
       {/* Top Border Glow (Same as Login Card) */}
       <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent opacity-80 pointer-events-none" />
 
-      <div className="w-full max-w-[1920px] mx-auto px-3 sm:px-5 lg:px-6">
-        <div className="flex items-center justify-between h-16 sm:h-18 lg:h-20 gap-4">
+      <div className="w-full max-w-[1920px] mx-auto px-2 sm:px-4 lg:px-5">
+        <div className="flex items-center justify-between h-16 lg:h-18 gap-2 xl:gap-3">
           
           {/* Logo e Nome da Empresa + Status Online (Lado Esquerdo) */}
-          <div className="flex items-center gap-2.5 lg:gap-3 shrink-0">
+          <div className="flex items-center gap-2 lg:gap-2.5 shrink-0">
             <a href="#" onClick={(e) => { e.preventDefault(); handlePageSelect('dashboard')}} className="flex items-center py-1">
                 {companyLogo ? (
-                    <img src={companyLogo} alt="Logo" className="h-9 sm:h-11 md:h-12 w-auto object-contain max-w-[140px] sm:max-w-[180px] transition-all filter drop-shadow-[0_2px_10px_rgba(22,163,74,0.3)]" />
+                    <img src={companyLogo} alt="Logo" className="h-8 sm:h-9 md:h-10 w-auto object-contain max-w-[120px] sm:max-w-[150px] transition-all filter drop-shadow-[0_2px_10px_rgba(22,163,74,0.3)]" />
                 ) : (
-                    <h1 className="text-lg md:text-xl xl:text-2xl font-black text-primary dark:text-white tracking-tighter uppercase whitespace-nowrap">
+                    <h1 className="text-base sm:text-lg xl:text-xl font-black text-primary dark:text-white tracking-tighter uppercase whitespace-nowrap">
                       AGRO<span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-amber-400">MERCANTIL</span>
                     </h1>
                 )}
             </a>
 
             {/* Badge Status Online */}
-            <div className="hidden 2xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-[#03130b]/90 border border-slate-200 dark:border-emerald-800/60 shadow-inner backdrop-blur-md shrink-0">
+            <div className="hidden 2xl:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-[#03130b]/90 border border-slate-200 dark:border-emerald-800/60 shadow-inner backdrop-blur-md shrink-0">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              <span className="text-[10px] font-bold text-slate-600 dark:text-emerald-200 tracking-wider uppercase">Online</span>
+              <span className="text-[9px] font-bold text-slate-600 dark:text-emerald-200 tracking-wider uppercase">Online</span>
             </div>
           </div>
 
-          {/* Navegação Principal (Centralizada) */}
-          <nav className="hidden lg:flex items-center justify-center space-x-1 xl:space-x-2 flex-1 min-w-0 px-2">
+          {/* Navegação Principal (Centralizada e Ajustada) */}
+          <nav className="hidden lg:flex items-center justify-center gap-0.5 xl:gap-1.5 flex-1 min-w-0 px-1 overflow-x-auto no-scrollbar">
             {filteredNavItems.map((item) => {
                 const isActive = currentPage === item.id || isParentOfCurrentPage(item);
                 if(item.children) {
                     return (
-                        <div className="relative" key={item.id} ref={item.id === openDropdown ? dropdownRef : null}>
+                        <div className="relative shrink-0" key={item.id} ref={item.id === openDropdown ? dropdownRef : null}>
                             <button
                                 onClick={() => handleDropdownToggle(item.id)}
-                                className={`flex items-center px-3 xl:px-4 py-2 text-xs xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap cursor-pointer ${
+                                className={`flex items-center px-2 py-1.5 xl:px-3 xl:py-2 text-[11px] xl:text-[13px] 2xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap cursor-pointer ${
                                     isActive 
                                       ? 'bg-gradient-to-r from-emerald-600 via-primary to-green-700 text-white shadow-md shadow-emerald-950/40 scale-[1.02]' 
                                       : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-950/70 hover:text-slate-900 dark:hover:text-white'
                                 }`}
                             >
                                 <span>{item.label}</span>
-                                <ChevronDownIcon className={`w-3.5 h-3.5 xl:w-4 xl:h-4 ml-1 transition-transform ${openDropdown === item.id ? 'rotate-180' : ''}`} />
+                                <ChevronDownIcon className={`w-3 h-3 xl:w-3.5 xl:h-3.5 ml-0.5 xl:ml-1 opacity-70 transition-transform ${openDropdown === item.id ? 'rotate-180' : ''}`} />
                             </button>
                             {openDropdown === item.id && (
                                 <div className="absolute mt-2 w-60 origin-top-left bg-white/95 dark:bg-[#061e13]/95 border border-slate-200 dark:border-emerald-800/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
@@ -299,7 +299,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                 }
                 return (
                     <a href="#" key={item.id} onClick={(e) => { e.preventDefault(); handlePageSelect(item.id as Page); }}
-                       className={`px-3 xl:px-4 py-2 text-xs xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap cursor-pointer ${
+                       className={`px-2 py-1.5 xl:px-3 xl:py-2 text-[11px] xl:text-[13px] 2xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap shrink-0 cursor-pointer ${
                            isActive 
                              ? 'bg-gradient-to-r from-emerald-600 via-primary to-green-700 text-white shadow-md shadow-emerald-950/40 scale-[1.02]' 
                              : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-950/70 hover:text-slate-900 dark:hover:text-white'
@@ -310,7 +310,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
           </nav>
 
           {/* Ícones, Seletor de Fundo e Menu do Usuário (Lado Direito) */}
-          <div className="flex items-center justify-end gap-2 xl:gap-3 shrink-0">
+          <div className="flex items-center justify-end gap-1.5 xl:gap-2.5 shrink-0">
              {user.profile === UserProfile.Motorista && (
                 <DriverLocationTracker user={user} />
              )}
@@ -321,7 +321,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                  type="button"
                  title="Ativar Fundo Claro"
                  onClick={() => onThemeModeChange && onThemeModeChange('light')}
-                 className={`p-1.5 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                 className={`p-1 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                    themeMode === 'light'
                      ? 'bg-white text-emerald-600 shadow-sm'
                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100'
@@ -334,7 +334,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                  type="button"
                  title="Ativar Fundo Escuro"
                  onClick={() => onThemeModeChange && onThemeModeChange('dark')}
-                 className={`p-1.5 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                 className={`p-1 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                    themeMode === 'dark'
                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950/40'
                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100'
@@ -350,7 +350,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                 type="button"
                 onClick={onOpenUpdates}
                 title="Novidades e Atualizações do Sistema"
-                className="p-1.5 xl:px-2.5 xl:py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0"
+                className="p-1 xl:px-2 xl:py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-sm shrink-0"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse shrink-0" />
                 <span className="hidden 2xl:inline text-[11px]">Novidades</span>

@@ -3,6 +3,8 @@ import React, { useMemo } from 'react';
 import { ShipmentStatus, UserProfile } from '../types';
 import type { Shipment, User } from '../types';
 
+import { formatShipmentStatus } from '../utils';
+
 interface ShipmentStatusFilterProps {
   shipments: Shipment[];
   activeStatus: ShipmentStatus | 'all';
@@ -41,7 +43,7 @@ const ShipmentStatusFilter: React.FC<ShipmentStatusFilterProps> = ({ shipments, 
 
   const getStatusLabel = (status: ShipmentStatus | 'all') => {
     if (status === 'all') return 'Todos';
-    return status;
+    return formatShipmentStatus(status);
   };
 
   return (

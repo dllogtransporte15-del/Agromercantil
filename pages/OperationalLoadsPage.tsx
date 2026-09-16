@@ -345,7 +345,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
 
   return (
     <>
-      <Header title="Cargas em Operação">
+      <Header title="Painel de Cargas Ativas">
         {currentUser.profile !== UserProfile.Cliente && currentUser.profile !== UserProfile.Motorista && (
           <div className="flex items-center gap-2">
             {!isDemo && can('create', currentUser, 'loads', profilePermissions) && (
@@ -353,7 +353,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
                 onClick={() => setIsBulkImportModalOpen(true)}
                 className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-bold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 shadow-sm transition-all text-sm"
               >
-                📦 Importar em Lote
+                📦 Importação em Lote de Cargas
               </button>
             )}
             <button

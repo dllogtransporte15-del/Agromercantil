@@ -1019,7 +1019,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                     <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2.5">Detalhes do Volume, Prazo e Lote</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                         <div>
-                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Volume Total (ton)</label>
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Volume Total Contratado (ton)</label>
                             <input 
                               name="totalVolume" 
                               value={load.totalVolume || ''} 
@@ -2074,13 +2074,13 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                     </button>
                   )}
 
-                  {step === STEPS.length && (
+                    {step === STEPS.length && (
                     <button 
                       type="submit" 
                       disabled={isSubmitting}
                       className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] text-white font-bold rounded-xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95 disabled:opacity-50"
                     >
-                      {isSubmitting ? 'Salvando...' : 'Salvar Carga'}
+                      {isSubmitting ? 'Salvando...' : (loadToEdit ? 'Salvar Alterações' : 'Confirmar Registro')}
                     </button>
                   )}
               </div>

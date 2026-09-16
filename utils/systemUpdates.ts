@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_16_v2_6_6',
+    version: 'v2.6.6',
+    date: '16/09/2026',
+    title: 'Padronização e Nomenclaturas Corporativas',
+    summary: 'Implementação do plano de padronização corporativa refinado em toda a plataforma: navegação de módulos, pipeline de status operacionais, gestão de demandas de carga e botões de ação (CTAs), com preservação rigorosa dos termos operacionais fundamentais.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Navegação e Menus Corporativos',
+        description: 'Atualização do menu superior e lateral para Gestão Operacional, Painel de Cargas Ativas, Ordens de Carga, Cadastros Mestres, Clientes & Tomadores, Frotistas & Proprietários, Motoristas & Condutores, Precificação & Cotações, Administração & Governança e Gestão de Acessos & Usuários.'
+      },
+      {
+        category: 'improvement',
+        title: 'Pipeline de Status Operacionais Refinado',
+        description: 'Status visuais padronizados com clareza executiva: Triagem / Pré-Cadastro, Análise de Risco (PGR), Aguardando Check-in / Carga, Emissão Fiscal (CT-e / NF-e), Liberação de Adiantamento, Agendamento de Descarga (Slot), Em Trânsito / Aguardando Descarga, Liquidação de Saldo e Operação Concluída.'
+      },
+      {
+        category: 'improvement',
+        title: 'Gestão de Demandas e Ordens de Carga',
+        description: 'Adequação dos tipos de demanda para "Demanda Contínua", "Cota Diária Programada" e "Demanda Sob Consulta", novo fluxo de "Remanejar Carga" e exibição de "Volume Total Contratado".'
+      },
+      {
+        category: 'improvement',
+        title: 'Ações e Botões (CTAs) Padronizados',
+        description: 'Botões operacionais atualizados para "Cadastrar Nova Carga", "Importação em Lote de Cargas", "Processar Cotação", "Salvar Alterações / Confirmar Registro" e "Inativar Registro / Remover".'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_16_v2_6_5',
     version: 'v2.6.5',
     date: '16/09/2026',
