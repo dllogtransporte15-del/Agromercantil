@@ -254,7 +254,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       return;
     }
 
-    const header = '🌐 *LIBERADOS AGROMERCANTIL* 🌐\n';
+    const header = '🌽 *LIBERADOS AGROMERCANTIL* 🌽\n';
 
     const loadsText = loadsToShare.map(load => {
       const product = products.find(p => p.id === load.productId)?.name?.toUpperCase() || 'N/A';

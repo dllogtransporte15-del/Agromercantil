@@ -406,7 +406,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
       alert('Nenhuma carga no resultado para divulgar.');
       return;
     }
-    const header = '🌐 *LIBERADOS AGROMERCANTIL* 🌐\n';
+    const header = '🌽 *LIBERADOS AGROMERCANTIL* 🌽\n';
     const loadsText = filteredLoads.map(load => {
       const product = products.find(p => p.id === load.productId)?.name?.toUpperCase() || 'N/A';
       const origin = load.origin.toUpperCase();

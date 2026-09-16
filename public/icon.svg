@@ -1,4 +1,45 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
-  <rect width="192" height="192" fill="#1D3B8D" rx="20" />
-  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="80" fill="white" font-weight="bold" font-family="sans-serif">RC</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#061e13"/>
+      <stop offset="100%" stop-color="#04150e"/>
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34D399"/>
+      <stop offset="50%" stop-color="#16A34A"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="50%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  
+  <!-- Background Card -->
+  <rect width="512" height="512" rx="110" fill="url(#bgGrad)" />
+  <rect width="504" height="504" x="4" y="4" rx="106" fill="none" stroke="#16A34A" stroke-width="4" stroke-opacity="0.35" />
+
+  <!-- Logo Symbol -->
+  <g transform="translate(100, 70) scale(0.62)" filter="url(#glow)">
+    <!-- Emerald Leaf Symbol -->
+    <path d="M250 80 C 130 110, 60 220, 80 340 C 100 450, 210 490, 310 470 C 220 440, 160 370, 150 280 C 140 190, 190 120, 250 80 Z" fill="url(#emeraldGrad)" />
+    <path d="M150 280 C 190 260, 250 230, 310 180 C 270 240, 210 290, 150 280 Z" fill="#6EE7B7" opacity="0.8" />
+    
+    <!-- Golden Wheat Grain Symbol -->
+    <path d="M160 380 C 220 440, 330 460, 420 380 C 440 360, 420 330, 390 340 C 320 360, 230 350, 160 380 Z" fill="url(#goldGrad)" />
+    
+    <!-- Grain Nodes -->
+    <ellipse cx="270" cy="340" rx="26" ry="15" transform="rotate(-35 270 340)" fill="url(#goldGrad)" />
+    <ellipse cx="320" cy="300" rx="26" ry="15" transform="rotate(-35 320 300)" fill="url(#goldGrad)" />
+    <ellipse cx="370" cy="250" rx="26" ry="15" transform="rotate(-35 370 250)" fill="url(#goldGrad)" />
+    <ellipse cx="410" cy="190" rx="24" ry="14" transform="rotate(-35 410 190)" fill="url(#goldGrad)" />
+  </g>
+
+  <!-- Typography -->
+  <text x="256" y="420" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="900" font-size="44" fill="#FFFFFF" letter-spacing="4">AGRO<tspan fill="url(#goldGrad)">MERCANTIL</tspan></text>
 </svg>
