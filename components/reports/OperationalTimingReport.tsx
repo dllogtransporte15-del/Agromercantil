@@ -139,18 +139,18 @@ const OperationalTimingReport: React.FC<OperationalTimingReportProps> = ({ shipm
         <h2 className="text-2xl font-semibold text-gray-800 dark:text-white">Tempo Médio por Status</h2>
       </div>
       
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+      <div className="bg-white dark:bg-gray-800/90 p-6 rounded-xl shadow-sm border border-gray-200/80 dark:border-gray-700/80">
         {timingStats.length > 0 ? (
           <div className="space-y-6">
             {timingStats.map(stat => (
               <div key={stat.status}>
-                <div className="flex justify-between items-center mb-1 text-sm">
-                  <span className="font-medium text-gray-600 dark:text-gray-400">{stat.status}</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-200">{stat.averageDurationText}</span>
+                <div className="flex justify-between items-center mb-1.5 text-sm">
+                  <span className="font-semibold text-gray-700 dark:text-gray-200">{stat.status}</span>
+                  <span className="font-black text-gray-900 dark:text-white">{stat.averageDurationText}</span>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-4 dark:bg-gray-700">
+                <div className="w-full bg-gray-100 rounded-full h-3.5 dark:bg-gray-700/60 overflow-hidden border border-gray-200/40 dark:border-gray-600/40">
                   <div
-                    className="bg-primary h-4 rounded-full transition-all duration-500 ease-out"
+                    className="bg-primary h-3.5 rounded-full transition-all duration-500 ease-out shadow-sm"
                     style={{ width: `${(stat.averageDurationHours / maxDurationHours) * 100}%` }}
                     title={`Média: ${stat.averageDurationText}`}
                   ></div>
@@ -159,7 +159,7 @@ const OperationalTimingReport: React.FC<OperationalTimingReportProps> = ({ shipm
             ))}
           </div>
         ) : (
-          <div className="text-center text-gray-500 dark:text-gray-400 py-10">
+          <div className="text-center text-gray-500 dark:text-gray-300 py-10 font-medium">
             Nenhum dado de tempo de operação encontrado para o período selecionado.
           </div>
         )}

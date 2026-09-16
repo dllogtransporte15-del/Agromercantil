@@ -53,7 +53,7 @@ const CoordenadorReport: React.FC<CoordenadorReportProps> = ({ shipments, cargos
   }, [shipments, cargoMap]);
 
   const coordenadores = useMemo(() => {
-    return users.filter(u => u.profile === UserProfile.Coordenador);
+    return users.filter(u => u.profile === UserProfile.Supervisor || (u.profile as any) === 'Coordenador');
   }, [users]);
 
   return (

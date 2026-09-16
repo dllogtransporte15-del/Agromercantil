@@ -1,7 +1,6 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 
 const rootElement = document.getElementById('root');
@@ -11,15 +10,23 @@ if (!rootElement) {
 
 import { ToastProvider } from './hooks/useToast';
 import { ToastContainer } from './components/Toast';
+import { ReloadPrompt } from './components/ReloadPrompt';
+import { BrowserRouter } from 'react-router-dom';
+
+import ErrorBoundary from './components/ErrorBoundary';
 
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <ToastProvider>
+    <ErrorBoundary>
       <BrowserRouter>
-        <App />
+        <ToastProvider>
+          <App />
+          <ToastContainer />
+          <ReloadPrompt />
+        </ToastProvider>
       </BrowserRouter>
-      <ToastContainer />
-    </ToastProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );
+

@@ -3,7 +3,6 @@ import { createWorker } from 'tesseract.js';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { DailyScheduleEntry, DailyScheduleType } from '../types';
 import { enhanceDocumentImage } from './imageEnhancer';
-import { normalizeCityFormat } from '../components/BulkCargoImportModal';
 
 export interface AgromercantilExtractedRow {
   produto: string;

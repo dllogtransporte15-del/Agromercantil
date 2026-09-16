@@ -29,6 +29,9 @@ export interface StayRecord {
   valuePerHour: number;
   tolerance: number;
   totalValue: number;
+  calculationType?: 'TON_HOUR' | 'DAILY_FIXED';
+  dailyRate?: number;
+  daysCount?: number;
 }
 
 export interface QuoteRecord {

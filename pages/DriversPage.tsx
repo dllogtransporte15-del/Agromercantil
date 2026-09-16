@@ -8,7 +8,6 @@ import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
 import type { Driver, Owner, User, ProfilePermissions, Shipment, Cargo } from '../types';
 import { DriverClassification } from '../types';
 import { can } from '../auth';
-import Pagination from '../components/Pagination';
 
 // For reading XLS files
 declare const XLSX: any;
@@ -40,18 +39,17 @@ const DriversPage: React.FC<DriversPageProps> = ({
   const [selectedDriverForHistory, setSelectedDriverForHistory] = useState<Driver | null>(null);
   
   const [filters, setFilters] = useState<DriverFilters>({
+    id: '',
     name: '',
     cpf: '',
     cnh: '',
     phone: '',
-    classification: '',
-    ownerId: '',
-    status: 'all',
+    ddd: [],
+    classification: [],
+    ownerNames: [],
+    status: [],
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 50;
 
   const canCreate = can('create', currentUser, 'drivers', profilePermissions);
   const canUpdate = can('update', currentUser, 'drivers', profilePermissions);
@@ -59,30 +57,29 @@ const DriversPage: React.FC<DriversPageProps> = ({
 
   const filteredDrivers = useMemo(() => {
     return drivers.filter(driver => {
+      const idMatch = !filters.id || (driver.id && driver.id.toLowerCase().includes(filters.id.toLowerCase()));
       const nameMatch = !filters.name || driver.name.toLowerCase().includes(filters.name.toLowerCase());
       const cpfMatch = !filters.cpf || driver.cpf.includes(filters.cpf);
       const cnhMatch = !filters.cnh || driver.cnh.includes(filters.cnh);
       const phoneMatch = !filters.phone || driver.phone.includes(filters.phone);
-      const classificationMatch = !filters.classification || driver.classification === filters.classification;
-      const ownerMatch = !filters.ownerId || driver.ownerId === filters.ownerId;
+      
+      const driverDdd = driver.phone.replace(/\D/g, '').substring(0, 2);
+      const dddMatch = filters.ddd.length === 0 || filters.ddd.includes(driverDdd);
+      
+      const classificationMatch = filters.classification.length === 0 || filters.classification.includes(driver.classification);
+      
+      const ownerName = owners.find(o => o.id === driver.ownerId)?.name || '';
+      const ownerMatch = filters.ownerNames.length === 0 || filters.ownerNames.includes(ownerName);
       
       let statusMatch = true;
-      if (filters.status === 'active') statusMatch = driver.active;
-      else if (filters.status === 'restricted') statusMatch = !driver.active;
+      if (filters.status.length > 0) {
+          const isDriverActive = driver.active ? 'Ativo' : 'Restrito';
+          statusMatch = filters.status.includes(isDriverActive);
+      }
 
-      return nameMatch && cpfMatch && cnhMatch && phoneMatch && classificationMatch && ownerMatch && statusMatch;
+      return idMatch && nameMatch && cpfMatch && cnhMatch && phoneMatch && dddMatch && classificationMatch && ownerMatch && statusMatch;
     });
   }, [drivers, filters]);
-
-  React.useEffect(() => {
-    setCurrentPage(1);
-  }, [filters]);
-
-  const totalPages = Math.ceil(filteredDrivers.length / itemsPerPage);
-  const paginatedDrivers = filteredDrivers.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
 
   const handleOpenModal = () => {
     setDriverToEdit(null);
@@ -303,42 +300,33 @@ const DriversPage: React.FC<DriversPageProps> = ({
 
   return (
     <>
-      <Header title="Motoristas & Condutores">
+      <Header title="Cadastro de Motoristas">
         {canCreate && (
             <>
                 <button onClick={handleImportClick} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">Importar</button>
                 <button onClick={handleExport} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">Exportar</button>
-                <button onClick={handleOpenModal} className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark font-medium">Cadastrar Motorista</button>
+                <button onClick={handleOpenModal} className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark">Adicionar Motorista</button>
             </>
         )}
       </Header>
       
       <input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden" accept=".csv,.xls,.xlsx"/>
 
-      <div style={{ zoom: 0.8 }}>
+      <div>
         <DriverFilter 
+          drivers={drivers}
           owners={owners} 
           filters={filters} 
           onFilterChange={setFilters} 
         />
 
         <DriverTable 
-          drivers={paginatedDrivers} 
+          drivers={filteredDrivers} 
           owners={owners} 
           onEdit={canUpdate ? handleEditDriver : undefined} 
           onDelete={canDelete ? handleDeleteDriver : undefined} 
           onShowHistory={handleShowHistory}
         />
-
-        {totalPages > 1 && (
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            totalItems={filteredDrivers.length}
-            itemsPerPage={itemsPerPage}
-          />
-        )}
       </div>
 
       <DriverFormModal 

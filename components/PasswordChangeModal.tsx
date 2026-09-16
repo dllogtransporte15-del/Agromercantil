@@ -5,9 +5,10 @@ import type { User } from '../types';
 interface PasswordChangeModalProps {
   user: User;
   onPasswordChange: (newPassword: string, currentPassword: string) => Promise<void>;
+  onCancel?: () => void;
 }
 
-const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ user, onPasswordChange }) => {
+const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ user, onPasswordChange, onCancel }) => {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -18,7 +19,7 @@ const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ user, onPassw
     e.preventDefault();
     setError('');
 
-    if (!currentPassword) {
+    if (!user.isFirstSetup && !currentPassword) {
       setError('A senha atual é obrigatória.');
       return;
     }
@@ -51,29 +52,37 @@ const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ user, onPassw
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
           </div>
-          <h2 className="text-2xl font-black text-primary dark:text-white tracking-tight text-center uppercase">SEGURANÇA DE ACESSO</h2>
+          <h2 className="text-2xl font-black text-primary dark:text-white tracking-tight text-center uppercase">
+            {user.isFirstSetup ? 'CRIAR SENHA DE ACESSO' : 'SEGURANÇA DE ACESSO'}
+          </h2>
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            Olá, <span className="font-bold text-gray-700 dark:text-white">{user.name}</span>. Por segurança, sua senha deve ser renovada a cada 30 dias. Forneça sua senha atual e crie uma nova.
+            Olá, <span className="font-bold text-gray-700 dark:text-white">{user.name}</span>. 
+            {user.isFirstSetup 
+              ? ' Para garantir a segurança da sua conta, por favor, crie uma senha de acesso.' 
+              : ' Por segurança, sua senha deve ser renovada a cada 30 dias. Forneça sua senha atual e crie uma nova.'}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">
-              Senha Atual
-            </label>
-            <input
-              type="password"
-              className="w-full px-4 py-3 bg-red-50/30 dark:bg-red-900/10 border-2 border-red-100 dark:border-red-900/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-gray-700 dark:text-white transition-all placeholder-gray-400"
-              placeholder="Digite sua senha atual"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-              disabled={isSubmitting}
-            />
-          </div>
-
-          <hr className="border-gray-100 dark:border-gray-800" />
+          {!user.isFirstSetup && (
+            <>
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">
+                  Senha Atual
+                </label>
+                <input
+                  type="password"
+                  className="w-full px-4 py-3 bg-red-50/30 dark:bg-red-900/10 border-2 border-red-100 dark:border-red-900/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-gray-700 dark:text-white transition-all placeholder-gray-400"
+                  placeholder="Digite sua senha atual"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required={!user.isFirstSetup}
+                  disabled={isSubmitting}
+                />
+              </div>
+              <hr className="border-gray-100 dark:border-gray-800" />
+            </>
+          )}
 
           <div>
             <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">
@@ -131,12 +140,22 @@ const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ user, onPassw
                 </span>
               ) : 'ATUALIZAR ACESSO'}
             </button>
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={isSubmitting}
+                className="w-full mt-3 py-3 px-4 border-2 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 font-bold rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+              >
+                VOLTAR PARA O LOGIN
+              </button>
+            )}
           </div>
         </form>
 
         <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700 text-center">
           <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] font-bold">
-            AGROMARCANTIL | SEGURANÇA DIGITAL
+            AGROMERCANTIL | SEGURANÇA DIGITAL
           </p>
         </div>
       </div>

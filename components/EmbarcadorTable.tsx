@@ -18,6 +18,9 @@ const EmbarcadorTable: React.FC<EmbarcadorTableProps> = ({ embarcadores, onEdit,
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">
                 Nome
               </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">
+                Comissão (R$/ton)
+              </th>
               {(onEdit || onDelete) && (
                 <th scope="col" className="relative px-6 py-3">
                   <span className="sr-only">Ações</span>
@@ -30,6 +33,15 @@ const EmbarcadorTable: React.FC<EmbarcadorTableProps> = ({ embarcadores, onEdit,
               <tr key={embarcador.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm font-medium text-gray-900 dark:text-white">{embarcador.name}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  {embarcador.shipperCommissionRatePerTon ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300 font-mono">
+                      R$ {embarcador.shipperCommissionRatePerTon.toFixed(2)}/t
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400">Padrão (R$ 0,00)</span>
+                  )}
                 </td>
                 {(onEdit || onDelete) && (
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

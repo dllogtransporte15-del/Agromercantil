@@ -1,8 +1,7 @@
 
-import React from 'react';
-import { History } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { History, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
 import type { Driver, Owner } from '../types';
-import { formatCpfCnpj, formatPhone } from '../utils/formatters';
 
 interface DriverTableProps {
   drivers: Driver[];
@@ -13,17 +12,80 @@ interface DriverTableProps {
 }
 
 const DriverTable: React.FC<DriverTableProps> = ({ drivers, owners, onEdit, onDelete, onShowHistory }) => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
+  const [sortKey, setSortKey] = useState<string>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  const sortedDrivers = useMemo(() => {
+    return [...drivers].sort((a, b) => {
+      let valA = '';
+      let valB = '';
+      if (sortKey === 'id') { valA = a.id || ''; valB = b.id || ''; }
+      else if (sortKey === 'name') { valA = a.name; valB = b.name; }
+      else if (sortKey === 'classification') { valA = a.classification || ''; valB = b.classification || ''; }
+      else if (sortKey === 'status') { valA = a.active ? 'Ativo' : 'Restrito'; valB = b.active ? 'Ativo' : 'Restrito'; }
+      const cmp = valA.localeCompare(valB, 'pt-BR', { numeric: true });
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [drivers, sortKey, sortDir]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [sortedDrivers]);
+
+  const totalPages = Math.ceil(sortedDrivers.length / itemsPerPage) || 1;
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedDrivers = sortedDrivers.slice((safeCurrentPage - 1) * itemsPerPage, safeCurrentPage * itemsPerPage);
+
   const getOwnerName = (ownerId?: string) => {
     if (!ownerId) return 'N/A';
     return owners.find(o => o.id === ownerId)?.name || 'Desconhecido';
   };
 
+  const formatWhatsAppLink = (phone: string) => {
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (!cleanPhone) return '#';
+    if (cleanPhone.startsWith('55') && cleanPhone.length > 11) {
+        return `https://wa.me/${cleanPhone}`;
+    }
+    return `https://wa.me/55${cleanPhone}`;
+  };
+
   return (
     <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden">
+      {/* Sort controls */}
+      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+          <ArrowUpDown className="w-4 h-4 text-gray-400" />
+          <span className="font-medium">Ordenar por:</span>
+        </div>
+        <select
+          value={sortKey}
+          onChange={e => { setSortKey(e.target.value); setCurrentPage(1); }}
+          className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-primary outline-none"
+        >
+          <option value="id">ID de Registro</option>
+          <option value="name">Nome</option>
+          <option value="classification">Classificação</option>
+          <option value="status">Status</option>
+        </select>
+        <select
+          value={sortDir}
+          onChange={e => { setSortDir(e.target.value as 'asc' | 'desc'); setCurrentPage(1); }}
+          className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-primary outline-none"
+        >
+          <option value="asc">Crescente (A → Z)</option>
+          <option value="desc">Decrescente (Z → A)</option>
+        </select>
+        <span className="ml-auto text-xs text-gray-500 dark:text-gray-400">{sortedDrivers.length} motoristas</span>
+      </div>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">ID</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Nome</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">CPF / CNH</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Telefone</th>
@@ -35,14 +97,33 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers, owners, onEdit, onDe
             </tr>
           </thead>
           <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-            {drivers.map((driver) => (
+            {paginatedDrivers.map((driver) => (
               <tr key={driver.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                    {driver.id}
+                  </span>
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{driver.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  <div className="text-gray-900 dark:text-white">{driver.cpf ? formatCpfCnpj(driver.cpf) : ''}</div>
+                  <div className="text-gray-900 dark:text-white">{driver.cpf}</div>
                   <div className="text-gray-500 dark:text-gray-400">CNH: {driver.cnh}</div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{driver.phone ? formatPhone(driver.phone) : ''}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  {driver.phone ? (
+                    <a 
+                      href={formatWhatsAppLink(driver.phone)}
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50 rounded-lg transition-colors font-medium"
+                      title="Conversar no WhatsApp"
+                    >
+                      {driver.phone}
+                    </a>
+                  ) : (
+                    <span className="text-gray-500 dark:text-gray-400">-</span>
+                  )}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{driver.classification}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getOwnerName(driver.ownerId)}</td>
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -72,6 +153,33 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers, owners, onEdit, onDe
           </tbody>
         </table>
       </div>
+
+      {totalPages > 1 && (
+        <div className="px-6 py-4 flex flex-col sm:flex-row items-center justify-between border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 gap-4">
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+             Mostrando <span className="font-medium">{(safeCurrentPage - 1) * itemsPerPage + 1}</span> a <span className="font-medium">{Math.min(safeCurrentPage * itemsPerPage, sortedDrivers.length)}</span> de <span className="font-medium">{sortedDrivers.length}</span> motoristas
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={safeCurrentPage === 1}
+              className="p-2 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Página {safeCurrentPage} de {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={safeCurrentPage === totalPages}
+              className="p-2 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,5 +1,5 @@
 {
-  "name": "agromarcantil-control",
+  "name": "agromercantil-control",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "tsc --noEmit",
-    "deploy": "node deploy.mjs"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@google/genai": "^1.50.1",
@@ -20,13 +19,11 @@
     "jspdf-autotable": "^5.0.7",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.8.0",
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-leaflet": "^5.0.0",
-    "react-multi-date-picker": "^4.5.2",
-    "react-router-dom": "^7.16.0",
-    "tesseract.js": "^7.0.0",
-    "zustand": "^5.0.14"
+    "react-router-dom": "^7.18.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
@@ -34,7 +31,8 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
-    "vite": "^6.4.2"
+    "vite": "^6.4.2",
+    "vite-plugin-pwa": "^1.3.0"
   },
   "overrides": {
     "protobufjs": "^8.0.1",

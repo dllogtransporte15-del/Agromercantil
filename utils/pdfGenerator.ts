@@ -3,6 +3,56 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Shipment, Cargo, Client, Product, Vehicle } from "../types";
 
+export const getStoredCompanyLogo = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  return (
+    localStorage.getItem('agromercantil_companyLogo') ||
+    localStorage.getItem('transcunha_companyLogo') ||
+    localStorage.getItem('trancunha_companyLogo') ||
+    null
+  );
+};
+
+export const addPdfLogo = (
+  doc: jsPDF,
+  logo?: string | null,
+  options?: {
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    align?: 'left' | 'right' | 'center';
+  }
+): boolean => {
+  const effectiveLogo = logo || getStoredCompanyLogo();
+  if (!effectiveLogo) return false;
+
+  const w = options?.width ?? 35;
+  const h = options?.height ?? 15;
+  const y = options?.y ?? 5;
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  let x = options?.x;
+  if (x === undefined) {
+    if (options?.align === 'left') {
+      x = 14;
+    } else if (options?.align === 'center') {
+      x = (pageWidth - w) / 2;
+    } else {
+      // Default: Top right
+      x = pageWidth - 14 - w;
+    }
+  }
+
+  try {
+    doc.addImage(effectiveLogo, 'PNG', x, y, w, h);
+    return true;
+  } catch (e) {
+    console.warn("Could not add company logo to PDF", e);
+    return false;
+  }
+};
+
 export const generateLoadingOrderPDF = (
   shipment: Shipment,
   cargo: Cargo,
@@ -14,12 +64,13 @@ export const generateLoadingOrderPDF = (
   const doc = new jsPDF();
   const client = clients.find((c) => c.id === cargo.clientId);
   const product = products.find((p) => p.id === cargo.productId);
-  const mainVehicle = vehicles.find((v) => v.plate.trim().toLowerCase() === shipment.horsePlate.trim().toLowerCase());
+  const normalizePlate = (p: string | undefined | null) => p ? p.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() : "";
+  const mainVehicle = vehicles.find((v) => normalizePlate(v.plate) === normalizePlate(shipment.horsePlate));
 
   // Brand Colors
-  const primaryBlue: [number, number, number] = [29, 59, 141]; // #1D3B8D
-  const accentOrange: [number, number, number] = [241, 100, 33]; // #F16421
-  const secondaryGray: [number, number, number] = [107, 114, 128]; // #6B7280
+  const primaryBlue: [number, number, number] = [11, 102, 228]; // #0B66E4 Agromercantil Vivid Electric Blue
+  const accentBlue: [number, number, number] = [2, 132, 199];  // #0284C7 Agromercantil Sky Accent
+  const secondaryGray: [number, number, number] = [100, 116, 139]; // #64748B
 
   // Constants
   const margin = 14;
@@ -28,13 +79,13 @@ export const generateLoadingOrderPDF = (
 
   // Draw Header background for branding
   doc.setFillColor(248, 250, 252); // light slate
-  doc.rect(0, 0, pageWidth, 45, 'F');
+  doc.rect(0, 0, pageWidth, 40, 'F');
   
   // Logo
-  if (companyLogo) {
+  const effectiveLogo = companyLogo || getStoredCompanyLogo();
+  if (effectiveLogo) {
       try {
-          // Adjust logo width/height if needed to prevent squash, but keeping original dimension settings
-          doc.addImage(companyLogo, 'PNG', margin, 5, 35, 20); 
+          doc.addImage(effectiveLogo, 'PNG', margin, 5, 35, 20); 
       } catch (e) {
           console.warn("Could not add company logo to PDF", e);
       }
@@ -44,10 +95,9 @@ export const generateLoadingOrderPDF = (
   doc.setFontSize(8);
   doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
   doc.setFont("helvetica", "normal");
-  doc.text("CNPJ: 20.439.095/0001-51", margin, 28);
-  doc.text("Logradouro: Rua Beijos Brancos, 374 - Bairro: Cidade Jardim - CEP: 38412-204", margin, 32);
-  doc.text("Município: Uberlândia - Estado: Minas Gerais", margin, 36);
-  doc.text("Autorização de Carregamento", margin, 40);
+  doc.text("CNPJ: 57.359.600/0001-68", margin, 28);
+  doc.text("Rua Monteiro Lobato, 325 - Vila Nova - Poços de Caldas/MG - 37701-110", margin, 32);
+  doc.text("Autorização de Carregamento de Transportes", margin, 36);
 
   // Document ID & Date (Top Right)
   doc.setFontSize(10);
@@ -59,15 +109,15 @@ export const generateLoadingOrderPDF = (
   doc.text(`Emissão: ${new Date().toLocaleString('pt-BR')}`, pageWidth - margin, 24, { align: 'right' });
 
   // Divider
-  doc.setDrawColor(accentOrange[0], accentOrange[1], accentOrange[2]);
+  doc.setDrawColor(accentBlue[0], accentBlue[1], accentBlue[2]);
   doc.setLineWidth(1.5);
-  doc.line(margin, 45, pageWidth - margin, 45);
+  doc.line(margin, 40, pageWidth - margin, 40);
 
   // Title Section
   doc.setFontSize(16);
   doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
   doc.setFont("helvetica", "bold");
-  doc.text("ORDEM DE CARREGAMENTO", pageWidth / 2, 58, { align: 'center' });
+  doc.text("ORDEM DE CARREGAMENTO", pageWidth / 2, 53, { align: 'center' });
 
   // --- Carga Info ---
   doc.setFontSize(11);
@@ -78,11 +128,11 @@ export const generateLoadingOrderPDF = (
     startY: 71,
     head: [["Descrição do Requisito", "Informações Detalhadas"]],
     body: [
-      ["CLIENTE / EMBARCADOR", (client?.nomeFantasia || client?.razaoSocial || cargo.clientId).toUpperCase()],
-      ["PRODUTO / MERCADORIA", (product?.name || cargo.productId).toUpperCase()],
-      ["PESO / TONELAGEM", `${shipment.shipmentTonnage.toLocaleString("pt-BR")} TON`],
-      ["ORIGEM DO CARREGAMENTO", cargo.origin.toUpperCase()],
-      ["DESTINO DA CARGA", cargo.destination.toUpperCase()],
+      ["CLIENTE / EMBARCADOR", (client?.nomeFantasia || client?.razaoSocial || cargo.clientId || '').toUpperCase()],
+      ["PRODUTO / MERCADORIA", (product?.name || cargo.productId || '').toUpperCase()],
+      ["PESO / TONELAGEM", `${(Number(shipment.shipmentTonnage) || 0).toLocaleString("pt-BR")} TON`],
+      ["ORIGEM DO CARREGAMENTO", cargo.originLocation ? `${cargo.origin || ''} - ${cargo.originLocation}`.toUpperCase() : (cargo.origin || '').toUpperCase()],
+      ["DESTINO DA CARGA", cargo.destinationLocation ? `${cargo.destination || ''} - ${cargo.destinationLocation}`.toUpperCase() : (cargo.destination || '').toUpperCase()],
       ["DATA PROGRAMADA", shipment.scheduledDate ? new Date(`${shipment.scheduledDate}T00:00:00`).toLocaleDateString('pt-BR') : 'N/A'],
     ],
     theme: "striped",
@@ -106,8 +156,8 @@ export const generateLoadingOrderPDF = (
       ["CPF DO CONDUTOR", shipment.driverCpf || "N/A"],
       ["TELEFONE CONTATO", shipment.driverContact || "N/A"],
       ["PLACA (CAVALO)", shipment.horsePlate.toUpperCase()],
-      ["TIPO DE VEÍCULO", mainVehicle?.setType?.toUpperCase() || "N/A"],
-      ["CARROCERIA", mainVehicle?.bodyType?.toUpperCase() || "N/A"],
+      ["TIPO DE VEÍCULO", (mainVehicle?.setType || shipment.vehicleSetType || "N/A").toUpperCase()],
+      ["CARROCERIA", (mainVehicle?.bodyType || shipment.vehicleBodyType || "N/A").toUpperCase()],
       ["PLACA(S) CARRETA(S)", [shipment.trailer1Plate, shipment.trailer2Plate, shipment.trailer3Plate].filter(Boolean).join(" / ").toUpperCase() || "N/A"],
       ["PROPRIETÁRIO / TITULAR", (shipment.anttOwnerIdentifier || shipment.ownerContact || "N/A").toUpperCase()],
     ],
@@ -117,7 +167,28 @@ export const generateLoadingOrderPDF = (
     columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: primaryBlue } }
   });
 
-  let currentY = (doc as any).lastAutoTable.finalY + 12;
+  const paymentY = (doc as any).lastAutoTable.finalY + 8;
+
+  // --- Pagamento & Adiantamento ---
+  doc.setFontSize(11);
+  doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+  doc.text("3. CONDIÇÕES DE PAGAMENTO E ADIANTAMENTO", margin, paymentY);
+
+  autoTable(doc, {
+    startY: paymentY + 3,
+    head: [["Item de Pagamento", "Detalhamento"]],
+    body: [
+      ["FORMA DE PAGAMENTO", (shipment.paymentMethod || "PIX - E-FRETE").toUpperCase()],
+      ["ADIANTAMENTO (%)", `${shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70}%`],
+      ["CHAVE PIX / DADOS BANCÁRIOS", (shipment.paymentMethod === 'PIX - E-FRETE' ? (shipment.pixKey || shipment.bankDetails || "N/A") : (shipment.bankDetails || shipment.pixKey || "N/A")).toUpperCase()],
+    ],
+    theme: "striped",
+    headStyles: { fillColor: primaryBlue, fontSize: 10, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 9 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: primaryBlue } }
+  });
+
+  let currentY = (doc as any).lastAutoTable.finalY + 8;
 
   // Espaço antes do rodapé
   currentY += 5;
@@ -141,14 +212,14 @@ export const generateLoadingOrderPDF = (
   // Authority signature
   doc.line(pageWidth - margin - 80, footerY, pageWidth - margin, footerY);
   doc.setFontSize(8);
-  doc.text("AGROMERCANTIL - TRANSPORTES", pageWidth - margin - 40, footerY + 5, { align: 'center' });
+  doc.text("AGROMERCANTIL LOGÍSTICA", pageWidth - margin - 40, footerY + 5, { align: 'center' });
   doc.setFontSize(7);
   doc.text("AUTORIZAÇÃO DE CARREGAMENTO", pageWidth - margin - 40, footerY + 9, { align: 'center' });
 
   // Final Footer Note
   doc.setFontSize(7);
   doc.setTextColor(150);
-  const footerText = "Este documento é exclusivo para controle interno de carregamento da AGROMERCANTIL - TRANSPORTES. As informações aqui contidas são confidenciais.";
+  const footerText = "Este documento é exclusivo para controle interno de carregamento da AGROMERCANTIL LOGÍSTICA. As informações aqui contidas são confidenciais.";
   doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
 
   // Save PDF

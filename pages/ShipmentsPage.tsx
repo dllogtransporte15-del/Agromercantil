@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Header from '../components/Header';
 import ShipmentTable from '../components/ShipmentTable';
 import ShipmentStatusFilter from '../components/ShipmentStatusFilter';
@@ -12,12 +12,14 @@ import CargoDetailsModal from '../components/CargoDetailsModal';
 import TransferShipmentModal from '../components/TransferShipmentModal';
 import EditScheduledDateTimeModal from '../components/EditScheduledDateTimeModal';
 import SwapCargoModal from '../components/SwapCargoModal';
-import type { Shipment, Cargo, Client, Driver, User, ProfilePermissions, Product, Vehicle, ShipmentLock } from '../types';
+import type { Shipment, Cargo, Client, Driver, User, ProfilePermissions, Product, Vehicle, ShipmentLock, RiskQueryOption } from '../types';
 
 import { ShipmentStatus, UserProfile, REQUIRED_DOCUMENT_MAP } from '../types';
-import { can } from '../auth';
-import { tryAcquireShipmentLock, releaseShipmentLock } from '../services/api/db';
-import { useEffect, useRef } from 'react';
+import { can, isDemoUser } from '../auth';
+import { FileText, X } from 'lucide-react';
+import { getShipmentCte, isCteApplicableForStatus } from '../utils';
+import { StayRecord } from '../utils/toolStorage';
+import type { Ticket } from '../types';
 
 interface ShipmentsPageProps {
   shipments: Shipment[];
@@ -38,9 +40,14 @@ interface ShipmentsPageProps {
     tollValue?: number, 
     balanceToReceiveValue?: number,
     discountValue?: number,
+    isBreakageWaived?: boolean,
     netBalanceValue?: number,
     unloadedTonnage?: number,
-    route?: string 
+    route?: string,
+    grStatus?: 'aprovado' | 'reprovado' | 'reprovado_restrito',
+    riskReleaseCode?: string,
+    riskQueryType?: string,
+    riskQueryCost?: number,
   }) => Promise<void>;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onUpdatePrice: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
@@ -57,7 +64,10 @@ interface ShipmentsPageProps {
   companyLogo?: string | null;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onSwapCargo: (shipmentId: string, newCargoId: string) => void;
-  isSimplifiedWorkflowEnabled?: boolean;
+  stays?: StayRecord[];
+  tickets?: Ticket[];
+  riskQueryOptions?: RiskQueryOption[];
+  onBatchUpdateShipments?: (updatedShipments: Shipment[]) => Promise<void> | void;
 }
 
 
@@ -69,13 +79,11 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   profilePermissions, users, onUpdateAttachment, onAddAttachments, onUpdatePrice, onConfirmCancel, 
   onUpdateAnttAndBankDetails, onTransferShipment, onMarkArrival, onDeleteShipment,
   onRevertStatus, onUpdateScheduledDateTime, onUpdateShipmentData, activeLocks, onModalStateChange,
-  companyLogo, onDeleteAttachment, onSwapCargo, isSimplifiedWorkflowEnabled
+  companyLogo, onDeleteAttachment, onSwapCargo, stays = [], tickets = [], riskQueryOptions,
+  onBatchUpdateShipments
 }) => {
 
-  const isSimplifiedView = isSimplifiedWorkflowEnabled ?? (typeof window !== 'undefined' && localStorage.getItem('isSimplifiedWorkflowEnabled') === 'true');
-  const [activeStatus, setActiveStatus] = useState<ShipmentStatus | 'all'>(
-    isSimplifiedView ? ShipmentStatus.AguardandoSeguradora : ShipmentStatus.PreCadastro
-  );
+  const [activeStatus, setActiveStatus] = useState<ShipmentStatus | 'all'>(ShipmentStatus.PreCadastro);
   const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
   const [isEditPriceModalOpen, setEditPriceModalOpen] = useState(false);
   const [isCancelModalOpen, setCancelModalOpen] = useState(false);
@@ -87,21 +95,6 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
 
   const [detailsModalCargo, setDetailsModalCargo] = useState<Cargo | null>(null);
-
-  useEffect(() => {
-    if (isSimplifiedView) {
-      const allowedInSimplified: (ShipmentStatus | 'all')[] = [
-        ShipmentStatus.AguardandoSeguradora,
-        ShipmentStatus.AguardandoCarregamento,
-        ShipmentStatus.AguardandoNota,
-        ShipmentStatus.AguardandoDescarga,
-        'all',
-      ];
-      if (!allowedInSimplified.includes(activeStatus)) {
-        setActiveStatus(ShipmentStatus.AguardandoSeguradora);
-      }
-    }
-  }, [isSimplifiedView, activeStatus]);
 
   // Sync selected shipment with latest data from props
   useEffect(() => {
@@ -127,30 +120,42 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
 
 
 
-  const canUpdate = can('update', currentUser, 'shipments', profilePermissions);
-  const canDelete = can('delete', currentUser, 'shipments', profilePermissions);
+  const isDemo = isDemoUser(currentUser);
+  const canUpdate = !isDemo && can('update', currentUser, 'shipments', profilePermissions);
+  const canDelete = !isDemo && can('delete', currentUser, 'shipments', profilePermissions);
 
-  const allowedProfilesForActions = [UserProfile.Comercial, UserProfile.Coordenador, UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal];
-  const canPerformSpecialActions = currentUser && allowedProfilesForActions.includes(currentUser.profile);
+  const allowedProfilesForActions = [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco];
+  const canPerformSpecialActions = !isDemo && currentUser && allowedProfilesForActions.includes(currentUser.profile);
   
   const canEditPrice = canUpdate && canPerformSpecialActions;
-  const canCancelShipment = canPerformSpecialActions && (canDelete || currentUser.profile === UserProfile.Fiscal);
-  const canTransferShipment = (canUpdate && canPerformSpecialActions) || currentUser?.profile === UserProfile.Embarcador;
+  const canCancelShipment = canPerformSpecialActions && (canDelete || currentUser.profile === UserProfile.Fiscal || currentUser.profile === UserProfile.Supervisor);
+  const canTransferShipment = (canUpdate || currentUser.profile === UserProfile.Supervisor) && canPerformSpecialActions;
   const isClient = currentUser.profile === UserProfile.Cliente;
+  const isFinanceiro = currentUser.profile === UserProfile.Financeiro;
+
+  const [filterCte, setFilterCte] = useState('');
+  const [filterNfe, setFilterNfe] = useState('');
+  const [filterMdfe, setFilterMdfe] = useState('');
 
   const filteredShipments = useMemo(() => {
-    const list = isSimplifiedView 
-      ? shipments.filter(s => s.isSimplified)
-      : shipments;
-
+    let result: Shipment[];
     if (activeStatus === 'all') {
-      return list.filter(s => 
-        s.status !== ShipmentStatus.Cancelado && 
+      result = shipments.filter(s =>
+        s.status !== ShipmentStatus.Cancelado &&
         s.status !== ShipmentStatus.Finalizado
       );
+    } else {
+      result = shipments.filter(shipment => shipment.status === activeStatus);
     }
-    return list.filter(shipment => shipment.status === activeStatus);
-  }, [shipments, activeStatus, isSimplifiedView]);
+    if (filterCte.trim()) {
+      const q = filterCte.trim().toLowerCase();
+      result = result.filter(s => {
+        const cte = getShipmentCte(s).toLowerCase();
+        return (cte !== '-' && cte.includes(q)) || (isCteApplicableForStatus(s.status) && !!s.cteNumber && s.cteNumber.toLowerCase().includes(q));
+      });
+    }
+    return result;
+  }, [shipments, activeStatus, filterCte]);
   
   const handleOpenAttachmentModal = async (shipment: Shipment) => {
     // Locking logic removed per user request
@@ -169,24 +174,16 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
     setSelectedShipment(null);
   };
 
-  const handleSaveAttachment = async (data: { 
-    filesToAttach: { [key: string]: File[] }, 
-    bankDetails?: string, 
-    loadedTonnage?: number, 
-    advancePercentage?: number, 
-    advanceValue?: number,
-    tollValue?: number, 
-    balanceToReceiveValue?: number,
-    discountValue?: number,
-    netBalanceValue?: number,
-    unloadedTonnage?: number,
-    route?: string 
-  }) => {
+  const handleSaveAttachment = async (data: any) => {
     if (!selectedShipment) return;
     
-    // We await here so that if it throws, the modal doesn't close
-    await onUpdateAttachment(selectedShipment.id, data);
-    handleCloseAttachmentModal();
+    try {
+      await onUpdateAttachment(selectedShipment.id, data);
+      handleCloseAttachmentModal();
+    } catch (err) {
+      console.error('Error in handleSaveAttachment:', err);
+      throw err;
+    }
   };
   
   const handleSaveAnttData = (data: { anttOwnerIdentifier: string; bankDetails?: string }) => {
@@ -257,26 +254,33 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
     const defaultResponse = { allowed: true, reason: '' };
     if (!currentUser) return { allowed: false, reason: 'Usuário não autenticado.' };
 
-    // Embarques simplificados podem ser avançados em qualquer status por Embarcadores e demais operadores
-    if (shipment.isSimplified) return defaultResponse;
+    if (isDemoUser(currentUser)) {
+      return { allowed: false, reason: 'Usuário em modo demonstração possui acesso apenas de visualização.' };
+    }
 
     const currentStatus = shipment.status;
     const userProfile = currentUser.profile;
 
     if (userProfile === UserProfile.Admin) return defaultResponse;
 
-    if (currentStatus === ShipmentStatus.PreCadastro || currentStatus === ShipmentStatus.AguardandoSeguradora) {
-        if ([UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Coordenador].includes(userProfile)) return defaultResponse;
-        return { allowed: false, reason: 'Apenas Fiscal, Diretor, Coordenador ou Admin podem avançar este status.' };
+    if (currentStatus === ShipmentStatus.PreCadastro) {
+        if ([UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Agenciador, UserProfile.GerenciadoraDeRisco].includes(userProfile)) return defaultResponse;
+        return { allowed: false, reason: 'Apenas Gerenciadora de Risco, Comercial, Fiscal, Diretor, Supervisor, Embarcador, Agenciador ou Admin podem avançar este status.' };
+    }
+
+    if (currentStatus === ShipmentStatus.AguardandoSeguradora) {
+        if (userProfile === UserProfile.GerenciadoraDeRisco) return defaultResponse;
+        return { allowed: false, reason: 'Apenas o perfil Gerenciadora de Risco ou Administrador do Sistema pode avançar embarques neste status.' };
     }
 
     if (currentStatus === ShipmentStatus.AguardandoAdiantamento || currentStatus === ShipmentStatus.AguardandoPagamentoSaldo) {
-        if ([UserProfile.Financeiro, UserProfile.Diretor, UserProfile.Coordenador].includes(userProfile)) return defaultResponse;
-        return { allowed: false, reason: 'Apenas Financeiro, Diretor, Coordenador ou Admin podem avançar.' };
+        if ([UserProfile.Financeiro, UserProfile.Diretor, UserProfile.Supervisor].includes(userProfile)) return defaultResponse;
+        return { allowed: false, reason: 'Apenas Financeiro, Diretor, Supervisor ou Admin podem avançar.' };
     }
 
     return defaultResponse;
   };
+
 
   return (
     <>
@@ -286,41 +290,43 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         activeStatus={activeStatus} 
         onStatusChange={setActiveStatus}
         currentUser={currentUser}
-        isSimplifiedView={isSimplifiedView}
       />
 
       <ShipmentTable 
         shipments={filteredShipments} 
         cargos={cargos}
+        drivers={drivers}
         users={users}
         vehicles={vehicles}
-        onAttach={(canUpdate || isClient) ? handleOpenAttachmentModal : undefined}
-        onAddAttachments={onAddAttachments}
+        filterCte={filterCte}
+        onFilterCteChange={setFilterCte}
+        onAttach={!isDemo && (canUpdate || isClient || isFinanceiro) ? handleOpenAttachmentModal : undefined}
+        onAddAttachments={!isDemo ? onAddAttachments : undefined}
         onEditPrice={canEditPrice ? handleEditPrice : undefined}
         onCancel={canCancelShipment ? handleCancelShipment : undefined}
         onTransfer={canTransferShipment ? handleOpenTransferModal : undefined}
         onShowHistory={handleShowHistory}
         onShowCargoDetails={handleShowCargoDetails}
         canUserAdvanceStatus={canUserAdvanceStatus}
-        onMarkArrival={onMarkArrival}
-        onDelete={onDeleteShipment}
-        onRevertStatus={onRevertStatus}
-        onOpenCadastroAntt={handleOpenCadastroAnttModal}
-        onOpenEditScheduledDateTime={(shipment) => {
+        onMarkArrival={!isDemo ? onMarkArrival : undefined}
+        onDelete={!isDemo ? onDeleteShipment : undefined}
+        onRevertStatus={!isDemo ? onRevertStatus : undefined}
+        onOpenCadastroAntt={!isDemo ? handleOpenCadastroAnttModal : undefined}
+        onOpenEditScheduledDateTime={!isDemo ? (shipment) => {
           setSelectedShipment(shipment);
           setEditScheduledDateTimeModalOpen(true);
-        }}
-        onUpdatePrice={onUpdatePrice}
-        onUpdateShipmentData={onUpdateShipmentData}
+        } : undefined}
+        onUpdatePrice={!isDemo ? onUpdatePrice : undefined}
+        onUpdateShipmentData={!isDemo ? onUpdateShipmentData : undefined}
         currentUser={currentUser}
-        profilePermissions={profilePermissions}
         activeStatus={activeStatus}
         clients={clients}
         products={products}
         companyLogo={companyLogo}
-        onDeleteAttachment={onDeleteAttachment}
-        onSwapCargo={handleOpenSwapCargoModal}
-        activeLocks={activeLocks}
+        onDeleteAttachment={!isDemo ? onDeleteAttachment : undefined}
+        onSwapCargo={!isDemo ? handleOpenSwapCargoModal : undefined}
+        onPerformSwapCargo={!isDemo ? onSwapCargo : undefined}
+        tickets={tickets}
       />
 
       {selectedShipment && (
@@ -328,13 +334,23 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
           isOpen={isAttachmentModalOpen}
           onClose={handleCloseAttachmentModal}
           onSave={handleSaveAttachment}
-          shipment={selectedShipment}
+          shipment={shipments.find(s => s.id === selectedShipment.id) || selectedShipment}
           cargo={cargos.find(c => c.id === selectedShipment.cargoId)}
           documentName={REQUIRED_DOCUMENT_MAP[selectedShipment.status] || 'Documento'}
           currentUser={currentUser}
           canSave={canUserAdvanceStatus(selectedShipment).allowed}
+          requiresRiskManagement={
+            products.find(p => p.id === cargos.find(c => c.id === selectedShipment.cargoId)?.productId)
+              ?.requiresRiskManagement !== false
+          }
+          products={products}
+          clients={clients}
+          users={users}
+          riskQueryOptions={riskQueryOptions}
+          onUpdateShipmentData={onUpdateShipmentData}
         />
       )}
+
       {selectedShipment && (
         <CadastroAnttModal
           isOpen={isCadastroAnttModalOpen}
@@ -403,6 +419,9 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
             client={clients.find(c => c.id === detailsModalCargo.clientId)}
             product={products.find(p => p.id === detailsModalCargo.productId)}
             commercialUser={users.find(u => u.id === detailsModalCargo.createdById)}
+            stays={stays}
+            shipments={shipments}
+            currentUser={currentUser}
           />
       )}
 
@@ -420,6 +439,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
           products={products}
         />
       )}
+
     </>
   );
 };

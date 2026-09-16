@@ -1,7 +1,6 @@
 import React from 'react';
 import { X, Truck, Calendar, Weight, Info } from 'lucide-react';
 import type { Cargo, Shipment, User, Client, Product, Vehicle } from '../types';
-import { getShipmentStatusLabel } from '../utils';
 import ShipmentDetailsModal from './ShipmentDetailsModal';
 
 interface CargoShipmentsSidePanelProps {
@@ -17,6 +16,8 @@ interface CargoShipmentsSidePanelProps {
   companyLogo?: string | null;
   vehicles: Vehicle[];
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
+  onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
+  cargos?: Cargo[];
 }
 
 
@@ -33,7 +34,9 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
   products,
   companyLogo,
   vehicles,
-  onDeleteAttachment
+  onDeleteAttachment,
+  onSwapCargo,
+  cargos = []
 }) => {
 
 
@@ -69,7 +72,14 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
           {/* Header */}
           <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
             <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Embarques da Carga #{cargo.sequenceId}</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Embarques da Carga #{cargo.sequenceId}</h2>
+                {cargo.tmsLoteNumber && (
+                  <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700/60" title={`Lote TMS: ${cargo.tmsLoteNumber}`}>
+                    Lote TMS: {cargo.tmsLoteNumber}
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Total de {cargoShipments.length} embarques encontrados</p>
             </div>
             <button 
@@ -91,8 +101,12 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
               cargoShipments.map((shipment) => (
                 <div 
                   key={shipment.id}
-                  onClick={() => setSelectedShipment(shipment)}
-                  className="bg-gray-50 dark:bg-gray-900/30 border border-gray-100 dark:border-gray-700 rounded-xl p-4 hover:shadow-md transition-shadow cursor-pointer relative"
+                  onClick={() => {
+                    if (currentUser.profile !== 'Cliente') {
+                      setSelectedShipment(shipment);
+                    }
+                  }}
+                  className={`bg-gray-50 dark:bg-gray-900/30 border border-gray-100 dark:border-gray-700 rounded-xl p-4 transition-shadow relative ${currentUser.profile !== 'Cliente' ? 'cursor-pointer hover:shadow-md' : ''}`}
                 >
                   <div className="absolute top-4 right-4">
                     <Info className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -112,7 +126,7 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
                       shipment.status === 'Cancelado' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' :
                       'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
                     }`}>
-                      {getShipmentStatusLabel(shipment.status)}
+                      {shipment.status}
                     </span>
                   </div>
 
@@ -130,7 +144,7 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
                         <Weight className="w-3 h-3" /> Tonelagem
                       </div>
                       <p className="text-sm font-bold text-gray-900 dark:text-white">
-                        {shipment.shipmentTonnage.toLocaleString('pt-BR')} ton
+                        {(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton
                       </p>
                     </div>
                   </div>
@@ -148,7 +162,7 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
           isOpen={!!selectedShipment}
           onClose={() => setSelectedShipment(null)}
           shipment={selectedShipment}
-          cargo={cargo}
+          cargo={cargo || (selectedShipment ? cargos.find(c => c.id === selectedShipment.cargoId) : undefined)}
           currentUser={currentUser}
           onUpdatePrice={onUpdatePrice}
           clients={clients}
@@ -157,6 +171,8 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
           vehicles={vehicles}
           users={users}
           onDeleteAttachment={onDeleteAttachment}
+          onSwapCargo={onSwapCargo}
+          cargos={cargos}
         />
 
 

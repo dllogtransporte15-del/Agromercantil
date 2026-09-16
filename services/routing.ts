@@ -1,5 +1,5 @@
 /**
- * Routing service for Agromarcantil Control.
+ * Routing service for Agromercantil Control.
  * Uses OSRM (Open Source Routing Machine) for road geometry
  * and Nominatim (OpenStreetMap) for reverse geocoding cities along the route.
  */
@@ -58,7 +58,7 @@ async function reverseGeocode(lat: number, lng: number): Promise<string | null> 
             {
                 headers: {
                     'Accept-Language': 'pt-BR',
-                    'User-Agent': 'Agromarcantil-Control/1.0'
+                    'User-Agent': 'Agromercantil-Control/1.0'
                 }
             }
         );

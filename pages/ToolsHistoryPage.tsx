@@ -7,17 +7,21 @@ import {
   History as HistoryIcon, Search, Filter, Download, FileText, 
   Truck, Calendar, MapPin, User, Trash2, ChevronRight, 
   ArrowRight, DollarSign, Clock, FileDigit, Building2,
-  ChevronDown, ChevronUp, X, FileCode, Scale, Fuel, Route, Paperclip, Pencil
+  ChevronDown, ChevronUp, X, FileCode, Scale, Fuel, Route, Paperclip
 } from 'lucide-react';
 import Header from '../components/Header';
 import { 
   getToolStays, getToolQuotes, StayRecord, QuoteRecord, 
   getToolClients, ToolClient, deleteToolStay, deleteToolQuote, updateToolStay, uploadStayAttachment,
-  getAllToolStays, getAllToolQuotes, getAllToolClients, updateToolQuote
-} from '../services/api/toolsApi';
-import { getShipmentAttachmentUrl } from '../services/api/db';
+  getAllToolStays, getAllToolQuotes, getAllToolClients
+} from '../utils/toolStorage';
+import { getShipmentAttachmentUrl } from '../lib/db';
 import type { User as AppUser, Shipment, Cargo, Client as AppClient } from '../types';
 import { UserProfile, ShipmentStatus } from '../types';
+import { isDemoUser } from '../auth';
+import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import { openDocumentInNewTab } from '../utils/documentViewer';
+import { addPdfLogo } from '../utils/pdfGenerator';
 
 interface ToolsHistoryPageProps {
   currentUser: AppUser | null;
@@ -27,11 +31,13 @@ interface ToolsHistoryPageProps {
 }
 
 export default function ToolsHistoryPage({ currentUser, shipments = [], cargos = [], clients: propsClients = [] }: ToolsHistoryPageProps) {
+  const isDemo = isDemoUser(currentUser);
   const [activeView, setActiveView] = useState<'estadias' | 'cotacoes'>('estadias');
   const [stays, setStays] = useState<StayRecord[]>([]);
   const [quotes, setQuotes] = useState<QuoteRecord[]>([]);
   const [clients, setClients] = useState<ToolClient[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [previewDocument, setPreviewDocument] = useState<{ url: string; name?: string; category?: string } | null>(null);
 
   const [editValues, setEditValues] = useState<{
     id: string, 
@@ -53,23 +59,6 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
   const [isShipmentDropdownOpen, setIsShipmentDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Estado de edição de cotações
-  const [editQuoteValues, setEditQuoteValues] = useState<{
-    id: string;
-    clientName: string;
-    productName: string;
-    origin: string;
-    destination: string;
-    axes: string;
-    cargoType: string;
-    weight: string;
-    tollValue: string;
-    margin: string;
-    driverFreightPerTon: string;
-    companyFreightPerTon: string;
-  } | null>(null);
-  const [isSavingQuote, setIsSavingQuote] = useState(false);
-
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -90,12 +79,12 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     if (!currentUser) return;
     
     // Check if user is an administrator/manager who should see everything
-    const isAdmin = [UserProfile.Admin, UserProfile.Diretor, UserProfile.Coordenador].includes(currentUser.profile);
+    const isAdmin = !isDemo && [UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile);
     
     const [staysData, quotesData, clientsData] = await Promise.all([
-      isAdmin ? getAllToolStays() : getToolStays(currentUser.authId || currentUser.id),
-      isAdmin ? getAllToolQuotes() : getToolQuotes(currentUser.authId || currentUser.id),
-      isAdmin ? getAllToolClients() : getToolClients(currentUser.authId || currentUser.id),
+      isAdmin ? getAllToolStays() : getToolStays(currentUser.id),
+      isAdmin ? getAllToolQuotes() : getToolQuotes(currentUser.id),
+      isAdmin ? getAllToolClients() : getToolClients(currentUser.id),
     ]);
     
     setStays(staysData);
@@ -106,15 +95,6 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  // Converte timestamp UTC do Supabase para string de data local (YYYY-MM-DD) no fuso do browser
-  const toLocalDateStr = (isoStr: string): string => {
-    const d = new Date(isoStr);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  };
 
   const filteredStays = useMemo(() => {
     return stays.filter(stay => {
@@ -129,10 +109,10 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
 
       let matchesDate = true;
       if (dateStart || dateEnd) {
-        // Compara usando a data local do registro (não UTC)
-        const stayLocalDate = toLocalDateStr(stay.date);
-        if (dateStart && stayLocalDate < dateStart) matchesDate = false;
-        if (dateEnd && stayLocalDate > dateEnd) matchesDate = false;
+        const stayDate = parseISO(stay.date);
+        const start = dateStart ? startOfDay(parseISO(dateStart)) : new Date(0);
+        const end = dateEnd ? endOfDay(parseISO(dateEnd)) : new Date();
+        matchesDate = isWithinInterval(stayDate, { start, end });
       }
 
       return matchesSearch && matchesClient && matchesDate;
@@ -144,17 +124,16 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
       const matchesSearch = 
         quote.origin.toLowerCase().includes(searchTerm.toLowerCase()) ||
         quote.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (quote.clientName && quote.clientName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (quote.productName && quote.productName.toLowerCase().includes(searchTerm.toLowerCase()));
+        (quote.clientName && quote.clientName.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchesClient = !filterClient || quote.clientName === filterClient;
 
       let matchesDate = true;
       if (dateStart || dateEnd) {
-        // Compara usando a data local do registro (não UTC)
-        const quoteLocalDate = toLocalDateStr(quote.date);
-        if (dateStart && quoteLocalDate < dateStart) matchesDate = false;
-        if (dateEnd && quoteLocalDate > dateEnd) matchesDate = false;
+        const quoteDate = parseISO(quote.date);
+        const start = dateStart ? startOfDay(parseISO(dateStart)) : new Date(0);
+        const end = dateEnd ? endOfDay(parseISO(dateEnd)) : new Date();
+        matchesDate = isWithinInterval(quoteDate, { start, end });
       }
 
       return matchesSearch && matchesClient && matchesDate;
@@ -173,7 +152,6 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     if (expandedId === id) {
       setExpandedId(null);
       setEditValues(null);
-      setEditQuoteValues(null);
       setShipmentSearchTerm('');
       setIsShipmentDropdownOpen(false);
     } else {
@@ -204,29 +182,8 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         } else {
           setShipmentSearchTerm('');
         }
-      } else if (activeView === 'cotacoes') {
-        setEditValues(null);
-        setShipmentSearchTerm('');
-        const quote = quotes.find(q => q.id === id);
-        if (quote) {
-          setEditQuoteValues({
-            id,
-            clientName: quote.clientName || '',
-            productName: quote.productName || '',
-            origin: quote.origin || '',
-            destination: quote.destination || '',
-            axes: quote.axes.toString(),
-            cargoType: quote.cargoType || '',
-            weight: quote.weight.toString(),
-            tollValue: quote.tollValue.toString(),
-            margin: quote.margin.toString(),
-            driverFreightPerTon: quote.driverFreightPerTon.toString(),
-            companyFreightPerTon: quote.companyFreightPerTon.toString(),
-          });
-        }
       } else {
         setEditValues(null);
-        setEditQuoteValues(null);
         setShipmentSearchTerm('');
       }
       setIsShipmentDropdownOpen(false);
@@ -264,8 +221,25 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     setIsShipmentDropdownOpen(false);
   };
 
+  const parseFlexibleNumber = (val: string | number | undefined | null): number => {
+    if (val === undefined || val === null || val === '') return 0;
+    if (typeof val === 'number') return val;
+    const str = String(val).trim();
+    if (str.includes('.') && str.includes(',')) {
+      if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
+        return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
+      } else {
+        return parseFloat(str.replace(/,/g, '')) || 0;
+      }
+    }
+    if (str.includes(',')) {
+      return parseFloat(str.replace(',', '.')) || 0;
+    }
+    return parseFloat(str) || 0;
+  };
+
   const handleSaveStayFinancials = async () => {
-    if (!editValues || isSavingEdit) return;
+    if (!editValues || isSavingEdit || isDemo) return;
     setIsSavingEdit(true);
     try {
       let cteUrl: string | undefined = undefined;
@@ -278,13 +252,17 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         paymentProofUrl = (await uploadStayAttachment(editValues.id, 'comprovante_pagamento', editValues.paymentFile)) || undefined;
       }
 
+      const approvedVal = editValues.approved !== '' ? parseFlexibleNumber(editValues.approved) : undefined;
+      const paidVal = editValues.paid !== '' ? parseFlexibleNumber(editValues.paid) : undefined;
+      const weightVal = editValues.weight !== '' ? parseFlexibleNumber(editValues.weight) : 0;
+
       const updates: Partial<StayRecord> = {
-        approvedValue: editValues.approved ? parseFloat(editValues.approved) : undefined,
-        driverPaidValue: editValues.paid ? parseFloat(editValues.paid) : undefined,
+        approvedValue: approvedVal,
+        driverPaidValue: paidVal,
         clientName: editValues.clientName || undefined,
         driver: editValues.driver || undefined,
         plate: editValues.plate || undefined,
-        weight: parseFloat(editValues.weight) || 0,
+        weight: weightVal,
         origin: editValues.origin || undefined,
         destination: editValues.destination || undefined,
         shipmentId: editValues.shipmentId || undefined,
@@ -292,44 +270,27 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         ...(cteUrl && { cteUrl }),
         ...(paymentProofUrl && { paymentProofUrl })
       };
-      await updateToolStay(editValues.id, updates);
+      
+      const result = await updateToolStay(editValues.id, updates);
+      if (result) {
+        setStays(prev => prev.map(s => s.id === editValues.id ? { ...s, ...updates, ...result } : s));
+      }
       await loadData();
       setExpandedId(null);
+      setEditValues(null);
     } catch (err) {
-      console.error(err);
+      console.error('Erro ao salvar alterações da estadia:', err);
+      alert('Erro ao salvar alterações. Por favor, tente novamente.');
     } finally {
       setIsSavingEdit(false);
     }
   };
 
-  const handleSaveQuote = async () => {
-    if (!editQuoteValues || isSavingQuote) return;
-    setIsSavingQuote(true);
-    try {
-      await updateToolQuote(editQuoteValues.id, {
-        clientName: editQuoteValues.clientName || undefined,
-        productName: editQuoteValues.productName || undefined,
-        origin: editQuoteValues.origin,
-        destination: editQuoteValues.destination,
-        axes: parseInt(editQuoteValues.axes) || 0,
-        cargoType: editQuoteValues.cargoType,
-        weight: parseFloat(editQuoteValues.weight) || 0,
-        tollValue: parseFloat(editQuoteValues.tollValue) || 0,
-        margin: parseFloat(editQuoteValues.margin) || 0,
-        driverFreightPerTon: parseFloat(editQuoteValues.driverFreightPerTon) || 0,
-        companyFreightPerTon: parseFloat(editQuoteValues.companyFreightPerTon) || 0,
-      });
-      await loadData();
-      setExpandedId(null);
-      setEditQuoteValues(null);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsSavingQuote(false);
-    }
-  };
-
   const handleDelete = async (id: string, type: 'estadias' | 'cotacoes') => {
+    if (isDemo) {
+      alert("Usuário em modo demonstração possui acesso apenas de visualização.");
+      return;
+    }
     if (!confirm('Deseja realmente excluir este registro?')) return;
     
     if (type === 'estadias') {
@@ -362,6 +323,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     if (data.length === 0) return;
 
     const doc = new jsPDF('l', 'mm', 'a4');
+    addPdfLogo(doc, undefined, { align: 'right', y: 8, width: 35, height: 15 });
     doc.setFontSize(18);
     doc.text(`Histórico de ${isStays ? 'Estadias' : 'Cotações de Frete'}`, 14, 20);
     doc.setFontSize(10);
@@ -384,15 +346,12 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         formatCurrency(s.totalValue)
       ]);
     } else {
-      head = [['Data da Cotação', 'Usuário', 'Cliente', 'Produto', 'Origem', 'Destino', 'Eixos', 'Valor Empresa (por Ton)']];
+      head = [['Data da Cotação', 'Cliente', 'Origem', 'Destino', 'Valor do Frete Empresa (por Tonelada)']];
       body = (data as QuoteRecord[]).map(q => [
         format(parseISO(q.date), 'dd/MM/yyyy HH:mm'),
-        q.userName || '-',
         q.clientName || '-',
-        q.productName || '-',
         q.origin,
         q.destination,
-        q.axes ? `${q.axes}` : '-',
         formatCurrency(q.companyFreightPerTon || 0)
       ]);
     }
@@ -474,14 +433,14 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                           {activeView === 'estadias' ? <Truck className="w-6 h-6" /> : <ArrowRight className="w-6 h-6" />}
                        </div>
                        <div>
-                          <div className="flex items-center flex-wrap gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1">
                             <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-400 rounded-md tracking-wider uppercase">{item.id}</span>
-                            <span className="text-xs text-slate-400 font-medium">{format(parseISO(item.date), 'dd/MM/yyyy')} às {format(parseISO(item.date), 'HH:mm')}</span>
-                            {item.userName && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-md uppercase tracking-wider flex items-center">
-                                <User className="w-3 h-3 mr-1" /> {item.userName}
+                            {activeView === 'estadias' && (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md tracking-wider uppercase ${item.calculationType === 'DAILY_FIXED' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200/50' : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200/50'}`}>
+                                {item.calculationType === 'DAILY_FIXED' ? 'Diária Fixa' : 'Ton / Hora'}
                               </span>
                             )}
+                            <span className="text-xs text-slate-400 font-medium">{format(parseISO(item.date), 'dd/MM/yyyy')} às {format(parseISO(item.date), 'HH:mm')}</span>
                           </div>
                           <h3 className="text-lg font-bold text-slate-800 dark:text-white leading-tight">
                              {activeView === 'estadias' ? (
@@ -492,9 +451,6 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                           </h3>
                           <div className="flex flex-wrap items-center mt-2 gap-y-1 gap-x-4 text-sm text-slate-500 font-medium">
                              <div className="flex items-center"><Building2 className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> {item.clientName || 'Cliente Particular'}</div>
-                             {activeView === 'cotacoes' && item.productName && (
-                               <div className="flex items-center"><Scale className="w-3.5 h-3.5 mr-1.5 text-amber-500" /> {item.productName}</div>
-                             )}
                              <div className="flex items-center"><MapPin className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> {activeView === 'estadias' ? `${item.origin} → ${item.destination}` : `${item.distance.toFixed(0)} km`}</div>
                           </div>
                        </div>
@@ -502,7 +458,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
 
                     <div className="flex items-center justify-between md:flex-col md:items-end gap-2">
                        <div className={`text-xl font-black ${activeView === 'estadias' ? 'text-indigo-600' : 'text-emerald-600'}`}>
-                          {activeView === 'estadias' ? formatCurrency(item.totalValue) : `${formatCurrency(item.companyFreightPerTon)} / Ton`}
+                          {formatCurrency(activeView === 'estadias' ? item.totalValue : item.companyTotalFreight)}
                        </div>
                        <button onClick={(e) => { e.stopPropagation(); toggleExpand(item.id); }} className="p-2 hover:bg-slate-100 dark:hover:bg-gray-700 rounded-full transition-colors">
                           {expandedId === item.id ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
@@ -557,7 +513,11 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                <div>
                                  <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Valor Calculado / Solicitado</div>
                                  <div className="text-xl font-bold text-slate-800 dark:text-white">{formatCurrency(item.totalValue)}</div>
-                                 <div className="text-[10px] text-slate-500 mt-1">({formatCurrency(item.valuePerHour)} / Ton-Hora)</div>
+                                 <div className="text-[10px] text-slate-500 mt-1">
+                                    {item.calculationType === 'DAILY_FIXED' 
+                                      ? `(${formatCurrency(item.dailyRate || item.valuePerHour)} / Diária)` 
+                                      : `(${formatCurrency(item.valuePerHour)} / Ton-Hora)`}
+                                  </div>
                                </div>
 
                                <div className="pt-3 border-t border-slate-100 dark:border-gray-700 space-y-4">
@@ -632,7 +592,8 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                       <div>
                                         <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Peso (Ton)</label>
                                         <input 
-                                          type="number" 
+                                          type="text" 
+                                          inputMode="decimal"
                                           value={editValues?.id === item.id ? editValues?.weight : ''} 
                                           onChange={e => setEditValues(prev => prev ? {...prev, weight: e.target.value} : null)}
                                           className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-indigo-500"
@@ -654,7 +615,8 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                    <label className="text-[10px] text-slate-400 font-bold uppercase mb-1 block">Valor Aprovado (Receita)</label>
                                    <div className="flex gap-2 items-center">
                                      <input 
-                                       type="number" 
+                                       type="text" 
+                                       inputMode="decimal"
                                        value={editValues?.id === item.id ? editValues?.approved : ''} 
                                        onChange={e => setEditValues(prev => prev ? {...prev, approved: e.target.value} : null)}
                                        placeholder="R$ 0,00"
@@ -676,14 +638,15 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                      <div className="text-[10px] text-indigo-500 mt-1 truncate">Anexo: {editValues.cteFile.name}</div>
                                    )}
                                    {item.cteUrl && !(editValues?.id === item.id && editValues?.cteFile) && (
-                                     <a href={getShipmentAttachmentUrl(item.cteUrl)} target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-500 hover:underline mt-1 block">Ver CTe Anexado</a>
+                                     <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(item.cteUrl!), 'CTe Complementar')} className="text-[10px] text-indigo-500 hover:underline mt-1 block text-left font-semibold cursor-pointer">Ver CTe Anexado</button>
                                    )}
                                  </div>
                                  <div>
                                    <label className="text-[10px] text-slate-400 font-bold uppercase mb-1 block">Valor Pago Motorista (Custo)</label>
                                    <div className="flex gap-2 items-center">
                                      <input 
-                                       type="number" 
+                                       type="text" 
+                                       inputMode="decimal"
                                        value={editValues?.id === item.id ? editValues?.paid : ''} 
                                        onChange={e => setEditValues(prev => prev ? {...prev, paid: e.target.value} : null)}
                                        placeholder="R$ 0,00"
@@ -705,23 +668,29 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                      <div className="text-[10px] text-indigo-500 mt-1 truncate">Anexo: {editValues.paymentFile.name}</div>
                                    )}
                                    {item.paymentProofUrl && !(editValues?.id === item.id && editValues?.paymentFile) && (
-                                     <a href={getShipmentAttachmentUrl(item.paymentProofUrl)} target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-500 hover:underline mt-1 block">Ver Comprovante Anexado</a>
+                                     <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(item.paymentProofUrl!), 'Comprovante de Pagamento')} className="text-[10px] text-indigo-500 hover:underline mt-1 block text-left font-semibold cursor-pointer">Ver Comprovante Anexado</button>
                                    )}
                                  </div>
                                  <div className="flex items-center justify-between pt-2">
                                    <div>
-                                     <div className="text-[10px] text-slate-400 font-bold uppercase">Lucro da Estadia</div>
-                                     <div className={`text-lg font-bold ${((parseFloat(editValues?.approved || '0') || 0) - (parseFloat(editValues?.paid || '0') || 0)) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                                       {formatCurrency((parseFloat(editValues?.approved || '0') || 0) - (parseFloat(editValues?.paid || '0') || 0))}
-                                     </div>
+                                      <div className="text-[10px] text-slate-400 font-bold uppercase">
+                                        {(parseFlexibleNumber(editValues?.approved) - parseFlexibleNumber(editValues?.paid)) >= 0 
+                                          ? 'Lucro da Estadia' 
+                                          : 'Déficit da Estadia'}
+                                      </div>
+                                      <div className={`text-lg font-bold ${(parseFlexibleNumber(editValues?.approved) - parseFlexibleNumber(editValues?.paid)) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                        {formatCurrency(parseFlexibleNumber(editValues?.approved) - parseFlexibleNumber(editValues?.paid))}
+                                      </div>
                                    </div>
-                                   <button 
-                                     onClick={handleSaveStayFinancials} 
-                                     disabled={isSavingEdit}
-                                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
-                                   >
-                                     {isSavingEdit ? 'Salvando...' : 'Salvar Alterações'}
-                                   </button>
+                                   {!isDemo && (
+                                     <button 
+                                       onClick={handleSaveStayFinancials} 
+                                       disabled={isSavingEdit}
+                                       className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
+                                     >
+                                       {isSavingEdit ? 'Salvando...' : 'Salvar Alterações'}
+                                     </button>
+                                   )}
                                  </div>
                                </div>
                             </div>
@@ -736,12 +705,6 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                 <span className="text-slate-500">Distância Total</span>
                                 <span className="font-bold text-slate-700 dark:text-gray-300">{item.distance.toFixed(0)} km</span>
                               </div>
-                              {item.productName && (
-                                <div className="flex justify-between text-sm py-2 border-b border-slate-100 dark:border-gray-700">
-                                  <span className="text-slate-500">Produto</span>
-                                  <span className="font-bold text-amber-600 dark:text-amber-400">{item.productName}</span>
-                                </div>
-                              )}
                               <div className="flex justify-between text-sm py-2 border-b border-slate-100 dark:border-gray-700">
                                 <span className="text-slate-500">Config. de Eixos</span>
                                 <span className="font-bold text-slate-700 dark:text-gray-300">{item.axes} Eixos</span>
@@ -775,106 +738,12 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Lucro Operacional</div>
                                <div className="text-lg font-bold text-emerald-600 mb-3">{formatCurrency(item.carrierNetProfit)} ({item.carrierProfitMargin.toFixed(1)}%)</div>
                                <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Cotação p/ Cliente</div>
-                               <div className="text-2xl font-black text-slate-800 dark:text-white">
-                                 {formatCurrency(item.companyFreightPerTon)} <span className="text-sm text-slate-500 font-medium normal-case">/ Ton</span>
-                               </div>
+                               <div className="text-2xl font-black text-slate-800 dark:text-white">{formatCurrency(item.companyTotalFreight)}</div>
                             </div>
                           </div>
                         </>
                       )}
                     </div>
-
-                    {/* Formulário de Edição da Cotação */}
-                    {activeView === 'cotacoes' && editQuoteValues && editQuoteValues.id === item.id && (
-                      <div className="mt-6 pt-6 border-t border-slate-100 dark:border-gray-700">
-                        <h4 className="text-xs font-bold text-emerald-500 uppercase tracking-widest flex items-center mb-4">
-                          <Pencil className="w-3 h-3 mr-2" /> Editar Cotação
-                        </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                          <div>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Cliente</label>
-                            <input type="text" value={editQuoteValues.clientName ?? ''}
-                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, clientName: e.target.value} : null)}
-                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Produto</label>
-                            <input type="text" value={editQuoteValues.productName ?? ''}
-                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, productName: e.target.value} : null)}
-                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Origem</label>
-                            <input type="text" value={editQuoteValues.origin ?? ''}
-                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, origin: e.target.value} : null)}
-                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Destino</label>
-                            <input type="text" value={editQuoteValues.destination ?? ''}
-                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, destination: e.target.value} : null)}
-                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Eixos</label>
-                            <input type="number" value={editQuoteValues.axes ?? ''}
-                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, axes: e.target.value} : null)}
-                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Tipo de Mercadoria</label>
-                            <input type="text" value={editQuoteValues.cargoType ?? ''}
-                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, cargoType: e.target.value} : null)}
-                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Peso (Ton)</label>
-                            <input type="number" value={editQuoteValues.weight ?? ''}
-                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, weight: e.target.value} : null)}
-                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Pedágio (R$)</label>
-                            <input type="number" value={editQuoteValues.tollValue ?? ''}
-                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, tollValue: e.target.value} : null)}
-                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Margem (%)</label>
-                            <input type="number" value={editQuoteValues.margin ?? ''}
-                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, margin: e.target.value} : null)}
-                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Frete Motorista (R$/Ton)</label>
-                            <input type="number" value={editQuoteValues.driverFreightPerTon ?? ''}
-                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, driverFreightPerTon: e.target.value} : null)}
-                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Cotação Empresa (R$/Ton)</label>
-                            <input type="number" value={editQuoteValues.companyFreightPerTon ?? ''}
-                              onChange={e => setEditQuoteValues(prev => prev ? {...prev, companyFreightPerTon: e.target.value} : null)}
-                              className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-emerald-500" />
-                          </div>
-                        </div>
-                        <div className="flex justify-end mt-4 gap-2">
-                          <button
-                            onClick={() => setEditQuoteValues(null)}
-                            className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 border border-slate-200 dark:border-gray-600 rounded-lg transition-colors"
-                          >
-                            Cancelar
-                          </button>
-                          <button
-                            onClick={handleSaveQuote}
-                            disabled={isSavingQuote}
-                            className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
-                          >
-                            {isSavingQuote ? 'Salvando...' : <><Pencil className="w-3 h-3" /> Salvar Cotação</>}
-                          </button>
-                        </div>
-                      </div>
-                    )}
 
                     {/* Ações do Registro */}
                     <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-slate-100 dark:border-gray-700">
@@ -886,36 +755,13 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                              <FileText className="w-3.5 h-3.5 mr-2 text-slate-400" /> Detalhes PDF
                           </button>
                        </div>
-                       <div className="flex items-center gap-2">
-                          {activeView === 'cotacoes' && (
-                            <button
-                              onClick={e => { e.stopPropagation(); setEditQuoteValues(editQuoteValues?.id === item.id ? null : {
-                                id: item.id,
-                                clientName: item.clientName || '',
-                                productName: item.productName || '',
-                                origin: item.origin || '',
-                                destination: item.destination || '',
-                                axes: item.axes?.toString() || '',
-                                cargoType: item.cargoType || '',
-                                weight: item.weight?.toString() || '',
-                                tollValue: item.tollValue?.toString() || '',
-                                margin: item.margin?.toString() || '',
-                                driverFreightPerTon: item.driverFreightPerTon?.toString() || '',
-                                companyFreightPerTon: item.companyFreightPerTon?.toString() || '',
-                              }); }}
-                              className={`flex items-center px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                                editQuoteValues?.id === item.id
-                                  ? 'bg-emerald-600 text-white'
-                                  : 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800'
-                              }`}
-                            >
-                              <Pencil className="w-3.5 h-3.5 mr-2" /> {editQuoteValues?.id === item.id ? 'Editando...' : 'Editar Cotação'}
-                            </button>
-                          )}
-                          <button onClick={() => handleDelete(item.id, activeView)} className="flex items-center px-4 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl text-xs font-bold transition-all">
-                             <Trash2 className="w-3.5 h-3.5 mr-2" /> Excluir Registro
-                          </button>
-                       </div>
+                       {!isDemo && (
+                          <div className="flex items-center gap-2">
+                             <button onClick={() => handleDelete(item.id, activeView)} className="flex items-center px-4 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl text-xs font-bold transition-all">
+                                <Trash2 className="w-3.5 h-3.5 mr-2" /> Excluir Registro
+                             </button>
+                          </div>
+                       )}
                     </div>
                   </div>
                 )}
@@ -932,6 +778,14 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
           )}
         </div>
       </div>
+
+      <DocumentPreviewModal
+        isOpen={!!previewDocument}
+        onClose={() => setPreviewDocument(null)}
+        fileUrl={previewDocument?.url || null}
+        fileName={previewDocument?.name}
+        category={previewDocument?.category}
+      />
     </>
   );
 }

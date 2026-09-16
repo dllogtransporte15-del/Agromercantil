@@ -1,12 +1,12 @@
-
 import React, { useState, useMemo } from 'react';
 import Header from '../components/Header';
 import LoadTable from '../components/LoadTable';
 import LoadHistoryFilter, { type LoadFilters } from '../components/LoadHistoryFilter';
 import HistoryModal from '../components/HistoryModal';
 import CargoDetailsModal from '../components/CargoDetailsModal';
-import type { Cargo, Client, Product, User, Shipment, ProfilePermissions } from '../types';
+import type { Cargo, Client, Product, User, Shipment } from '../types';
 import { UserProfile } from '../types';
+import { isDemoUser } from '../auth';
 
 interface LoadHistoryPageProps {
   loads: Cargo[];
@@ -17,10 +17,10 @@ interface LoadHistoryPageProps {
   shipments: Shipment[];
   onDeleteLoad: (cargoId: string) => void;
   onReactivateLoad?: (cargo: Cargo) => void;
-  profilePermissions?: ProfilePermissions;
 }
 
-const LoadHistoryPage: React.FC<LoadHistoryPageProps> = ({ loads, clients, products, users, currentUser, shipments, onDeleteLoad, onReactivateLoad, profilePermissions }) => {
+const LoadHistoryPage: React.FC<LoadHistoryPageProps> = ({ loads, clients, products, users, currentUser, shipments, onDeleteLoad, onReactivateLoad }) => {
+  const isDemo = isDemoUser(currentUser);
   const [filters, setFilters] = useState<LoadFilters>({
     startDate: '',
     endDate: '',
@@ -35,7 +35,6 @@ const LoadHistoryPage: React.FC<LoadHistoryPageProps> = ({ loads, clients, produ
   const [selectedLoadForHistory, setSelectedLoadForHistory] = useState<Cargo | null>(null);
   const [detailsModalCargo, setDetailsModalCargo] = useState<Cargo | null>(null);
   const [dailyBalanceDate, setDailyBalanceDate] = useState(new Date().toISOString().split('T')[0]);
-
 
   const filteredLoads = useMemo(() => {
     return loads.filter(load => {
@@ -83,11 +82,10 @@ const LoadHistoryPage: React.FC<LoadHistoryPageProps> = ({ loads, clients, produ
         dailyBalanceDate={dailyBalanceDate}
         onDailyBalanceDateChange={setDailyBalanceDate}
         onShowHistory={handleShowHistory}
-        onReactivate={onReactivateLoad}
+        onReactivate={(!isDemo && currentUser.profile !== UserProfile.Embarcador) ? onReactivateLoad : undefined}
         onShowDetails={handleShowDetails}
-        onDelete={onDeleteLoad}
+        onDelete={!isDemo ? onDeleteLoad : undefined}
         currentUser={currentUser}
-        profilePermissions={profilePermissions}
       />
 
       {selectedLoadForHistory && (
@@ -107,7 +105,9 @@ const LoadHistoryPage: React.FC<LoadHistoryPageProps> = ({ loads, clients, produ
           cargo={detailsModalCargo}
           client={clients.find(c => c.id === detailsModalCargo.clientId)}
           product={products.find(p => p.id === detailsModalCargo.productId)}
-          commercialUser={users.find(u => u.id === detailsModalCargo.createdById)}
+          commercialUser={users.find(u => u.id === detailsModalCargo?.createdById)}
+          shipments={shipments}
+          currentUser={currentUser}
         />
       )}
     </>

@@ -109,7 +109,6 @@ const toProduct = (row: any): Product => ({
 
 const toCargo = (row: any): Cargo => {
   const freightLegs = row.freight_legs || [];
-  const disableDriverFreightPF = freightLegs.some((leg: any) => leg.disableDriverFreightPF);
   return {
     id: row.id,
     sequenceId: row.sequence_id,
@@ -126,12 +125,9 @@ const toCargo = (row: any): Cargo => {
     loadedVolume: Number(row.loaded_volume),
     companyFreightValuePerTon: Number(row.company_freight_value_per_ton),
     companyFreightHasToll: Boolean(row.company_freight_has_toll || freightLegs.some((leg: any) => leg.companyFreightHasToll)),
-    driverFreightValuePerTonPJ: Number(row.driver_freight_value_per_ton_pj || row.driver_freight_value_per_ton || 0),
-    driverFreightHasTollPJ: Boolean(row.driver_freight_has_toll_pj ?? row.driver_freight_has_toll ?? freightLegs.some((leg: any) => leg.driverFreightHasTollPJ ?? leg.driverFreightHasToll)),
-    driverFreightValuePerTonPF: Number(row.driver_freight_value_per_ton_pf || row.driver_freight_value_per_ton || 0),
-    driverFreightHasTollPF: Boolean(row.driver_freight_has_toll_pf ?? row.driver_freight_has_toll ?? freightLegs.some((leg: any) => leg.driverFreightHasTollPF ?? leg.driverFreightHasToll)),
     driverFreightValuePerTon: Number(row.driver_freight_value_per_ton),
     driverFreightHasToll: Boolean(row.driver_freight_has_toll || freightLegs.some((leg: any) => leg.driverFreightHasToll || leg.driverFreightHasTollPJ)),
+    driverFreightPfHasToll: Boolean(row.driver_freight_pf_has_toll || freightLegs.some((leg: any) => leg.driverFreightPfHasToll)),
     hasIcms: row.has_icms,
     icmsPercentage: Number(row.icms_percentage),
     requiresScheduling: row.requires_scheduling,
@@ -140,7 +136,6 @@ const toCargo = (row: any): Cargo => {
     createdAt: row.created_at,
     createdById: row.created_by_id,
     history: row.history || [],
-    loadingStartDate: row.loading_start_date,
     loadingDeadline: row.loading_deadline,
     allowedVehicleTypes: row.allowed_vehicle_types,
     freightLegs,
@@ -152,9 +147,6 @@ const toCargo = (row: any): Cargo => {
     salespersonName: row.salesperson_name,
     salespersonCommissionPerTon: Number(row.salesperson_commission_per_ton),
     branchId: row.branch_id,
-    destinations: row.destinations,
-    externalOrder: row.external_order,
-    disableDriverFreightPF,
   };
 };
 
@@ -181,8 +173,8 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
     loaded_volume: c.loadedVolume,
     company_freight_value_per_ton: c.companyFreightValuePerTon,
     driver_freight_value_per_ton: c.driverFreightValuePerTon,
-    driver_freight_value_per_ton_pj: c.driverFreightValuePerTonPJ ?? c.driverFreightValuePerTon,
-    driver_freight_value_per_ton_pf: c.driverFreightValuePerTonPF ?? c.driverFreightValuePerTon,
+    driver_freight_value_per_ton_pj: (c as any).driverFreightValuePerTonPJ ?? c.driverFreightValuePerTon,
+    driver_freight_value_per_ton_pf: (c as any).driverFreightValuePerTonPF ?? c.driverFreightValuePerTon,
     has_icms: c.hasIcms,
     icms_percentage: c.icmsPercentage,
     requires_scheduling: c.requiresScheduling,
@@ -191,7 +183,7 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
     created_at: c.createdAt,
     created_by_id: c.createdById,
     history: c.history,
-    loading_start_date: c.loadingStartDate || null,
+    loading_start_date: (c as any).loadingStartDate || null,
     loading_deadline: c.loadingDeadline || null,
     allowed_vehicle_types: c.allowedVehicleTypes,
     freight_legs: c.freightLegs,
@@ -203,8 +195,8 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
     salesperson_name: c.salespersonName,
     salesperson_commission_per_ton: c.salespersonCommissionPerTon,
     branch_id: c.branchId || null,
-    destinations: c.destinations || null,
-    external_order: c.externalOrder || null,
+    destinations: (c as any).destinations || null,
+    external_order: (c as any).externalOrder || null,
   };
 };
 

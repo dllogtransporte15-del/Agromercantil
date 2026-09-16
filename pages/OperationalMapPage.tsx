@@ -2,13 +2,15 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Header from '../components/Header';
 import NewShipmentModal from '../components/NewShipmentModal';
-import type { Cargo, Shipment, Client, Product, User, Driver, Vehicle, VehicleSetType, VehicleBodyType } from '../types';
+import type { Cargo, Shipment, Client, Product, User, Driver, Vehicle, VehicleSetType, VehicleBodyType, DriverLocation } from '../types';
 import { CargoStatus } from '../types';
 import { CopyIcon } from '../components/icons/CopyIcon';
+import { supabase } from '../supabase';
 
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { geocodeCity, getCoordsSync } from '../utils/geocoding';
-import { upsertManyCargos } from '../services/api/db';
+import { upsertManyCargos } from '../lib/db';
+import { isDemoUser } from '../auth';
 
 // Declare Leaflet globally since it's loaded via script tag in index.html
 declare const L: any;
@@ -25,15 +27,7 @@ interface OperationalMapPageProps {
   users: User[];
   onModalStateChange: (isOpen: boolean) => void;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
-  isSimplifiedWorkflowEnabled?: boolean;
 }
-
-const formatAllowedVehicleTypes = (allowed?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]): string => {
-    if (!allowed || allowed.length === 0) return 'N/A';
-    const allBodyTypes = allowed.flatMap(type => type.bodyTypes || []);
-    const uniqueBodyTypes = [...new Set(allBodyTypes)];
-    return uniqueBodyTypes.join(', ');
-};
 
 const P180 = Math.PI / 180;
 
@@ -62,20 +56,8 @@ const isInBoundingBox = (lat: number, lon: number, centerLat: number, centerLon:
   return Math.abs(lat - centerLat) <= latDegree && Math.abs(lon - centerLon) <= lonDegree;
 };
 
-const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ 
-  cargos, 
-  shipments, 
-  clients, 
-  products, 
-  drivers, 
-  vehicles, 
-  onCreateShipment, 
-  currentUser, 
-  users, 
-  onModalStateChange, 
-  onDeleteAttachment,
-  isSimplifiedWorkflowEnabled 
-}) => {
+const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipments, clients, products, drivers, vehicles, onCreateShipment, currentUser, users, onModalStateChange, onDeleteAttachment }) => {
+  const isDemo = isDemoUser(currentUser);
   const [originQuery, setOriginQuery] = useState('Catalão');
   const [originRadius, setOriginRadius] = useState(200);
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -102,10 +84,12 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
   const mapInstanceRef = useRef<any>(null);
   const markersLayerRef = useRef<any>(null);
   const circleLayerRef = useRef<any>(null);
+  const driverLayerRef = useRef<any>(null);
   const markersRef = useRef<Map<string, any>>(new Map());
   const loadsWithCoordsRef = useRef<(Cargo & { originCoords?: { lat: number, lng: number }, destinationCoords?: { lat: number, lng: number }})[]>([]);
 
   const handleOpenNewShipmentModal = (cargo: Cargo) => {
+    if (isDemo) return;
     setSelectedCargoForShipment(cargo);
     setIsShipmentModalOpen(true);
   };
@@ -116,6 +100,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
   };
 
   const handleSaveShipment = (shipmentData: Omit<Shipment, 'id' | 'orderId' | 'cargoId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'>) => {
+    if (isDemo) return;
     if (selectedCargoForShipment) {
       onCreateShipment({
         cargoId: selectedCargoForShipment.id,
@@ -217,6 +202,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
   }, []);
 
   const handleSyncAllCargos = async () => {
+    if (isDemo) return;
     if (!window.confirm('Deseja atualizar as coordenadas de TODAS as cargas cadastradas? Isso pode levar algum tempo.')) return;
     
     setSyncingAll(true);
@@ -272,39 +258,21 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
     }).addTo(mapInstanceRef.current);
     markersLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
     circleLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
+    driverLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
 
     mapInstanceRef.current.on('popupopen', (e: any) => {
         const popupNode = e.popup.getElement();
-        const buttons = popupNode.querySelectorAll('[id^="create-shipment-btn-"]');
-        buttons.forEach((btn: any) => {
-            const rawId = btn.id.replace('create-shipment-btn-', '');
-            const idParts = rawId.split('_idx_');
-            const loadId = idParts[0];
-            const destIndexStr = idParts[1];
-            
+        const createBtn = popupNode.querySelector('[id^="create-shipment-btn-"]');
+        if (createBtn) {
+            const loadId = createBtn.id.replace('create-shipment-btn-', '');
             const cargoToShip = loadsWithCoordsRef.current.find(l => l.id === loadId);
             if (cargoToShip) {
-                L.DomEvent.disableClickPropagation(btn);
-                btn.onclick = () => {
-                    let finalCargo = cargoToShip;
-                    if (destIndexStr !== undefined && cargoToShip.destinations && cargoToShip.destinations.length > parseInt(destIndexStr)) {
-                         const dest = cargoToShip.destinations[parseInt(destIndexStr)];
-                         const leg = dest.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: 0, companyFreightValuePerTon: 0 };
-                         finalCargo = {
-                             ...cargoToShip,
-                             destination: dest.city,
-                             destinationMapLink: dest.mapLink || cargoToShip.destinationMapLink,
-                             driverFreightValuePerTon: leg?.driverFreightValuePerTon ?? cargoToShip.driverFreightValuePerTon,
-                             driverFreightValuePerTonPJ: leg?.driverFreightValuePerTonPJ ?? cargoToShip.driverFreightValuePerTonPJ,
-                             driverFreightValuePerTonPF: leg?.driverFreightValuePerTonPF ?? cargoToShip.driverFreightValuePerTonPF,
-                             disableDriverFreightPF: leg?.disableDriverFreightPF ?? cargoToShip.disableDriverFreightPF,
-                             companyFreightValuePerTon: leg?.companyFreightValuePerTon ?? cargoToShip.companyFreightValuePerTon,
-                         };
-                    }
-                    handleOpenNewShipmentModal(finalCargo);
+                L.DomEvent.disableClickPropagation(createBtn);
+                createBtn.onclick = () => {
+                    handleOpenNewShipmentModal(cargoToShip);
                 };
             }
-        });
+        }
     });
     
     // Forçar re-cálculo do tamanho após o mount para evitar partes cinzas em layouts dinâmicos
@@ -352,35 +320,16 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
         const client = clients.find(cl => cl.id === load.clientId);
         const product = products.find(p => p.id === load.productId);
         const remainingVolume = load.totalVolume - load.loadedVolume;
-        const destinationsList = load.destinations && load.destinations.length > 0 
-            ? load.destinations.map(d => {
-                const leg = d.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: load.driverFreightValuePerTon };
-                const pj = leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon;
-                const hasToll = leg.driverFreightHasTollPJ ?? leg.driverFreightHasToll ?? load.driverFreightHasTollPJ ?? load.driverFreightHasToll;
-                return `<li>${d.city} (R$ ${pj.toFixed(2)}${hasToll ? ' + Ped' : ''})</li>`;
-              }).join('')
-            : `<li>${load.destination} (R$ ${load.driverFreightValuePerTon.toFixed(2)}${(load.driverFreightHasTollPJ ?? load.driverFreightHasToll) ? ' + Ped' : ''})</li>`;
-
-        const actionButtons = load.destinations && load.destinations.length > 0 
-            ? `<div class="mt-2 space-y-1">
-                 <p class="text-[10px] font-bold text-gray-500 uppercase">Criar Embarque para:</p>
-                 <div class="grid grid-cols-2 gap-1">
-                 ${load.destinations.map((d, i) => `<button id="create-shipment-btn-${load.id}_idx_${i}" class="w-full py-1 bg-primary text-white text-[9px] font-semibold rounded hover:bg-primary-dark truncate px-1">${d.city}</button>`).join('')}
-                 </div>
-               </div>`
-            : `<button id="create-shipment-btn-${load.id}" class="w-full mt-3 py-1.5 bg-primary text-white text-sm font-semibold rounded hover:bg-primary-dark">Criar Embarque</button>`;
-
+        const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
+        const tollText = hasToll ? ' + Ped' : '';
         const popupContent = `
-            <div class="p-1" style="min-width: 240px;">
+            <div class="p-1" style="min-width: 220px;">
                 <h4 class="font-bold text-md text-primary">Carga ${load.sequenceId}</h4>
                 <p class="text-xs text-gray-500 mb-2">${client?.nomeFantasia || 'N/A'} - ${product?.name || 'N/A'}</p>
-                <p class="text-sm"><b>Origem:</b> ${load.origin}</p>
-                <p class="text-sm font-bold mt-1">Destinos:</p>
-                <ul class="text-xs ml-3 list-disc list-outside mb-1 text-gray-700">
-                    ${destinationsList}
-                </ul>
-                <p class="text-sm mt-1"><b>Volume Disp.:</b> ${remainingVolume.toFixed(1)} ton</p>
-                ${actionButtons}
+                <p class="text-sm"><b>Rota:</b> ${load.origin} &rarr; ${load.destination}</p>
+                <p class="text-sm"><b>Valor:</b> R$ ${load.driverFreightValuePerTon.toFixed(2)}${tollText}/ton</p>
+                <p class="text-sm"><b>Volume Disp.:</b> ${remainingVolume.toFixed(1)} ton</p>
+                ${!isDemo ? `<button id="create-shipment-btn-${load.id}" class="w-full mt-3 py-1.5 bg-primary text-white text-sm font-semibold rounded hover:bg-primary-dark">Criar Embarque</button>` : ''}
             </div>
         `;
         const marker = L.marker([load.originCoords.lat, load.originCoords.lng]);
@@ -410,6 +359,8 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
   useEffect(() => {
     updateMapLayers();
   }, [filteredLoads, originCoords, destinationCoords]); // Dependencies ensure map updates correctly
+
+
 
   const handleSearch = async (e: React.FormEvent | null) => {
     if (e) e.preventDefault();
@@ -445,9 +396,9 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
   
   const formatAllowedVehicleTypes = (allowed?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]): string => {
     if (!allowed || allowed.length === 0) return 'N/A';
-    const allBodyTypes = allowed.flatMap(type => type.bodyTypes || []);
+    const allBodyTypes = allowed.flatMap(type => type.bodyTypes);
     const uniqueBodyTypes = [...new Set(allBodyTypes)];
-    return uniqueBodyTypes.join(';');
+    return uniqueBodyTypes.join(', ');
   };
 
   const handleShareFilteredLoads = () => {
@@ -455,44 +406,22 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
       alert('Nenhuma carga no resultado para divulgar.');
       return;
     }
-    const header = '🌽 *LIBERADOS AGROMERCANTIL* 🌽\n';
+    const header = '🌐 *LIBERADOS AGROMERCANTIL* 🌐\n';
     const loadsText = filteredLoads.map(load => {
-      const product = products.find(p => p.id === load.productId)?.name || 'N/A';
-      const origin = load.origin;
+      const product = products.find(p => p.id === load.productId)?.name?.toUpperCase() || 'N/A';
+      const origin = load.origin.toUpperCase();
+      const destination = load.destination.toUpperCase();
+      const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
+      const tollText = hasToll ? ' + Ped' : '';
+      const price = `${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`;
       const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
+      let text = `📍 ${origin} x ${destination} \n🌾 ${product} - 💲 R$ ${price}\t\n🚛 ${bodyTypes} 🚛`;
       
-      let text = `📍*${origin}*`;
-      if (load.originLocation) text += `\n📍Coleta - ${load.originLocation}`;
-      if (load.originMapLink && !load.originLocation) text += `\n📍Coleta - ${load.originMapLink}`;
-      else if (load.originMapLink) text += `\n${load.originMapLink}`;
-
-      text += `\n🌾 ${product}`;
-      text += `\n🚩 *Destinos*`;
+      if (load.originLocation) text += `\n🏢 Coleta: ${load.originLocation}`;
+      if (load.originMapLink) text += `\n📍Mapa Coleta: ${load.originMapLink}`;
       
-      if (load.destinations && load.destinations.length > 0) {
-        load.destinations.forEach(dest => {
-            const leg = dest.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: load.driverFreightValuePerTon };
-            const hasTollPJ = leg.driverFreightHasTollPJ ?? leg.driverFreightHasToll ?? load.driverFreightHasTollPJ ?? load.driverFreightHasToll;
-            const hasTollPF = leg.driverFreightHasTollPF ?? leg.driverFreightHasToll ?? load.driverFreightHasTollPF ?? load.driverFreightHasToll;
-            const pj = `R$ ${(leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${hasTollPJ ? ' + Ped' : ''}`;
-            const pf = `R$ ${(leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${hasTollPF ? ' + Ped' : ''}`;
-            const isPFDisabled = leg.disableDriverFreightPF || load.disableDriverFreightPF;
-            const priceDisplay = isPFDisabled ? `_PJ ${pj}_` : `_PJ ${pj} / PF ${pf}_`;
-            text += `\n* *${dest.city}* 💲 *${priceDisplay}*`;
-            if (dest.mapLink) text += `\n${dest.mapLink}`;
-        });
-      } else {
-        const hasTollPJ = load.driverFreightHasTollPJ ?? load.driverFreightHasToll;
-        const hasTollPF = load.driverFreightHasTollPF ?? load.driverFreightHasToll;
-        const pj = `R$ ${(load.driverFreightValuePerTonPJ ?? load.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${hasTollPJ ? ' + Ped' : ''}`;
-        const pf = `R$ ${(load.driverFreightValuePerTonPF ?? load.driverFreightValuePerTon).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${hasTollPF ? ' + Ped' : ''}`;
-        const isPFDisabled = load.disableDriverFreightPF;
-        const priceDisplay = isPFDisabled ? `_PJ ${pj}_` : `_PJ ${pj} / PF ${pf}_`;
-        text += `\n* *${load.destination}* 💲 *${priceDisplay}*`;
-        if (load.destinationMapLink) text += `\n${load.destinationMapLink}`;
-      }
-
-      text += `\n🚛 ${bodyTypes} 🚛`;
+      if (load.destinationLocation) text += `\n🏢 Entrega: ${load.destinationLocation}`;
+      if (load.destinationMapLink) text += `\n📍Mapa Entrega: ${load.destinationMapLink}`;
       
       return text;
     }).join('\n\n');
@@ -530,10 +459,12 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
             {/* Legenda Minimalista */}
             <div className="absolute top-4 right-4 z-[400] bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-3 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700">
                <p className="text-[9px] font-bold text-gray-400 mb-2 uppercase tracking-widest border-b pb-1">Legenda</p>
-              <div className="flex gap-4">
-                <div className="flex items-center text-[10px]"><div className="w-2.5 h-2.5 bg-blue-500 rounded-full mr-1.5"></div><span className="text-gray-600 dark:text-gray-300 font-bold">Carga</span></div>
-                <div className="flex items-center text-[10px]"><div className="w-2.5 h-2.5 border-2 border-blue-600 rounded-full mr-1.5"></div><span className="text-gray-600 dark:text-gray-300 font-bold">Origem</span></div>
-                <div className="flex items-center text-[10px]"><div className="w-2.5 h-2.5 border-2 border-red-500 rounded-full mr-1.5"></div><span className="text-gray-600 dark:text-gray-300 font-bold">Destino</span></div>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex gap-4">
+                  <div className="flex items-center text-[10px]"><div className="w-2.5 h-2.5 bg-blue-500 rounded-full mr-1.5"></div><span className="text-gray-600 dark:text-gray-300 font-bold">Carga</span></div>
+                  <div className="flex items-center text-[10px]"><div className="w-2.5 h-2.5 border-2 border-blue-600 rounded-full mr-1.5"></div><span className="text-gray-600 dark:text-gray-300 font-bold">Origem</span></div>
+                  <div className="flex items-center text-[10px]"><div className="w-2.5 h-2.5 border-2 border-red-500 rounded-full mr-1.5"></div><span className="text-gray-600 dark:text-gray-300 font-bold">Destino</span></div>
+                </div>
               </div>
             </div>
           </div>
@@ -598,7 +529,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
               <button 
                 type="submit" 
                 disabled={loading} 
-                className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-blue-500/20"
+                className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-blue-500/20" 
               >
                 {loading ? (
                   <>
@@ -612,20 +543,22 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
             </form>
             {error && <p className="text-red-500 text-[10px] mt-3 font-bold bg-red-50 dark:bg-red-900/20 p-2 rounded-lg text-center">{error}</p>}
             
-            <button 
-                onClick={handleSyncAllCargos}
-                disabled={syncingAll}
-                className="w-full mt-4 py-2 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl text-[10px] items-center justify-center font-bold text-gray-400 hover:text-blue-500 hover:border-blue-500 transition-all flex gap-2"
-            >
-                {syncingAll ? (
-                    <>
-                        <div className="w-3 h-3 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
-                        <span>Sincronizando Coordenadas...</span>
-                    </>
-                ) : (
-                    <span>Sincronizar Todas as Cargas (Old)</span>
-                )}
-            </button>
+            {!isDemo && (
+              <button 
+                  onClick={handleSyncAllCargos}
+                  disabled={syncingAll}
+                  className="w-full mt-4 py-2 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl text-[10px] items-center justify-center font-bold text-gray-400 hover:text-blue-500 hover:border-blue-500 transition-all flex gap-2"
+              >
+                  {syncingAll ? (
+                      <>
+                          <div className="w-3 h-3 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+                          <span>Sincronizando Coordenadas...</span>
+                      </>
+                  ) : (
+                      <span>Sincronizar Todas as Cargas (Old)</span>
+                  )}
+              </button>
+            )}
           </div>
 
           {/* Card 2: Resultados - Centralizado agora na direita */}
@@ -651,6 +584,8 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
                 filteredLoads.map(load => {
                   const client = clients.find(c => c.id === load.clientId);
                   const product = products.find(p => p.id === load.productId);
+                  const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
+                  const tollText = hasToll ? ' + Ped' : '';
                   return (
                     <div 
                       key={load.id} 
@@ -669,38 +604,14 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
                           <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-2"></div>
                           <span>{load.origin}</span>
                         </div>
-                        {load.destinations && load.destinations.length > 0 ? (
-                            load.destinations.map((d, i) => {
-                                const leg = d.freightLegs?.[0] || { driverFreightValuePerTonPJ: undefined, driverFreightValuePerTonPF: undefined, driverFreightValuePerTon: load.driverFreightValuePerTon };
-                                const pj = leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon;
-                                const hasToll = leg.driverFreightHasTollPJ ?? leg.driverFreightHasToll ?? load.driverFreightHasTollPJ ?? load.driverFreightHasToll;
-                                return (
-                                    <div key={i} className="flex justify-between items-center text-[10px] font-bold text-gray-700 dark:text-gray-200 ml-1">
-                                      <div className="flex items-center">
-                                          <div className="w-1.5 h-1.5 rounded-full bg-red-500 mr-2"></div>
-                                          <span className="truncate max-w-[120px]">{d.city}</span>
-                                      </div>
-                                      <span className="text-[10px] text-green-600 dark:text-green-400">R$ {pj.toFixed(2)}{hasToll ? ' + Ped' : ''}</span>
-                                    </div>
-                                )
-                            })
-                        ) : (
-                            <div className="flex justify-between items-center text-[10px] font-bold text-gray-700 dark:text-gray-200">
-                              <div className="flex items-center">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 mr-2"></div>
-                                  <span>{load.destination}</span>
-                              </div>
-                              <span className="text-[10px] text-green-600 dark:text-green-400">R$ {load.driverFreightValuePerTon.toFixed(2)}{(load.driverFreightHasTollPJ ?? load.driverFreightHasToll) ? ' + Ped' : ''}</span>
-                            </div>
-                        )}
+                        <div className="flex items-center text-[10px] font-bold text-gray-700 dark:text-gray-200">
+                          <div className="w-1.5 h-1.5 rounded-full bg-red-500 mr-2"></div>
+                          <span>{load.destination}</span>
+                        </div>
                       </div>
 
                       <div className="flex justify-between mt-4 pt-3 border-t border-dashed border-gray-200 dark:border-gray-600">
-                        {load.destinations && load.destinations.length > 0 ? 
-                           <span className="text-[10px] text-gray-500 italic">Múltiplos Destinos</span>
-                           : 
-                           <span className="text-[11px] font-black text-green-600 dark:text-green-400">R$ {load.driverFreightValuePerTon.toFixed(2)}</span>
-                        }
+                        <span className="text-[11px] font-black text-green-600 dark:text-green-400">R$ {load.driverFreightValuePerTon.toFixed(2)}{tollText}</span>
                         <span className="text-[11px] font-black text-gray-700 dark:text-gray-200">{(load.totalVolume - load.loadedVolume).toFixed(1)} <span className="text-[9px] text-gray-400 font-normal">ton</span></span>
                       </div>
                     </div>
@@ -728,7 +639,6 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({
         currentUser={currentUser}
         shipments={shipments}
         users={users}
-        isSimplifiedWorkflowEnabled={isSimplifiedWorkflowEnabled}
       />
     </div>
   );

@@ -29,15 +29,12 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
   const [selectedCargoId, setSelectedCargoId] = useState<string>('');
 
   const availableCargos = useMemo(() => {
-    return cargos.filter(c => {
-      // Must be in progress
-      if (c.status !== CargoStatus.EmAndamento) return false;
+    return (cargos || []).filter(c => {
+      // Must not be closed
+      if (c.status === CargoStatus.Fechada) return false;
       
-      // Must have available volume
-      if (c.scheduledVolume >= c.totalVolume) return false;
-      
-      // Current cargo should be excluded or at least handled
-      if (shipment && c.id === shipment.cargoId) return false;
+      // Current cargo should be excluded
+      if (shipment && (c.id === shipment.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === shipment.cargoId))) return false;
 
       // Search filter
       if (searchTerm) {
@@ -45,11 +42,12 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
         const client = clients.find(cl => cl.id === c.clientId)?.nomeFantasia?.toLowerCase() || '';
         const product = products.find(p => p.id === c.productId)?.name?.toLowerCase() || '';
         return (
-          c.origin.toLowerCase().includes(searchLower) ||
-          c.destination.toLowerCase().includes(searchLower) ||
+          (c.origin && c.origin.toLowerCase().includes(searchLower)) ||
+          (c.destination && c.destination.toLowerCase().includes(searchLower)) ||
           client.includes(searchLower) ||
           product.includes(searchLower) ||
-          c.sequenceId.toString().includes(searchLower)
+          (c.sequenceId && c.sequenceId.toString().includes(searchLower)) ||
+          (c.id && c.id.toLowerCase().includes(searchLower))
         );
       }
       return true;
@@ -76,7 +74,7 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
         <div className="p-6 border-b dark:border-gray-700">
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Remanejar Carga do Embarque</h2>
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Trocar Carga do Embarque</h2>
           <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800/50">
             <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase mb-1">Embarque Atual</p>
             <div className="flex justify-between items-center">
@@ -87,7 +85,7 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-xs font-bold text-gray-700 dark:text-gray-300">{shipment.shipmentTonnage.toLocaleString('pt-BR')} ton</p>
+                <p className="text-xs font-bold text-gray-700 dark:text-gray-300">{(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton</p>
               </div>
             </div>
           </div>
@@ -148,22 +146,13 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
                     <div className="grid grid-cols-2 gap-y-2 mt-3 text-xs">
                       <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                         <MapPin size={14} className="text-gray-400" />
-                        <span className="truncate">Origem: {cargo.origin}</span>
+                        <span>{cargo.origin} → {cargo.destination}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                        <MapPin size={14} className="text-gray-400" />
-                        <span className="truncate">Destino: {cargo.destination}</span>
-                      </div>
-                      <div className="col-span-2 flex items-center gap-2 text-gray-600 dark:text-gray-400 justify-end mt-2">
+                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 justify-end">
                         <DollarSign size={14} className="text-gray-400" />
-                        <div className="flex flex-col items-end gap-0.5">
-                          <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
-                            PJ: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTonPJ ?? cargo.driverFreightValuePerTon)}/ton{(cargo.driverFreightHasTollPJ ?? cargo.driverFreightHasToll) ? ' + Ped' : ''}
-                          </span>
-                          <span className="text-[9px] font-bold text-orange-600 dark:text-orange-400">
-                            PF: {cargo.disableDriverFreightPF ? 'Desabilitado' : `${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTonPF ?? cargo.driverFreightValuePerTon)}/ton${(cargo.driverFreightHasTollPF ?? cargo.driverFreightHasToll) ? ' + Ped' : ''}`}
-                          </span>
-                        </div>
+                        <span className="font-semibold text-gray-900 dark:text-gray-200">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cargo.driverFreightValuePerTon)}/ton
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -191,7 +180,7 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
                 : 'bg-gray-300 text-gray-500 cursor-not-allowed scale-95 opacity-50'
             }`}
           >
-            Confirmar Remanejamento
+            Confirmar Troca
           </button>
         </div>
       </div>

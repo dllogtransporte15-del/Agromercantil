@@ -1,5 +1,6 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Card from '../components/Card';
 import Header from '../components/Header';
 import DonutChartCard from '../components/DonutChartCard';
@@ -9,9 +10,86 @@ import { TruckIcon } from '../components/icons/TruckIcon';
 import { PackageIcon } from '../components/icons/PackageIcon';
 import { DollarSignIcon } from '../components/icons/DollarSignIcon';
 import { ClientsIcon } from '../components/icons/ClientsIcon';
-import { CargoStatus, ShipmentStatus, UserProfile } from '../types';
-import type { Cargo, Shipment, User, Client, Product, Vehicle } from '../types';
+import { WhatsAppIcon } from '../components/icons/WhatsAppIcon';
+import { DashboardIcon } from '../components/icons/DashboardIcon';
+import { ChevronDownIcon } from '../components/icons/ChevronDownIcon';
+import { CheckCircleIcon } from '../components/icons/CheckCircleIcon';
+import { Building2, ChevronRight } from 'lucide-react';
+import { CargoStatus, ShipmentStatus, UserProfile, FreightOfferStatus, REQUIRED_DOCUMENT_MAP } from '../types';
+import type { Cargo, Driver, Shipment, User, Client, Product, Vehicle, FreightOffer, RiskQueryOption } from '../types';
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
+import AttachmentModal from '../components/AttachmentModal';
+import CadastroAnttModal from '../components/CadastroAnttModal';
+import { OptimizedShipmentsBoard, KanbanColumnConfig } from '../components/OptimizedShipmentsBoard';
+import FreightOfferModal from '../components/FreightOfferModal';
+import FreightOffersList from '../components/FreightOffersList';
+import DriverOrderRequestsList from '../components/DriverOrderRequestsList';
+import { getMatchedCargo, getShipmentEffectiveDate } from '../utils';
+
+import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
+import NewShipmentModal from '../components/NewShipmentModal';
+import ClientBranchesHistoryModal from '../components/ClientBranchesHistoryModal';
+
+type DashboardViewMode = 'geral' | 'fiscal' | 'financeiro' | 'supervisor';
+
+interface ViewModeConfig {
+  id: DashboardViewMode;
+  label: string;
+  title: string;
+  shortBadge: string;
+  description: string;
+  icon: React.FC<React.SVGProps<SVGSVGElement>>;
+  color: string;
+  badgeBg: string;
+  badgeText: string;
+}
+
+const VIEW_MODES: ViewModeConfig[] = [
+  {
+    id: 'geral',
+    label: 'Dashboard Geral',
+    title: 'Dashboard',
+    shortBadge: 'Geral',
+    description: 'Indicadores, ofertas de frete, gráficos operacionais e ranking',
+    icon: DashboardIcon,
+    color: 'from-blue-600 to-indigo-600',
+    badgeBg: 'bg-blue-100 dark:bg-blue-900/40 border-blue-200 dark:border-blue-700/50',
+    badgeText: 'text-blue-700 dark:text-blue-300'
+  },
+  {
+    id: 'fiscal',
+    label: 'Dashboard Fiscal',
+    title: 'Dashboard Fiscal',
+    shortBadge: 'Fiscal',
+    description: 'Controle de seguradora, cadastro ANTT e documentação fiscal',
+    icon: CheckCircleIcon,
+    color: 'from-emerald-600 to-teal-600',
+    badgeBg: 'bg-emerald-100 dark:bg-emerald-900/40 border-emerald-200 dark:border-emerald-700/50',
+    badgeText: 'text-emerald-700 dark:text-emerald-300'
+  },
+  {
+    id: 'financeiro',
+    label: 'Dashboard Financeiro',
+    title: 'Dashboard Financeiro',
+    shortBadge: 'Financeiro',
+    description: 'Controle de adiantamentos, liquidação de saldos e trânsito',
+    icon: DollarSignIcon,
+    color: 'from-amber-500 to-orange-600',
+    badgeBg: 'bg-amber-100 dark:bg-amber-900/40 border-amber-200 dark:border-amber-700/50',
+    badgeText: 'text-amber-700 dark:text-amber-300'
+  },
+  {
+    id: 'supervisor',
+    label: 'Dashboard do Supervisor',
+    title: 'Dashboard do Supervisor',
+    shortBadge: 'Supervisor',
+    description: 'Acompanhamento operacional e pesagem/carregamento de veículos',
+    icon: TruckIcon,
+    color: 'from-purple-600 to-indigo-600',
+    badgeBg: 'bg-purple-100 dark:bg-purple-900/40 border-purple-200 dark:border-purple-700/50',
+    badgeText: 'text-purple-700 dark:text-purple-300'
+  }
+];
 
 interface DashboardPageProps {
   cargos: Cargo[];
@@ -22,8 +100,22 @@ interface DashboardPageProps {
   products: Product[];
   companyLogo?: string | null;
   vehicles: Vehicle[];
+  drivers?: Driver[];
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
+  onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void>;
+  onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
+  onUpdateAnttAndBankDetails?: (shipmentId: string, data: { anttOwnerIdentifier: string; bankDetails?: string }) => Promise<void>;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
+  freightOffers?: FreightOffer[];
+  onSaveFreightOffer?: (offer: Omit<FreightOffer, 'id' | 'createdAt'>) => Promise<void>;
+  onAcceptFreightOffer?: (offer: FreightOffer) => void;
+  onDeleteFreightOffer?: (offer: FreightOffer) => void;
+  onConvertToCargo?: (offer: FreightOffer) => void;
+  onCreateShipment?: (data: any) => Promise<void>;
+  allShipments?: Shipment[];
+  riskQueryOptions?: RiskQueryOption[];
+  onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
 }
 
 
@@ -39,6 +131,16 @@ interface ShipmentListCardProps {
 const ShipmentListCard: React.FC<ShipmentListCardProps> = ({ title, shipments, users, thresholds, onShowDetails }) => {
   const getEmbarcadorName = (embarcadorId: string): string => {
     return users.find(u => u.id === embarcadorId)?.name || 'N/A';
+  };
+
+  const getEmbarcadorWhatsAppLink = (embarcadorId: string): string | null => {
+    const user = users.find(u => u.id === embarcadorId);
+    if (!user || !user.phone) return null;
+    const cleanedPhone = user.phone.replace(/\D/g, '');
+    if (cleanedPhone.length >= 10) {
+      return `https://wa.me/55${cleanedPhone}`;
+    }
+    return null;
   };
   
   const getElapsedTimeColor = (startTime: string): string => {
@@ -119,7 +221,24 @@ const ShipmentListCard: React.FC<ShipmentListCardProps> = ({ title, shipments, u
                             <p className="text-xs text-gray-500 dark:text-gray-400">{formatDate(requestTimestamp)}</p>
                         </div>
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Solicitante: {getEmbarcadorName(shipment.embarcadorId)}</p>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1">
+                      <span>Solicitante: {getEmbarcadorName(shipment.embarcadorId)}</span>
+                      {(() => {
+                        const link = getEmbarcadorWhatsAppLink(shipment.embarcadorId);
+                        if (!link) return null;
+                        return (
+                          <a
+                            href={link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center text-green-500 hover:text-green-600 dark:text-green-400 dark:hover:text-green-300 transition-colors"
+                            title="Conversar com o embarcador no WhatsApp"
+                          >
+                            <WhatsAppIcon className="w-3 h-3" />
+                          </a>
+                        );
+                      })()}
+                    </div>
                 </div>
             )
           })
@@ -132,13 +251,190 @@ const ShipmentListCard: React.FC<ShipmentListCardProps> = ({ title, shipments, u
 };
 
 
-const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users, currentUser, clients, products, companyLogo, vehicles, onDeleteAttachment, onUpdatePrice }) => {
-
-
+const DashboardPage: React.FC<DashboardPageProps> = ({ 
+  cargos, 
+  shipments, 
+  users, 
+  currentUser, 
+  clients, 
+  products, 
+  companyLogo, 
+  vehicles, 
+  drivers = [], 
+  onDeleteAttachment, 
+  onUpdateAttachment,
+  onUpdateShipmentData,
+  onAddAttachments,
+  onUpdateAnttAndBankDetails,
+  onUpdatePrice, 
+  freightOffers = [], 
+  onSaveFreightOffer, 
+  onAcceptFreightOffer, 
+  onDeleteFreightOffer, 
+  onConvertToCargo, 
+  onCreateShipment, 
+  allShipments,
+  riskQueryOptions,
+  onSwapCargo
+}) => {
+  const navigate = useNavigate();
   const [detailsModalShipment, setDetailsModalShipment] = React.useState<Shipment | null>(null);
+  const [isOfferModalOpen, setIsOfferModalOpen] = React.useState(false);
+  const [offerFilterStatus, setOfferFilterStatus] = React.useState<string>('all');
+  const [offerFilterOrigin, setOfferFilterOrigin] = React.useState<string>('');
+  const [offerFilterDestination, setOfferFilterDestination] = React.useState<string>('');
+  const [selectedDriverForHistoryId, setSelectedDriverForHistoryId] = React.useState<string | null>(null);
+  const [offerForNewShipment, setOfferForNewShipment] = React.useState<FreightOffer | null>(null);
+  const [selectedClientForBranchesHistory, setSelectedClientForBranchesHistory] = useState<Client | null>(null);
   
+  // Modals state for quick direct actions (Attachment and ANTT)
+  const [selectedShipmentForAttachment, setSelectedShipmentForAttachment] = useState<Shipment | null>(null);
+  const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
+  const [selectedShipmentForAntt, setSelectedShipmentForAntt] = useState<Shipment | null>(null);
+  const [isAnttModalOpen, setAnttModalOpen] = useState(false);
+
+  const handleOpenAttachmentModal = useCallback((shipment: Shipment) => {
+    setSelectedShipmentForAttachment(shipment);
+    setAttachmentModalOpen(true);
+  }, []);
+
+  const handleCloseAttachmentModal = useCallback(() => {
+    setAttachmentModalOpen(false);
+    setSelectedShipmentForAttachment(null);
+  }, []);
+
+  const handleSaveAttachment = useCallback(async (data: any) => {
+    if (!selectedShipmentForAttachment || !onUpdateAttachment) return;
+    try {
+      await onUpdateAttachment(selectedShipmentForAttachment.id, data);
+      handleCloseAttachmentModal();
+    } catch (err) {
+      console.error('Error in handleSaveAttachment:', err);
+      throw err;
+    }
+  }, [selectedShipmentForAttachment, onUpdateAttachment, handleCloseAttachmentModal]);
+
+  const handleOpenCadastroAntt = useCallback((shipment: Shipment) => {
+    setSelectedShipmentForAntt(shipment);
+    setAnttModalOpen(true);
+  }, []);
+
+  const handleSaveAntt = useCallback(async (data: { anttOwnerIdentifier: string; bankDetails?: string }) => {
+    if (!selectedShipmentForAntt) return;
+    if (onUpdateAnttAndBankDetails) {
+      await onUpdateAnttAndBankDetails(selectedShipmentForAntt.id, data);
+    } else if (onUpdateShipmentData) {
+      await onUpdateShipmentData(selectedShipmentForAntt.id, data);
+    }
+    setAnttModalOpen(false);
+    setSelectedShipmentForAntt(null);
+  }, [selectedShipmentForAntt, onUpdateAnttAndBankDetails, onUpdateShipmentData]);
+
+  // Kanban Column Configs for different profiles
+  const fiscalColumns = useMemo<KanbanColumnConfig[]>(() => [
+    {
+      id: 'aguardando-cadastro',
+      title: 'Aguardando Cadastro',
+      statuses: [ShipmentStatus.PreCadastro],
+      thresholds: { yellow: 60, red: 90 },
+      accentColor: '#f59e0b',
+      emptyText: 'Nenhum embarque aguardando cadastro ANTT'
+    },
+    {
+      id: 'aguardando-seguradora',
+      title: 'Aguardando Seguradora',
+      statuses: [ShipmentStatus.AguardandoSeguradora],
+      thresholds: { yellow: 30, red: 50 },
+      accentColor: '#3b82f6',
+      emptyText: 'Nenhum embarque aguardando liberação da seguradora'
+    },
+    {
+      id: 'aguardando-nota',
+      title: 'Aguardando Nota Fiscal',
+      statuses: [ShipmentStatus.AguardandoNota],
+      thresholds: { yellow: 120, red: 240 },
+      accentColor: '#8b5cf6',
+      emptyText: 'Nenhum embarque aguardando nota fiscal'
+    },
+    {
+      id: 'aguardando-fiscal',
+      title: 'Aguardando Fiscal',
+      statuses: [ShipmentStatus.AguardandoFiscal],
+      thresholds: { yellow: 120, red: 240 },
+      accentColor: '#06b6d4',
+      emptyText: 'Nenhum embarque aguardando documentação fiscal'
+    }
+  ], []);
+
+  const grColumns = useMemo<KanbanColumnConfig[]>(() => [
+    {
+      id: 'aguardando-cadastro',
+      title: 'Aguardando Cadastro',
+      statuses: [ShipmentStatus.PreCadastro],
+      thresholds: { yellow: 60, red: 90 },
+      accentColor: '#f59e0b',
+      emptyText: 'Nenhum embarque aguardando cadastro ANTT'
+    },
+    {
+      id: 'aguardando-seguradora',
+      title: 'Aguardando Seguradora',
+      statuses: [ShipmentStatus.AguardandoSeguradora],
+      thresholds: { yellow: 30, red: 50 },
+      accentColor: '#3b82f6',
+      emptyText: 'Nenhum embarque aguardando liberação da seguradora'
+    }
+  ], []);
+
+  const financeiroColumns = useMemo<KanbanColumnConfig[]>(() => [
+    {
+      id: 'aguardando-adiantamento',
+      title: 'Aguardando Pagamento de Adiantamento',
+      statuses: [ShipmentStatus.AguardandoAdiantamento],
+      thresholds: { yellow: 150, red: 165 }, // 2:30h alerta - 2:45h crítico
+      accentColor: '#f59e0b',
+      emptyText: 'Nenhum embarque aguardando adiantamento'
+    },
+    {
+      id: 'em-transito',
+      title: 'Em Trânsito / Entrega',
+      statuses: [ShipmentStatus.AguardandoDescarga],
+      thresholds: { yellow: 24 * 60, red: 48 * 60 },
+      accentColor: '#3b82f6',
+      emptyText: 'Nenhum embarque em trânsito'
+    },
+    {
+      id: 'aguardando-saldo',
+      title: 'Aguardando Pagamento de Saldo',
+      statuses: [ShipmentStatus.AguardandoPagamentoSaldo],
+      thresholds: { yellow: 150, red: 165 }, // 2:30h alerta - 2:45h crítico
+      accentColor: '#ef4444',
+      emptyText: 'Nenhum embarque aguardando liquidação de saldo'
+    }
+  ], []);
+
+  const supervisorColumns = useMemo<KanbanColumnConfig[]>(() => [
+    {
+      id: 'aguardando-carregamento',
+      title: 'Embarques Aguardando Carregamento',
+      statuses: [ShipmentStatus.AguardandoCarregamento],
+      thresholds: { yellow: 60, red: 120 },
+      accentColor: '#3b82f6',
+      emptyText: 'Nenhum embarque aguardando carregamento'
+    }
+  ], []);
+
+  const addOfferHistory = (offer: FreightOffer, description: string) => {
+    const newLog = {
+      id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      userId: currentUser?.id || '',
+      timestamp: new Date().toISOString(),
+      description
+    };
+    return [...(offer.history || []), newLog];
+  };
+
   // Sync modal shipment with latest data from props
-  React.useEffect(() => {
+  useEffect(() => {
     if (detailsModalShipment) {
       const updated = shipments.find(s => s.id === detailsModalShipment.id);
       if (updated && JSON.stringify(updated) !== JSON.stringify(detailsModalShipment)) {
@@ -179,17 +475,61 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users,
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
-    const volumesByClient: Record<string, number> = {};
+    const volumesByClient: Record<string, { total: number; branches: Record<string, { name: string; cnpj: string; city?: string; state?: string; volume: number; shipmentsCount: number }> }> = {};
 
     shipments.forEach(s => {
-      // Find when it reached Aguardando Nota (effective volume)
-      const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
-      if (effectiveEntry) {
-        const date = new Date(effectiveEntry.timestamp);
+      // Find effective date (CT-e emission date or when it reached Aguardando Nota)
+      const effDateStr = getShipmentEffectiveDate(s);
+      if (effDateStr) {
+        const date = new Date(effDateStr + 'T00:00:00');
         if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
           const cargo = cargos.find(c => c.id === s.cargoId);
           if (cargo) {
-            volumesByClient[cargo.clientId] = (volumesByClient[cargo.clientId] || 0) + s.shipmentTonnage;
+            const client = clients.find(c => c.id === cargo.clientId);
+            if (!volumesByClient[cargo.clientId]) {
+              volumesByClient[cargo.clientId] = { total: 0, branches: {} };
+            }
+            const clientEntry = volumesByClient[cargo.clientId];
+            const tonnage = Number(s.shipmentTonnage) || 0;
+            clientEntry.total += tonnage;
+
+            // Resolve branch
+            let branchKey = 'matriz';
+            let branchName = client?.nomeFantasia ? `${client.nomeFantasia} (Matriz)` : 'Matriz';
+            let branchCnpj = client?.cnpj || '';
+            let branchCity = client?.city;
+            let branchState = client?.state;
+
+            const branches = client?.secondaryCnpjs || [];
+            let matchedBranch = undefined;
+            if (cargo.clientBranchId) {
+              matchedBranch = branches.find(b => b.id === cargo.clientBranchId);
+            }
+            if (!matchedBranch && cargo.clientCnpj) {
+              const cleanCnpj = cargo.clientCnpj.replace(/\D/g, '');
+              matchedBranch = branches.find(b => b.cnpj.replace(/\D/g, '') === cleanCnpj);
+            }
+
+            if (matchedBranch) {
+              branchKey = matchedBranch.id || matchedBranch.cnpj;
+              branchName = matchedBranch.nomeFantasia || matchedBranch.razaoSocial || 'Filial';
+              branchCnpj = matchedBranch.cnpj;
+              branchCity = matchedBranch.city;
+              branchState = matchedBranch.state;
+            }
+
+            if (!clientEntry.branches[branchKey]) {
+              clientEntry.branches[branchKey] = {
+                name: branchName,
+                cnpj: branchCnpj,
+                city: branchCity,
+                state: branchState,
+                volume: 0,
+                shipmentsCount: 0,
+              };
+            }
+            clientEntry.branches[branchKey].volume += tonnage;
+            clientEntry.branches[branchKey].shipmentsCount += 1;
           }
         }
       }
@@ -198,12 +538,25 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users,
     const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-orange-500', 'bg-purple-500', 'bg-red-500', 'bg-yellow-500', 'bg-pink-500', 'bg-indigo-500'];
     
     return Object.entries(volumesByClient)
-      .map(([clientId, value], index) => {
+      .map(([clientId, data], index) => {
         const client = clients.find(c => c.id === clientId);
+        const subItems = Object.values(data.branches)
+          .map(b => ({
+            label: b.name,
+            value: b.volume,
+            cnpj: b.cnpj,
+            city: b.city,
+            state: b.state,
+            shipmentsCount: b.shipmentsCount
+          }))
+          .sort((a, b) => b.value - a.value);
+
         return {
+          clientId,
           label: client ? client.nomeFantasia || client.razaoSocial : 'Desconhecido',
-          value,
-          color: colors[index % colors.length]
+          value: data.total,
+          color: colors[index % colors.length],
+          subItems: (client?.secondaryCnpjs && client.secondaryCnpjs.length > 0) || subItems.length > 1 ? subItems : undefined,
         };
       })
       .sort((a, b) => b.value - a.value);
@@ -219,7 +572,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users,
 
   const canViewRanking = useMemo(() => {
     if (!currentUser) return false;
-    return [UserProfile.Comercial, UserProfile.Coordenador, UserProfile.Admin, UserProfile.Diretor].includes(currentUser.profile);
+    return [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Demonstracao].includes(currentUser.profile);
   }, [currentUser]);
 
   const dashboardStats = useMemo(() => {
@@ -230,19 +583,24 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users,
     let monthlyEffectiveTonnage = 0;
     
     shipments.forEach(s => {
-      const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
-      if (effectiveEntry) {
-        const date = new Date(effectiveEntry.timestamp);
+      const effDateStr = getShipmentEffectiveDate(s);
+      if (effDateStr) {
+        const date = new Date(effDateStr + 'T00:00:00');
         if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
           monthlyEffectiveTonnage += s.shipmentTonnage || 0;
         }
       }
     });
 
+    const monthlyCommission = monthlyEffectiveTonnage * 2;
+    const canViewCommission = currentUser && [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Demonstracao].includes(currentUser.profile);
+
     return {
-      monthlyEffectiveTonnage
+      monthlyEffectiveTonnage,
+      monthlyCommission,
+      canViewCommission
     };
-  }, [shipments]);
+  }, [shipments, currentUser]);
 
   const clientDashboardData = useMemo(() => {
     if (currentUser?.profile !== UserProfile.Cliente) return null;
@@ -256,29 +614,68 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users,
     let scheduledVehicles = 0;
     let loadedAndFinishedVehicles = 0;
 
-    const scheduledStatuses: ShipmentStatus[] = [
+    const scheduledStatuses: (string | ShipmentStatus)[] = [
+        ShipmentStatus.PreCadastro,
+        'Ag. Cadastro',
         ShipmentStatus.AguardandoSeguradora,
+        'Ag. Seguradora',
         ShipmentStatus.AguardandoCarregamento,
+        'Ag. Carregamento',
         ShipmentStatus.AguardandoNota,
+        'Ag. Nota',
+        ShipmentStatus.AguardandoFiscal,
+        'Ag. Fiscal',
         ShipmentStatus.AguardandoAdiantamento,
+        'Ag. Adiantamento',
         ShipmentStatus.AguardandoAgendamento,
+        'Ag. Agendamento',
     ];
 
-    const loadedAndFinishedStatuses: ShipmentStatus[] = [
+    const loadedAndFinishedStatuses: (string | ShipmentStatus)[] = [
         ShipmentStatus.AguardandoDescarga,
+        'Ag. Descarga',
         ShipmentStatus.AguardandoPagamentoSaldo,
+        'Ag. Saldo',
         ShipmentStatus.Finalizado,
+        'Finalizado',
     ];
+
+    const myClient = clients.find(c => c.id === currentUser.clientId);
+    const clientCnpjs = new Set<string>();
+    if (myClient?.cnpj) clientCnpjs.add(myClient.cnpj.replace(/\D/g, ''));
+    (myClient?.secondaryCnpjs || []).forEach(b => {
+      if (b.cnpj) clientCnpjs.add(b.cnpj.replace(/\D/g, ''));
+    });
+
+    const isClientCargo = (c: Cargo) => {
+      if (c.clientId === currentUser.clientId) return true;
+      const cleanCnpj = c.clientCnpj?.replace(/\D/g, '');
+      if (cleanCnpj && clientCnpjs.has(cleanCnpj)) return true;
+      return false;
+    };
+
+    const clientCargos = cargos.filter(isClientCargo);
+    const clientCargoIds = new Set(clientCargos.map(c => c.id));
+    const allShipmentsPool = (allShipments && allShipments.length > 0 ? allShipments : shipments);
+    const myShipments = allShipmentsPool.filter(s => clientCargoIds.has(s.cargoId));
+
+    const getEffectiveDate = (s: Shipment) => {
+      const effDateStr = getShipmentEffectiveDate(s);
+      if (effDateStr) return new Date(effDateStr + 'T00:00:00');
+      if (s.createdAt) return new Date(s.createdAt);
+      return null;
+    };
     
-    shipments.forEach(s => {
+    myShipments.forEach(s => {
+        if (s.status === ShipmentStatus.Cancelado || (s.status as string) === 'Cancelado') return;
+
         // Volume calculations
-        const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
-        if (effectiveEntry) {
-            const effectiveDate = new Date(effectiveEntry.timestamp);
+        const effectiveDate = getEffectiveDate(s);
+        if (effectiveDate && !isNaN(effectiveDate.getTime())) {
             if (effectiveDate.getFullYear() === currentYear) {
-                volumeLoadedThisYear += s.shipmentTonnage;
+                volumeLoadedThisYear += (s.shipmentTonnage || 0);
                 if (effectiveDate.getMonth() === currentMonth) {
-                    volumeLoadedThisMonth += s.shipmentTonnage;
+                    volumeLoadedThisMonth += (s.shipmentTonnage || 0);
                 }
             }
         }
@@ -293,187 +690,1232 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users,
     });
 
     return {
-        pendingLoads: cargos.filter(c => c.status === CargoStatus.EmAndamento).length,
+        pendingLoads: clientCargos.filter(c => (c.status || '').toLowerCase().includes('andamento')).length,
         volumeLoadedThisMonth,
         volumeLoadedThisYear,
         scheduledVehicles,
         loadedAndFinishedVehicles,
     };
-  }, [cargos, shipments, currentUser]);
+  }, [cargos, shipments, allShipments, currentUser, clients]);
 
+  // View mode switcher for Admin / Diretor / Demo
+  const canSwitchView = useMemo(() => {
+    if (!currentUser) return false;
+    return [
+      UserProfile.Admin,
+      UserProfile.Diretor,
+      UserProfile.Demonstracao,
+    ].includes(currentUser.profile);
+  }, [currentUser]);
 
+  const [viewMode, setViewMode] = useState<DashboardViewMode>(() => {
+    if (currentUser?.profile === UserProfile.Fiscal || currentUser?.profile === UserProfile.GerenciadoraDeRisco) return 'fiscal';
+    if (currentUser?.profile === UserProfile.Financeiro) return 'financeiro';
+    if (currentUser?.profile === UserProfile.Supervisor) return 'supervisor';
 
-  if (currentUser?.profile === UserProfile.Fiscal) {
-    const shipmentsPreCadastro = shipments.filter(s => s.status === ShipmentStatus.PreCadastro);
-    const shipmentsAwaitingInsurance = shipments.filter(s => s.status === ShipmentStatus.AguardandoSeguradora);
-    const shipmentsAwaitingNote = shipments.filter(s => s.status === ShipmentStatus.AguardandoNota);
+    const saved = localStorage.getItem('agromercantil_dashboard_view_mode') || localStorage.getItem('transcunha_dashboard_view_mode');
+    if (saved && ['geral', 'fiscal', 'financeiro', 'supervisor'].includes(saved)) {
+      return saved as DashboardViewMode;
+    }
+    return 'geral';
+  });
+
+  const [isViewSelectorOpen, setIsViewSelectorOpen] = useState(false);
+  const viewSelectorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (viewSelectorRef.current && !viewSelectorRef.current.contains(event.target as Node)) {
+        setIsViewSelectorOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsViewSelectorOpen(false);
+      }
+    };
+    if (isViewSelectorOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isViewSelectorOpen]);
+
+  const currentViewConfig = VIEW_MODES.find(m => m.id === viewMode) || VIEW_MODES[0];
+
+  const renderHeaderTitle = () => {
+    if (!canSwitchView) {
+      return currentViewConfig.title;
+    }
+
+    return (
+      <div className="relative inline-block text-left" ref={viewSelectorRef}>
+        <button
+          type="button"
+          onClick={() => setIsViewSelectorOpen(prev => !prev)}
+          className="group flex items-center gap-3 px-3 py-1.5 -ml-3 rounded-2xl hover:bg-gray-100/90 dark:hover:bg-gray-800/90 border border-transparent hover:border-gray-200 dark:hover:border-gray-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/40 active:scale-[0.99]"
+          aria-expanded={isViewSelectorOpen}
+          aria-haspopup="true"
+          title="Clique para alternar o modo de visualização do Dashboard"
+        >
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight group-hover:text-primary dark:group-hover:text-blue-400 transition-colors">
+              {currentViewConfig.title}
+            </h1>
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-all ${currentViewConfig.badgeBg} ${currentViewConfig.badgeText}`}>
+              {currentViewConfig.shortBadge}
+            </span>
+          </div>
+          <div className={`p-1.5 rounded-xl bg-gray-100 dark:bg-gray-700/80 text-gray-600 dark:text-gray-300 group-hover:bg-primary group-hover:text-white dark:group-hover:bg-blue-600 transition-all duration-200 shadow-sm ${isViewSelectorOpen ? 'bg-primary text-white dark:bg-blue-600 rotate-180' : ''}`}>
+            <ChevronDownIcon className="w-4 h-4" />
+          </div>
+        </button>
+
+        {isViewSelectorOpen && (
+          <div className="absolute left-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white dark:bg-gray-800 shadow-2xl ring-1 ring-black/10 dark:ring-white/10 z-50 p-2 border border-gray-100 dark:border-gray-700 backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-150">
+            <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/60 mb-1 flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                  Modo de Visualização
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Selecione o Dashboard desejado
+                </p>
+              </div>
+              <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+                Admin
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              {VIEW_MODES.map((mode) => {
+                const isSelected = viewMode === mode.id;
+                const Icon = mode.icon;
+                return (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    onClick={() => {
+                      setViewMode(mode.id);
+                      localStorage.setItem('agromercantil_dashboard_view_mode', mode.id);
+                      setIsViewSelectorOpen(false);
+                    }}
+                    className={`w-full flex items-start gap-3 p-2.5 rounded-xl text-left transition-all duration-150 group ${
+                      isSelected
+                        ? 'bg-blue-50/90 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 shadow-sm'
+                        : 'hover:bg-gray-50 dark:hover:bg-gray-700/50 border border-transparent'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-xl flex-shrink-0 transition-all ${
+                      isSelected
+                        ? 'bg-gradient-to-br ' + mode.color + ' text-white shadow-md'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 group-hover:bg-primary/10 group-hover:text-primary dark:group-hover:text-blue-400'
+                    }`}>
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-sm font-bold ${
+                          isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-gray-800 dark:text-gray-200 group-hover:text-gray-900 dark:group-hover:text-white'
+                        }`}>
+                          {mode.label}
+                        </span>
+                        {isSelected && (
+                          <span className="flex items-center text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 rounded-full">
+                            Ativo
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                        {mode.description}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (currentUser?.profile === UserProfile.Embarcador) {
+    const pendingRequests = freightOffers?.filter(o => {
+       if (o.status !== FreightOfferStatus.Pendente) return false;
+       if (!o.driverId) return false;
+       if (o.requestedEmbarcadorId === currentUser.id) return true;
+       if (o.requestTimestamp) {
+         const requestTime = new Date(o.requestTimestamp).getTime();
+         const now = Date.now();
+         if ((now - requestTime) > 5 * 60 * 1000) return true;
+       }
+       return false;
+    }) || [];
 
     return (
       <>
-        <Header title="Dashboard Fiscal" />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <ShipmentListCard title="Aguardando Cadastro" shipments={shipmentsPreCadastro} users={users} thresholds={{ yellow: 60, red: 90 }} onShowDetails={setDetailsModalShipment} />
-          <ShipmentListCard title="Aguardando Seguradora" shipments={shipmentsAwaitingInsurance} users={users} thresholds={{ yellow: 30, red: 50 }} onShowDetails={setDetailsModalShipment} />
-          <ShipmentListCard title="Aguardando Nota" shipments={shipmentsAwaitingNote} users={users} thresholds={{ yellow: 120, red: 240 }} onShowDetails={setDetailsModalShipment} />
+        <Header title="Dashboard do Embarcador" />
+        {pendingRequests.length > 0 && (
+          <div className="mb-8">
+            <DriverOrderRequestsList
+              title="Solicitações de Ordem de Carregamento (Motoristas)"
+              requests={pendingRequests}
+              clients={clients}
+              products={products}
+              cargos={cargos}
+              drivers={drivers}
+              users={users}
+              currentUser={currentUser}
+              onAccept={async (offer) => {
+                // Open NewShipmentModal pre-filled with driver data without closing the request prematurely
+                setOfferForNewShipment(offer);
+              }}
+              onRefuse={async (offer, reason) => {
+                const refusalReason = reason || 'Solicitação de ordem recusada pelo embarcador';
+                if (onSaveFreightOffer) {
+                  const history = [...(offer.history || []), {
+                    id: `log_${Date.now()}_sys`,
+                    userId: currentUser.id,
+                    timestamp: new Date().toISOString(),
+                    description: `Solicitação de ordem recusada por ${currentUser.name}. Motivo: ${refusalReason}`
+                  }];
+                  await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Recusada, history });
+                }
+                // Registrar no histórico de cancelados
+                if (offer.cargoId && onCreateShipment) {
+                  const driverUser = users.find(u => u.id === offer.driverId);
+                  const driverInDb = drivers.find(d => d.id === offer.driverId || (driverUser?.email && d.cpf.replace(/\D/g, '') === driverUser.email.replace(/\D/g, '')));
+                  const dName = driverInDb?.name || driverUser?.name || (offer as any).driverName || 'Motorista';
+                  const dCpf = driverInDb?.cpf || (driverUser?.email && driverUser.email.replace(/\D/g, '').length === 11 ? driverUser.email : '') || (offer as any).driverCpf || '';
+                  const dContact = driverInDb?.phone || driverUser?.phone || (offer as any).driverContact || '';
+
+                  const cargo = cargos.find(c => c.id === offer.cargoId);
+                  const ton = offer.totalTonnage || (cargo ? Math.max(0, cargo.scheduledVolume - cargo.loadedVolume) : 0) || 0;
+                  const driverFreightRate = offer.freightValuePerTon || cargo?.driverFreightValuePerTon || 0;
+
+                  await onCreateShipment({
+                    cargoId: offer.cargoId,
+                    driverName: dName,
+                    driverCpf: dCpf,
+                    driverContact: dContact,
+                    embarcadorId: currentUser.id,
+                    horsePlate: '-',
+                    shipmentTonnage: ton,
+                    driverFreightValue: driverFreightRate * ton,
+                    driverFreightRateSnapshot: driverFreightRate,
+                    status: ShipmentStatus.Cancelado,
+                    scheduledDate: new Date().toISOString().split('T')[0],
+                    cancellationReason: refusalReason,
+                    history: [{
+                      id: `log_${Date.now()}_refusal`,
+                      userId: currentUser.id,
+                      timestamp: new Date().toISOString(),
+                      description: `Solicitação de ordem do motorista ${dName} recusada. Motivo: ${refusalReason}`
+                    }]
+                  });
+                }
+              }}
+              onShowDriverHistory={(driverId) => setSelectedDriverForHistoryId(driverId)}
+            />
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <Card
+            title="Embarques Ativos"
+            value={activeShipments.toString()}
+            icon={<TruckIcon className="w-6 h-6 text-white" />}
+            colorClass="bg-primary"
+          />
+          <Card
+            title="Cargas em Andamento"
+            value={pendingLoads.toString()}
+            icon={<PackageIcon className="w-6 h-6 text-white" />}
+            colorClass="bg-secondary"
+          />
+        </div>
+        <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-6">
+            <DonutChartCard title="Distribuição de Cargas por Status" data={cargoStatusData} />
+            <DonutChartCard 
+              title="Volume Carregado por Cliente (Mês)" 
+              data={clientVolumeData} 
+              unit="t" 
+              onViewClientHistory={(clientId) => {
+                const cl = clients.find(c => c.id === clientId);
+                if (cl) setSelectedClientForBranchesHistory(cl);
+              }}
+            />
+          </div>
+          <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
+          <ShipperRankingCard shipments={allShipments || shipments} cargos={cargos} users={users} currentUser={currentUser} />
         </div>
         <ShipmentDetailsModal
           isOpen={!!detailsModalShipment}
           onClose={() => setDetailsModalShipment(null)}
           shipment={detailsModalShipment}
-          cargo={detailsModalShipment ? cargos.find(c => c.id === detailsModalShipment.cargoId) : undefined}
+          cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+          currentUser={currentUser}
           clients={clients}
           products={products}
           companyLogo={companyLogo}
           vehicles={vehicles}
           users={users}
           onDeleteAttachment={onDeleteAttachment}
+          onUpdatePrice={onUpdatePrice}
+          onUpdateShipmentData={onUpdateShipmentData}
+          onAddAttachments={onAddAttachments}
+          onSwapCargo={onSwapCargo}
+          cargos={cargos}
         />
-
-
+        {offerForNewShipment && onCreateShipment && (
+          <NewShipmentModal
+            isOpen={!!offerForNewShipment}
+            onClose={() => setOfferForNewShipment(null)}
+            onSave={async (data) => {
+              if (onSaveFreightOffer && offerForNewShipment) {
+                const history = [...(offerForNewShipment.history || []), {
+                  id: `log_${Date.now()}_sys`,
+                  userId: currentUser.id,
+                  timestamp: new Date().toISOString(),
+                  description: `Solicitação de ordem aceita por ${currentUser.name}. Embarque criado com sucesso.`
+                }];
+                await onSaveFreightOffer({ ...offerForNewShipment, status: FreightOfferStatus.Aceita, history });
+              }
+              await onCreateShipment({
+                cargoId: offerForNewShipment.cargoId,
+                ...data
+              });
+              setOfferForNewShipment(null);
+            }}
+            cargo={cargos.find(c => c.id === offerForNewShipment.cargoId) || null}
+            drivers={drivers}
+            clients={clients}
+            vehicles={vehicles}
+            currentUser={currentUser}
+            shipments={shipments}
+            users={users}
+            offer={offerForNewShipment}
+          />
+        )}
       </>
     );
   }
 
-  if (currentUser?.profile === UserProfile.Financeiro) {
-    const shipmentsAwaitingAdvance = shipments.filter(s => s.status === ShipmentStatus.AguardandoAdiantamento);
-    const shipmentsAwaitingBalance = shipments.filter(s => s.status === ShipmentStatus.AguardandoPagamentoSaldo);
-    const shipmentsInTransit = shipments.filter(s => s.status === ShipmentStatus.AguardandoDescarga); // Added filter
-    const shipmentsUnloaded = shipments.filter(s => s.status === ShipmentStatus.AguardandoPagamentoSaldo); // Added filter
+  if (!canSwitchView && currentUser?.profile === UserProfile.Supervisor) {
+    const totalActiveLoads = cargos.filter(c => c.status === CargoStatus.EmAndamento || c.status === CargoStatus.Suspensa).length;
+    const shipmentsAwaitingLoading = shipments.filter(s => s.status === ShipmentStatus.AguardandoCarregamento);
+
+    const SEVENTY_TWO_HOURS_MS = 72 * 60 * 60 * 1000;
+    const pendingOffers = freightOffers.filter(o => {
+      if (o.status === FreightOfferStatus.Recusada || o.driverId) return false;
+      const age = Date.now() - new Date(o.createdAt).getTime();
+      if (age > SEVENTY_TWO_HOURS_MS) return false;
+      return true;
+    });
 
     return (
       <>
-        <Header title="Dashboard Financeiro" />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <ShipmentListCard 
-            title="Aguardando Pagamento de Adiantamento" 
-            shipments={shipmentsAwaitingAdvance} 
-            users={users} 
-            thresholds={{ yellow: 30, red: 60 }} 
-            onShowDetails={setDetailsModalShipment} // Added onShowDetails
-          />
-          <ShipmentListCard 
-            title="Aguardando Pagamento de Saldo" 
-            shipments={shipmentsAwaitingBalance} 
-            users={users} 
-            thresholds={{ yellow: 24 * 60, red: 47 * 60 }} 
-            onShowDetails={setDetailsModalShipment} // Added onShowDetails
-          />
-          <ShipmentListCard 
-            title="Em Trânsito / Entrega" 
-            shipments={shipmentsInTransit} 
-            users={users} 
-            thresholds={{ yellow: 24 * 60, red: 48 * 60 }}
+        <Header title="Dashboard do Supervisor" />
+        {pendingOffers.length > 0 && (
+          <div className="mb-8">
+            <FreightOffersList
+              offers={pendingOffers}
+              clients={clients}
+              products={products}
+              cargos={cargos}
+              users={users}
+              isClientProfile={false}
+              onAccept={async (offer) => {
+                if (onAcceptFreightOffer) {
+                  onAcceptFreightOffer(offer);
+                } else if (onSaveFreightOffer) {
+                  const history = addOfferHistory(offer, `Oferta aceita pela Transportadora.`);
+                  await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Aceita, history });
+                }
+              }}
+              onRefuse={async (offer) => {
+                if (onSaveFreightOffer) {
+                  const history = addOfferHistory(offer, `Oferta recusada pela Transportadora.`);
+                  await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Recusada, history });
+                }
+              }}
+              onCounterOffer={async (offer, newValue) => {
+                if (onSaveFreightOffer) {
+                  if (offer.status === FreightOfferStatus.AguardandoPreco) {
+                    const history = addOfferHistory(offer, `Preço inicial de R$ ${newValue.toFixed(2)} enviado pela Transportadora.`);
+                    await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.AnaliseCliente, freightValuePerTon: newValue, history });
+                  } else if (offer.status === FreightOfferStatus.AnaliseCliente) {
+                    const oldPrice = offer.freightValuePerTon ? ` (era R$ ${offer.freightValuePerTon.toFixed(2)})` : '';
+                    const history = addOfferHistory(offer, `Preço inicial editado para R$ ${newValue.toFixed(2)} pela Transportadora${oldPrice}.`);
+                    await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.AnaliseCliente, freightValuePerTon: newValue, history });
+                  } else {
+                    const history = addOfferHistory(offer, `Contraproposta de R$ ${newValue.toFixed(2)} enviada pela Transportadora.`);
+                    await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Contraproposta, counterOfferValue: newValue, history });
+                  }
+                }
+              }}
+              currentUser={currentUser || undefined}
+              onDelete={onDeleteFreightOffer}
+              onConvertToCargo={onConvertToCargo}
+            />
+          </div>
+        )}
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+           <Card
+              title="Total de Cargas Ativas"
+              value={totalActiveLoads.toString()}
+              icon={<PackageIcon className="w-6 h-6 text-white" />}
+              colorClass="bg-blue-500"
+            />
+            <Card
+              title="Aguardando Carregamento"
+              value={shipmentsAwaitingLoading.length.toString()}
+              icon={<TruckIcon className="w-6 h-6 text-white" />}
+              colorClass="bg-primary"
+            />
+        </div>
+
+        <div className="mb-8">
+          <OptimizedShipmentsBoard
+            title="Embarques Aguardando Carregamento"
+            description="Controle e acompanhamento de veículos agendados para pesagem e carregamento"
+            columns={supervisorColumns}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            products={products}
+            users={users}
+            drivers={drivers}
+            vehicles={vehicles}
+            currentUser={currentUser}
             onShowDetails={setDetailsModalShipment}
-          />
-          <ShipmentListCard 
-            title="Descarga Pronta / Fechamento" 
-            shipments={shipmentsUnloaded} 
-            users={users} 
-            thresholds={{ yellow: 12 * 60, red: 24 * 60 }}
-            onShowDetails={setDetailsModalShipment}
+            onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+            onOpenCadastroAntt={handleOpenCadastroAntt}
+            onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
           />
         </div>
         <ShipmentDetailsModal
           isOpen={!!detailsModalShipment}
           onClose={() => setDetailsModalShipment(null)}
           shipment={detailsModalShipment}
-          cargo={detailsModalShipment ? cargos.find(c => c.id === detailsModalShipment.cargoId) : undefined}
+          cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+          currentUser={currentUser}
           clients={clients}
           products={products}
           companyLogo={companyLogo}
           vehicles={vehicles}
           users={users}
           onDeleteAttachment={onDeleteAttachment}
+          onUpdatePrice={onUpdatePrice}
+          onUpdateShipmentData={onUpdateShipmentData}
+          onAddAttachments={onAddAttachments}
         />
+        {selectedShipmentForAttachment && currentUser && (
+          <AttachmentModal
+            isOpen={isAttachmentModalOpen}
+            onClose={handleCloseAttachmentModal}
+            onSave={handleSaveAttachment}
+            shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
+            documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
+            currentUser={currentUser}
+            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            requiresRiskManagement={
+              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
+                ?.requiresRiskManagement !== false
+            }
+            products={products}
+            clients={clients}
+            users={users}
+            riskQueryOptions={riskQueryOptions}
+            onUpdateShipmentData={onUpdateShipmentData}
+          />
+        )}
+        {selectedShipmentForAntt && (
+          <CadastroAnttModal
+            isOpen={isAnttModalOpen}
+            onClose={() => {
+              setAnttModalOpen(false);
+              setSelectedShipmentForAntt(null);
+            }}
+            onSave={handleSaveAntt}
+            shipment={selectedShipmentForAntt}
+          />
+        )}
+      </>
+    );
+  }
 
+  if (!canSwitchView && currentUser?.profile === UserProfile.GerenciadoraDeRisco) {
+    return (
+      <>
+        <Header title="Dashboard GR" />
+        <div className="mb-8">
+          <OptimizedShipmentsBoard
+            title="Gestão de Risco dos Embarques"
+            description="Controle e acompanhamento de autorizações de seguradora e cadastros"
+            columns={grColumns}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            products={products}
+            users={users}
+            drivers={drivers}
+            vehicles={vehicles}
+            currentUser={currentUser}
+            onShowDetails={setDetailsModalShipment}
+            onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+            onOpenCadastroAntt={handleOpenCadastroAntt}
+            onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+          />
+        </div>
+        <ShipmentDetailsModal
+          isOpen={!!detailsModalShipment}
+          onClose={() => setDetailsModalShipment(null)}
+          shipment={detailsModalShipment}
+          cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+          currentUser={currentUser}
+          clients={clients}
+          products={products}
+          companyLogo={companyLogo}
+          vehicles={vehicles}
+          users={users}
+          onDeleteAttachment={onDeleteAttachment}
+          onUpdatePrice={onUpdatePrice}
+          onUpdateShipmentData={onUpdateShipmentData}
+          onAddAttachments={onAddAttachments}
+          onSwapCargo={onSwapCargo}
+          cargos={cargos}
+        />
+        {selectedShipmentForAttachment && currentUser && (
+          <AttachmentModal
+            isOpen={isAttachmentModalOpen}
+            onClose={handleCloseAttachmentModal}
+            onSave={handleSaveAttachment}
+            shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
+            documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
+            currentUser={currentUser}
+            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            requiresRiskManagement={
+              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
+                ?.requiresRiskManagement !== false
+            }
+            products={products}
+            clients={clients}
+            users={users}
+            riskQueryOptions={riskQueryOptions}
+            onUpdateShipmentData={onUpdateShipmentData}
+          />
+        )}
+        {selectedShipmentForAntt && (
+          <CadastroAnttModal
+            isOpen={isAnttModalOpen}
+            onClose={() => {
+              setAnttModalOpen(false);
+              setSelectedShipmentForAntt(null);
+            }}
+            onSave={handleSaveAntt}
+            shipment={selectedShipmentForAntt}
+          />
+        )}
+      </>
+    );
+  }
+
+  if (!canSwitchView && currentUser?.profile === UserProfile.Fiscal) {
+    return (
+      <>
+        <Header title="Dashboard Fiscal" />
+        <div className="mb-8">
+          <OptimizedShipmentsBoard
+            title="Gestão Fiscal dos Embarques"
+            description="Controle e acompanhamento de autorizações de seguradora, cadastros e documentação fiscal"
+            columns={fiscalColumns}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            products={products}
+            users={users}
+            drivers={drivers}
+            vehicles={vehicles}
+            currentUser={currentUser}
+            onShowDetails={setDetailsModalShipment}
+            onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+            onOpenCadastroAntt={handleOpenCadastroAntt}
+            onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+          />
+        </div>
+        <ShipmentDetailsModal
+          isOpen={!!detailsModalShipment}
+          onClose={() => setDetailsModalShipment(null)}
+          shipment={detailsModalShipment}
+          cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+          currentUser={currentUser}
+          clients={clients}
+          products={products}
+          companyLogo={companyLogo}
+          vehicles={vehicles}
+          users={users}
+          onDeleteAttachment={onDeleteAttachment}
+          onUpdatePrice={onUpdatePrice}
+          onUpdateShipmentData={onUpdateShipmentData}
+          onAddAttachments={onAddAttachments}
+          onSwapCargo={onSwapCargo}
+          cargos={cargos}
+        />
+        {selectedShipmentForAttachment && currentUser && (
+          <AttachmentModal
+            isOpen={isAttachmentModalOpen}
+            onClose={handleCloseAttachmentModal}
+            onSave={handleSaveAttachment}
+            shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
+            documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
+            currentUser={currentUser}
+            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            requiresRiskManagement={
+              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
+                ?.requiresRiskManagement !== false
+            }
+            products={products}
+            clients={clients}
+            users={users}
+            riskQueryOptions={riskQueryOptions}
+            onUpdateShipmentData={onUpdateShipmentData}
+          />
+        )}
+        {selectedShipmentForAntt && (
+          <CadastroAnttModal
+            isOpen={isAnttModalOpen}
+            onClose={() => {
+              setAnttModalOpen(false);
+              setSelectedShipmentForAntt(null);
+            }}
+            onSave={handleSaveAntt}
+            shipment={selectedShipmentForAntt}
+          />
+        )}
+      </>
+    );
+  }
+
+  if (!canSwitchView && currentUser?.profile === UserProfile.Financeiro) {
+    return (
+      <>
+        <Header title="Dashboard Financeiro" />
+        <div className="mb-8">
+          <OptimizedShipmentsBoard
+            title="Gestão Financeira dos Embarques"
+            description="Controle e liquidação de adiantamentos, saldos e monitoramento de trânsito em tempo real"
+            columns={financeiroColumns}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            products={products}
+            users={users}
+            drivers={drivers}
+            vehicles={vehicles}
+            currentUser={currentUser}
+            onShowDetails={setDetailsModalShipment}
+            onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+            onOpenCadastroAntt={handleOpenCadastroAntt}
+            onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+          />
+        </div>
+        <ShipmentDetailsModal
+          isOpen={!!detailsModalShipment}
+          onClose={() => setDetailsModalShipment(null)}
+          shipment={detailsModalShipment}
+          cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+          currentUser={currentUser}
+          clients={clients}
+          products={products}
+          companyLogo={companyLogo}
+          vehicles={vehicles}
+          users={users}
+          onDeleteAttachment={onDeleteAttachment}
+          onUpdatePrice={onUpdatePrice}
+          onUpdateShipmentData={onUpdateShipmentData}
+          onAddAttachments={onAddAttachments}
+          onSwapCargo={onSwapCargo}
+          cargos={cargos}
+        />
+        {selectedShipmentForAttachment && currentUser && (
+          <AttachmentModal
+            isOpen={isAttachmentModalOpen}
+            onClose={handleCloseAttachmentModal}
+            onSave={handleSaveAttachment}
+            shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
+            documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
+            currentUser={currentUser}
+            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            requiresRiskManagement={
+              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
+                ?.requiresRiskManagement !== false
+            }
+            products={products}
+            clients={clients}
+            users={users}
+            riskQueryOptions={riskQueryOptions}
+            onUpdateShipmentData={onUpdateShipmentData}
+          />
+        )}
+        {selectedShipmentForAntt && (
+          <CadastroAnttModal
+            isOpen={isAnttModalOpen}
+            onClose={() => {
+              setAnttModalOpen(false);
+              setSelectedShipmentForAntt(null);
+            }}
+            onSave={handleSaveAntt}
+            shipment={selectedShipmentForAntt}
+          />
+        )}
       </>
     );
   }
 
   if (currentUser?.profile === UserProfile.Cliente && clientDashboardData) {
+    const myOffers = freightOffers.filter(o => {
+      if (o.driverId) return false;
+      if (o.clientId !== currentUser.clientId) return false;
+      if (o.status === FreightOfferStatus.Aceita) {
+        const matchedCargo = getMatchedCargo(o, cargos);
+        if (!matchedCargo || matchedCargo.status === CargoStatus.Fechada) {
+          return false;
+        }
+      }
+      
+      // Apply Client Filters
+      if (offerFilterStatus === 'all' && o.status === FreightOfferStatus.Recusada) return false;
+      if (offerFilterStatus !== 'all' && o.status !== offerFilterStatus) return false;
+      if (offerFilterOrigin && !o.origin.toLowerCase().includes(offerFilterOrigin.toLowerCase())) return false;
+      if (offerFilterDestination && !o.destination.toLowerCase().includes(offerFilterDestination.toLowerCase())) return false;
+
+      return true;
+    });
+
+    const myClient = clients.find(c => c.id === currentUser.clientId);
+    const clientCnpjs = new Set<string>();
+    if (myClient?.cnpj) clientCnpjs.add(myClient.cnpj.replace(/\D/g, ''));
+    (myClient?.secondaryCnpjs || []).forEach(b => {
+      if (b.cnpj) clientCnpjs.add(b.cnpj.replace(/\D/g, ''));
+    });
+
+    const isClientCargo = (c: Cargo) => {
+      if (c.clientId === currentUser.clientId) return true;
+      const cleanCnpj = c.clientCnpj?.replace(/\D/g, '');
+      if (cleanCnpj && clientCnpjs.has(cleanCnpj)) return true;
+      return false;
+    };
+
+    const myCargos = cargos.filter(isClientCargo);
+    const cargoStatusCounts = myCargos.reduce((acc, c) => {
+      const st = (c.status || '').toLowerCase().trim();
+      if (st.includes('andamento')) {
+        acc[CargoStatus.EmAndamento] = (acc[CargoStatus.EmAndamento] || 0) + 1;
+      } else if (st.includes('fechada')) {
+        acc[CargoStatus.Fechada] = (acc[CargoStatus.Fechada] || 0) + 1;
+      } else if (st.includes('suspens')) {
+        acc[CargoStatus.Suspensa] = (acc[CargoStatus.Suspensa] || 0) + 1;
+      } else {
+        acc[c.status] = (acc[c.status] || 0) + 1;
+      }
+      return acc;
+    }, {} as Record<string, number>);
+
+    const cargoChartData = [
+      { label: 'Em Andamento', value: cargoStatusCounts[CargoStatus.EmAndamento] || 0, color: '#3b82f6' },
+      { label: 'Fechada', value: cargoStatusCounts[CargoStatus.Fechada] || 0, color: '#10b981' },
+      { label: 'Suspensa', value: cargoStatusCounts[CargoStatus.Suspensa] || 0, color: '#f59e0b' },
+    ].filter(d => d.value > 0);
+
+    const clientCargoIds = new Set(myCargos.map(c => c.id));
+    const allShipmentsPool = (allShipments && allShipments.length > 0 ? allShipments : shipments);
+    const myShipments = allShipmentsPool.filter(s => clientCargoIds.has(s.cargoId));
+
+    const funnelData = [
+      { label: 'Ag. Cadastro', value: myShipments.filter(s => s.status === ShipmentStatus.PreCadastro || (s.status as string) === 'Ag. Cadastro').length },
+      { label: 'Ag. Carregamento', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoCarregamento || (s.status as string) === 'Ag. Carregamento').length },
+      { label: 'Ag. Nota', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoNota || (s.status as string) === 'Ag. Nota').length },
+      { label: 'Ag. Fiscal', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoFiscal || (s.status as string) === 'Ag. Fiscal').length },
+      { label: 'Ag. Descarga', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoDescarga || (s.status as string) === 'Ag. Descarga').length },
+      { label: 'Finalizado', value: myShipments.filter(s => s.status === ShipmentStatus.Finalizado || (s.status as string) === 'Finalizado').length },
+    ].filter(d => d.value > 0);
+
     return (
         <>
-          <Header title="Dashboard" />
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Dashboard</h1>
+              <p className="text-gray-500 dark:text-gray-400 mt-1">Bem-vindo, {currentUser.name}</p>
+            </div>
+            <button
+              onClick={() => setIsOfferModalOpen(true)}
+              className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white rounded-lg font-medium transition-all shadow-md hover:shadow-lg flex items-center gap-2 transform hover:-translate-y-0.5"
+            >
+              <PackageIcon className="w-5 h-5" />
+              Nova Oferta de Frete
+            </button>
+          </div>
+
+          {myClient && (
+            <div className="bg-gradient-to-r from-blue-50/90 to-indigo-50/90 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200/80 dark:border-blue-800/60 rounded-2xl p-5 mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+              <div className="flex items-center gap-3.5">
+                <div className="p-3 bg-blue-600 text-white rounded-xl shadow-md">
+                  <Building2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                      {myClient.nomeFantasia || myClient.razaoSocial}
+                    </h3>
+                    {(myClient.secondaryCnpjs || []).length > 0 ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                        {(myClient.secondaryCnpjs || []).length + 1} CNPJs Cadastrados (Matriz & Filiais)
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
+                        CNPJ: {myClient.cnpj}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                    Acompanhe o relatório detalhado e o histórico individual de cada filial e CNPJ da sua empresa.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate('/reports')}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm hover:shadow-md cursor-pointer shrink-0"
+              >
+                <Building2 className="w-4 h-4" />
+                Ver Histórico & Relatório por CNPJ
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
             <Card
-              title="Cargas em andamento"
+              title="Cargas em Andamento"
               value={clientDashboardData.pendingLoads.toString()}
               icon={<PackageIcon className="w-6 h-6 text-white" />}
-              colorClass="bg-blue-500"
+              colorClass="bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-500/20"
             />
             <Card
-              title="Volume carregado (Mês)"
+              title="Volume Mensal"
               value={`${clientDashboardData.volumeLoadedThisMonth.toLocaleString('pt-BR')} ton`}
               icon={<TruckIcon className="w-6 h-6 text-white" />}
-              colorClass="bg-green-500"
+              colorClass="bg-gradient-to-br from-indigo-500 to-indigo-600 shadow-indigo-500/20"
             />
             <Card
-              title="Volume carregado (Ano)"
+              title="Volume Anual"
               value={`${clientDashboardData.volumeLoadedThisYear.toLocaleString('pt-BR')} ton`}
               icon={<TruckIcon className="w-6 h-6 text-white" />}
-              colorClass="bg-green-600"
+              colorClass="bg-gradient-to-br from-teal-500 to-emerald-600 shadow-emerald-500/20"
             />
             <Card
-              title="Veículos marcados"
+              title="Veículos em Trânsito"
               value={clientDashboardData.scheduledVehicles.toString()}
               icon={<TruckIcon className="w-6 h-6 text-white" />}
-              colorClass="bg-orange-500"
-            />
-            <Card
-              title="Veículos carregados/finalizados"
-              value={clientDashboardData.loadedAndFinishedVehicles.toString()}
-              icon={<TruckIcon className="w-6 h-6 text-white" />}
-              colorClass="bg-gray-500"
+              colorClass="bg-gradient-to-br from-orange-500 to-red-500 shadow-orange-500/20"
             />
           </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            {cargoChartData.length > 0 ? (
+              <DonutChartCard title="Distribuição de Cargas" data={cargoChartData} />
+            ) : (
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md flex items-center justify-center min-h-[300px]">
+                <p className="text-gray-500 dark:text-gray-400">Nenhum dado de cargas disponível.</p>
+              </div>
+            )}
+            
+            {funnelData.length > 0 ? (
+              <ShipmentFunnelCard title="Status dos Embarques (Ativos)" data={funnelData as any} />
+            ) : (
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md flex items-center justify-center min-h-[300px]">
+                <p className="text-gray-500 dark:text-gray-400">Nenhum dado de embarques disponível.</p>
+              </div>
+            )}
+          </div>
+
+          <div className="mb-4 mt-8">
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">Painel de Ofertas</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Acompanhe e gerencie as ofertas de frete enviadas pela transportadora.</p>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm mb-6 flex flex-col md:flex-row gap-4 items-end">
+            <div className="flex-1 w-full">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+              <select
+                value={offerFilterStatus}
+                onChange={(e) => setOfferFilterStatus(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary"
+              >
+                <option value="all">Todos</option>
+                {Object.values(FreightOfferStatus).map(status => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex-1 w-full">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Origem</label>
+              <input
+                type="text"
+                value={offerFilterOrigin}
+                onChange={(e) => setOfferFilterOrigin(e.target.value)}
+                placeholder="Buscar por origem..."
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary"
+              />
+            </div>
+            <div className="flex-1 w-full">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Destino</label>
+              <input
+                type="text"
+                value={offerFilterDestination}
+                onChange={(e) => setOfferFilterDestination(e.target.value)}
+                placeholder="Buscar por destino..."
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary"
+              />
+            </div>
+            <button 
+              onClick={() => {
+                setOfferFilterStatus('all');
+                setOfferFilterOrigin('');
+                setOfferFilterDestination('');
+              }}
+              className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              Limpar
+            </button>
+          </div>
+          
+          <FreightOffersList
+            offers={myOffers}
+            clients={clients}
+            products={products}
+            cargos={cargos}
+            users={users}
+            isClientProfile={true}
+            onAccept={async (offer) => {
+              if (onSaveFreightOffer) {
+                const history = addOfferHistory(offer, `Preço/Oferta aceita pelo Cliente.`);
+                await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Aceita, history });
+              }
+            }}
+            onRefuse={async (offer) => {
+              if (onSaveFreightOffer) {
+                const history = addOfferHistory(offer, `Oferta recusada pelo Cliente.`);
+                await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Recusada, history });
+              }
+            }}
+            onCounterOffer={async (offer, newValue) => {
+              if (onSaveFreightOffer) {
+                const history = addOfferHistory(offer, `Contraproposta de R$ ${newValue.toFixed(2)} enviada pelo Cliente.`);
+                await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Contraproposta, counterOfferValue: newValue, history });
+              }
+            }}
+             currentUser={currentUser || undefined}
+            onDelete={onDeleteFreightOffer}
+            onConvertToCargo={onConvertToCargo}
+            onUpdateStatus={async (offer, status) => {
+              if (onSaveFreightOffer) {
+                const history = addOfferHistory(offer, `Status alterado para "${status}" pelo Cliente.`);
+                await onSaveFreightOffer({ ...offer, status, history });
+              }
+            }}
+          />
+
+          <FreightOfferModal
+            isOpen={isOfferModalOpen}
+            onClose={() => setIsOfferModalOpen(false)}
+            clients={clients}
+            products={products}
+            currentClient={clients.find(c => c.id === currentUser.clientId)}
+            onSave={onSaveFreightOffer || (async () => {})}
+          />
         </>
     )
   }
 
+  const totalActiveLoads = cargos.filter(c => c.status === CargoStatus.EmAndamento || c.status === CargoStatus.Suspensa).length;
+  const shipmentsAwaitingLoading = shipments.filter(s => s.status === ShipmentStatus.AguardandoCarregamento);
+
+  const SEVENTY_TWO_HOURS_MS = 72 * 60 * 60 * 1000;
+  const pendingOffers = freightOffers.filter(o => {
+    if (o.status === FreightOfferStatus.Recusada || o.driverId) return false;
+    const age = Date.now() - new Date(o.createdAt).getTime();
+    if (age > SEVENTY_TWO_HOURS_MS) return false;
+    return true;
+  });
+
+  const driverOffers = freightOffers.filter(o => 
+    o.driverId === currentUser?.id && o.status === FreightOfferStatus.Pendente
+  );
+
+  const canViewOffers = currentUser && [UserProfile.Admin, UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Diretor, UserProfile.Demonstracao].includes(currentUser.profile);
+  const isMotorista = currentUser?.profile === UserProfile.Motorista;
 
   return (
     <>
-      <Header title="Dashboard" />
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card
-          title="Embarques Ativos"
-          value={activeShipments.toString()}
-          icon={<TruckIcon className="w-6 h-6 text-white" />}
-          colorClass="bg-primary"
-        />
-        <Card
-          title="Cargas em Andamento"
-          value={pendingLoads.toString()}
-          icon={<PackageIcon className="w-6 h-6 text-white" />}
-          colorClass="bg-secondary"
-        />
-        <Card
-          title="Tons Efetivadas (Mês)"
-          value={`${dashboardStats.monthlyEffectiveTonnage.toLocaleString('pt-BR')} t`}
-          icon={<TruckIcon className="w-6 h-6 text-white" />}
-          colorClass="bg-green-500"
-        />
-        <Card
-          title="Clientes Ativos"
-          value={clients.length.toString()}
-          icon={<ClientsIcon className="w-6 h-6 text-white" />}
-          colorClass="bg-gray-400"
-        />
-      </div>
-      <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-6">
-            <DonutChartCard title="Distribuição de Cargas por Status" data={cargoStatusData} />
-            <DonutChartCard title="Volume Carregado por Cliente (Mês)" data={clientVolumeData} unit="t" />
+      <Header title={renderHeaderTitle()} />
+
+      {viewMode === 'fiscal' && (
+        <div className="mb-8">
+          <OptimizedShipmentsBoard
+            title="Gestão Fiscal dos Embarques"
+            description="Controle e acompanhamento de autorizações de seguradora, cadastros e documentação fiscal"
+            columns={fiscalColumns}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            products={products}
+            users={users}
+            drivers={drivers}
+            vehicles={vehicles}
+            currentUser={currentUser}
+            onShowDetails={setDetailsModalShipment}
+            onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+            onOpenCadastroAntt={handleOpenCadastroAntt}
+            onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+          />
         </div>
-        <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
-        {canViewRanking && <ShipperRankingCard shipments={shipments} cargos={cargos} users={users} currentUser={currentUser} />}
-      </div>
+      )}
+
+      {viewMode === 'financeiro' && (
+        <div className="mb-8">
+          <OptimizedShipmentsBoard
+            title="Gestão Financeira dos Embarques"
+            description="Controle e liquidação de adiantamentos, saldos e monitoramento de trânsito em tempo real"
+            columns={financeiroColumns}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            products={products}
+            users={users}
+            drivers={drivers}
+            vehicles={vehicles}
+            currentUser={currentUser}
+            onShowDetails={setDetailsModalShipment}
+            onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+            onOpenCadastroAntt={handleOpenCadastroAntt}
+            onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+          />
+        </div>
+      )}
+
+      {viewMode === 'supervisor' && (
+        <>
+          {pendingOffers.length > 0 && (
+            <div className="mb-8">
+              <FreightOffersList
+                offers={pendingOffers}
+                clients={clients}
+                products={products}
+                cargos={cargos}
+                users={users}
+                isClientProfile={false}
+                onAccept={async (offer) => {
+                  if (onAcceptFreightOffer) {
+                    onAcceptFreightOffer(offer);
+                  } else if (onSaveFreightOffer) {
+                    const history = addOfferHistory(offer, `Oferta aceita pela Transportadora.`);
+                    await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Aceita, history });
+                  }
+                }}
+                onRefuse={async (offer) => {
+                  if (onSaveFreightOffer) {
+                    const history = addOfferHistory(offer, `Oferta recusada pela Transportadora.`);
+                    await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Recusada, history });
+                  }
+                }}
+                onCounterOffer={async (offer, newValue) => {
+                  if (onSaveFreightOffer) {
+                    if (offer.status === FreightOfferStatus.AguardandoPreco) {
+                      const history = addOfferHistory(offer, `Preço inicial de R$ ${newValue.toFixed(2)} enviado pela Transportadora.`);
+                      await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.AnaliseCliente, freightValuePerTon: newValue, history });
+                    } else if (offer.status === FreightOfferStatus.AnaliseCliente) {
+                      const oldPrice = offer.freightValuePerTon ? ` (era R$ ${offer.freightValuePerTon.toFixed(2)})` : '';
+                      const history = addOfferHistory(offer, `Preço inicial editado para R$ ${newValue.toFixed(2)} pela Transportadora${oldPrice}.`);
+                      await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.AnaliseCliente, freightValuePerTon: newValue, history });
+                    } else {
+                      const history = addOfferHistory(offer, `Contraproposta de R$ ${newValue.toFixed(2)} enviada pela Transportadora.`);
+                      await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Contraproposta, counterOfferValue: newValue, history });
+                    }
+                  }
+                }}
+                currentUser={currentUser || undefined}
+                onDelete={onDeleteFreightOffer}
+                onConvertToCargo={onConvertToCargo}
+                onSaveFreightOffer={onSaveFreightOffer}
+              />
+            </div>
+          )}
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Card
+              title="Total de Cargas Ativas"
+              value={totalActiveLoads.toString()}
+              icon={<PackageIcon className="w-6 h-6 text-white" />}
+              colorClass="bg-blue-500"
+            />
+            <Card
+              title="Aguardando Carregamento"
+              value={shipmentsAwaitingLoading.length.toString()}
+              icon={<TruckIcon className="w-6 h-6 text-white" />}
+              colorClass="bg-primary"
+            />
+          </div>
+          <div className="mb-8">
+            <OptimizedShipmentsBoard
+              title="Embarques Aguardando Carregamento"
+              description="Controle e acompanhamento de veículos agendados para pesagem e carregamento"
+              columns={supervisorColumns}
+              shipments={shipments}
+              cargos={cargos}
+              clients={clients}
+              products={products}
+              users={users}
+              drivers={drivers}
+              vehicles={vehicles}
+              currentUser={currentUser}
+              onShowDetails={setDetailsModalShipment}
+              onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+              onOpenCadastroAntt={handleOpenCadastroAntt}
+              onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+            />
+          </div>
+        </>
+      )}
+
+      {viewMode === 'geral' && (
+        <>
+          {isMotorista && driverOffers.length > 0 && (
+            <div className="mb-8">
+              <DriverOrderRequestsList
+                title="Minhas Solicitações de Ordem de Carregamento"
+                requests={driverOffers}
+                clients={clients}
+                products={products}
+                cargos={cargos}
+                drivers={drivers}
+                users={users}
+                currentUser={currentUser}
+                isDriverView={true}
+                onAccept={async () => {}} 
+                onRefuse={async () => {}}
+              />
+            </div>
+          )}
+
+          {canViewOffers && pendingOffers.length > 0 && (
+            <div className="mb-8">
+              <FreightOffersList
+                offers={pendingOffers}
+                clients={clients}
+                products={products}
+                cargos={cargos}
+                users={users}
+                isClientProfile={false}
+                onAccept={async (offer) => {
+                  if (onAcceptFreightOffer) {
+                    onAcceptFreightOffer(offer);
+                  } else if (onSaveFreightOffer) {
+                    const history = addOfferHistory(offer, `Oferta aceita pela Transportadora.`);
+                    await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Aceita, history });
+                  }
+                }}
+                onRefuse={async (offer) => {
+                  if (onSaveFreightOffer) {
+                    const history = addOfferHistory(offer, `Oferta recusada pela Transportadora.`);
+                    await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Recusada, history });
+                  }
+                }}
+                onCounterOffer={async (offer, newValue) => {
+                  if (onSaveFreightOffer) {
+                    if (offer.status === FreightOfferStatus.AguardandoPreco) {
+                      const history = addOfferHistory(offer, `Preço inicial de R$ ${newValue.toFixed(2)} enviado pela Transportadora.`);
+                      await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.AnaliseCliente, freightValuePerTon: newValue, history });
+                    } else if (offer.status === FreightOfferStatus.AnaliseCliente) {
+                      const oldPrice = offer.freightValuePerTon ? ` (era R$ ${offer.freightValuePerTon.toFixed(2)})` : '';
+                      const history = addOfferHistory(offer, `Preço inicial editado para R$ ${newValue.toFixed(2)} pela Transportadora${oldPrice}.`);
+                      await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.AnaliseCliente, freightValuePerTon: newValue, history });
+                    } else {
+                      const history = addOfferHistory(offer, `Contraproposta de R$ ${newValue.toFixed(2)} enviada pela Transportadora.`);
+                      await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Contraproposta, counterOfferValue: newValue, history });
+                    }
+                  }
+                }}
+                currentUser={currentUser || undefined}
+                onDelete={onDeleteFreightOffer}
+                onConvertToCargo={onConvertToCargo}
+                onSaveFreightOffer={onSaveFreightOffer}
+              />
+            </div>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Card
+              title="Embarques Ativos"
+              value={activeShipments.toString()}
+              icon={<TruckIcon className="w-6 h-6 text-white" />}
+              colorClass="bg-primary"
+            />
+            <Card
+              title="Cargas em Andamento"
+              value={pendingLoads.toString()}
+              icon={<PackageIcon className="w-6 h-6 text-white" />}
+              colorClass="bg-secondary"
+            />
+            <Card
+              title="Tons Efetivadas (Mês)"
+              value={`${dashboardStats.monthlyEffectiveTonnage.toLocaleString('pt-BR')} t`}
+              icon={<TruckIcon className="w-6 h-6 text-white" />}
+              colorClass="bg-green-500"
+            />
+            {dashboardStats.canViewCommission ? (
+              <Card
+                title="Comissão (Mês)"
+                value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardStats.monthlyCommission)}
+                icon={<DollarSignIcon className="w-6 h-6 text-white" />}
+                colorClass="bg-accent"
+              />
+            ) : (
+              <Card
+                title="Clientes Ativos"
+                value="0"
+                icon={<ClientsIcon className="w-6 h-6 text-white" />}
+                colorClass="bg-gray-400"
+              />
+            )}
+          </div>
+          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-6">
+                <DonutChartCard title="Distribuição de Cargas por Status" data={cargoStatusData} />
+                <DonutChartCard 
+                  title="Volume Carregado por Cliente (Mês)" 
+                  data={clientVolumeData} 
+                  unit="t" 
+                  onViewClientHistory={(clientId) => {
+                    const cl = clients.find(c => c.id === clientId);
+                    if (cl) setSelectedClientForBranchesHistory(cl);
+                  }}
+                />
+            </div>
+            <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
+            {canViewRanking && <ShipperRankingCard shipments={shipments} cargos={cargos} users={users} currentUser={currentUser} />}
+          </div>
+        </>
+      )}
 
       <ShipmentDetailsModal
         isOpen={!!detailsModalShipment}
         onClose={() => setDetailsModalShipment(null)}
         shipment={detailsModalShipment}
-        cargo={detailsModalShipment ? cargos.find(c => c.id === detailsModalShipment.cargoId) : undefined}
+        cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+        currentUser={currentUser}
         clients={clients}
         products={products}
         companyLogo={companyLogo}
@@ -481,9 +1923,69 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ cargos, shipments, users,
         users={users}
         onDeleteAttachment={onDeleteAttachment}
         onUpdatePrice={onUpdatePrice}
+        onUpdateShipmentData={onUpdateShipmentData}
+        onAddAttachments={onAddAttachments}
+        onSwapCargo={onSwapCargo}
+        cargos={cargos}
       />
 
+      <ShipmentHistoryModal
+        isOpen={!!selectedDriverForHistoryId}
+        onClose={() => setSelectedDriverForHistoryId(null)}
+        shipments={(() => {
+          if (!selectedDriverForHistoryId) return [];
+          const driverUser = users.find(u => u.id === selectedDriverForHistoryId);
+          if (!driverUser) return [];
+          const driverCpfClean = (driverUser.email || '').replace(/\D/g, '');
+          return shipments.filter(s => (s.driverCpf || '').replace(/\D/g, '') === driverCpfClean || s.driverName === driverUser.name);
+        })()}
+        cargos={cargos}
+        title={`Histórico de ${users.find(u => u.id === selectedDriverForHistoryId)?.name || 'Motorista'}`}
+      />
 
+      {selectedShipmentForAttachment && currentUser && (
+        <AttachmentModal
+          isOpen={isAttachmentModalOpen}
+          onClose={handleCloseAttachmentModal}
+          onSave={handleSaveAttachment}
+          shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
+          documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
+          currentUser={currentUser}
+          cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+          requiresRiskManagement={
+            products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
+              ?.requiresRiskManagement !== false
+          }
+          products={products}
+          clients={clients}
+          users={users}
+          riskQueryOptions={riskQueryOptions}
+          onUpdateShipmentData={onUpdateShipmentData}
+        />
+      )}
+
+      {selectedShipmentForAntt && (
+        <CadastroAnttModal
+          isOpen={isAnttModalOpen}
+          onClose={() => {
+            setAnttModalOpen(false);
+            setSelectedShipmentForAntt(null);
+          }}
+          onSave={handleSaveAntt}
+          shipment={selectedShipmentForAntt}
+        />
+      )}
+
+      <ClientBranchesHistoryModal
+        isOpen={!!selectedClientForBranchesHistory}
+        onClose={() => setSelectedClientForBranchesHistory(null)}
+        client={selectedClientForBranchesHistory}
+        shipments={allShipments || shipments}
+        cargos={cargos}
+        products={products}
+        onNavigateToReports={() => navigate('/reports')}
+        onOpenShipmentDetails={(s) => setDetailsModalShipment(s)}
+      />
     </>
   );
 };

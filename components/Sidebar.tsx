@@ -17,6 +17,7 @@ import { LogOutIcon } from './icons/LogOutIcon';
 import { MapIcon } from './icons/MapIcon';
 import { ImageIcon } from './icons/ImageIcon';
 import { HistoryIcon } from './icons/HistoryIcon';
+import { ShieldCheck } from 'lucide-react';
 
 
 interface SidebarProps {
@@ -39,35 +40,36 @@ const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: DashboardIcon },
   {
     id: 'operational',
-    label: 'Gestão Operacional',
+    label: 'Operacional',
     icon: TruckIcon,
     children: [
       { id: 'shipments', label: 'Embarques', icon: PackageIcon },
-      { id: 'shipment-history', label: 'Histórico de Embarques', icon: HistoryIcon },
-      { id: 'operational-loads', label: 'Painel de Cargas Ativas', icon: ChartIcon },
-      { id: 'operational-map', label: 'Monitoramento Logístico', icon: MapIcon },
+      { id: 'shipment-history', label: 'Histórico', icon: HistoryIcon },
+      { id: 'operational-loads', label: 'Cargas', icon: ChartIcon },
+      { id: 'operational-map', label: 'Mapa Operacional', icon: MapIcon },
+      { id: 'risk-management', label: 'Gerenciadora de Risco', icon: ShieldCheck },
     ],
   },
   {
     id: 'cadastro',
-    label: 'Cadastros Gerais',
+    label: 'Cadastro',
     icon: FolderIcon,
     children: [
-        { id: 'clients', label: 'Clientes & Tomadores', icon: ClientsIcon },
-        { id: 'owners', label: 'Frotistas & Proprietários', icon: UsersIcon },
-        { id: 'drivers', label: 'Motoristas & Condutores', icon: DriverIcon },
-        { id: 'vehicles', label: 'Frotas & Veículos', icon: TruckIcon },
-        { id: 'loads', label: 'Ordens de Carga', icon: PackageIcon },
+        { id: 'clients', label: 'Clientes', icon: ClientsIcon },
+        { id: 'owners', label: 'Proprietários', icon: UsersIcon },
+        { id: 'drivers', label: 'Motoristas', icon: DriverIcon },
+        { id: 'vehicles', label: 'Veículos', icon: TruckIcon },
+        { id: 'loads', label: 'Cargas', icon: PackageIcon },
     ]
   },
   { id: 'reports', label: 'Relatórios', icon: ChartIcon },
   {
     id: 'settings',
-    label: 'Administração & Governança',
+    label: 'Configurações',
     icon: UsersIcon,
     children: [
-      { id: 'users-register', label: 'Gestão de Acessos & Usuários', icon: UserPlusIcon },
-      { id: 'appearance', label: 'Identidade Visual & Customização', icon: ImageIcon },
+      { id: 'users-register', label: 'Gerenciar Usuários', icon: UserPlusIcon },
+      { id: 'appearance', label: 'Aparência', icon: ImageIcon },
     ]
   }
 ];
@@ -162,12 +164,12 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurre
         onMouseEnter={() => setIsCollapsed(false)}
         onMouseLeave={() => setIsCollapsed(true)}
     >
-      <div className="h-16 flex items-center justify-center">
+      <div className="h-20 flex items-center justify-center">
         {companyLogo ? (
-            <img src={companyLogo} alt="Logo da Empresa" className={`transition-all duration-300 mx-auto ${isCollapsed ? 'h-10' : 'h-12'}`} />
+            <img src={companyLogo} alt="Logo da Empresa" className={`transition-all duration-300 mx-auto object-contain ${isCollapsed ? 'h-12 max-w-[60px]' : 'h-16 max-w-[190px]'}`} />
         ) : (
             <h2 className="text-3xl font-semibold text-center text-primary dark:text-white">
-            {isCollapsed ? 'Agromarcantil' : 'Agromarcantil Logística'}
+            {isCollapsed ? 'Agromercantil' : 'Agromercantil Logística'}
             </h2>
         )}
       </div>

@@ -1,53 +1,77 @@
 
 import React from 'react';
-import type { Owner } from '../types';
+import type { Driver, Owner } from '../types';
 import { DriverClassification } from '../types';
-import { formatCpfCnpj, formatPhone } from '../utils/formatters';
+import MultiSelectDropdown from './MultiSelectDropdown';
 
 export interface DriverFilters {
+  id: string;
   name: string;
   cpf: string;
   cnh: string;
   phone: string;
-  classification: string;
-  ownerId: string;
-  status: 'all' | 'active' | 'restricted';
+  ddd: string[];
+  classification: string[];
+  ownerNames: string[];
+  status: string[];
 }
 
 interface DriverFilterProps {
+  drivers: Driver[];
   owners: Owner[];
   filters: DriverFilters;
   onFilterChange: (filters: DriverFilters) => void;
 }
 
-const DriverFilter: React.FC<DriverFilterProps> = ({ owners, filters, onFilterChange }) => {
+const DriverFilter: React.FC<DriverFilterProps> = ({ drivers, owners, filters, onFilterChange }) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    let formattedValue = value;
-    if (name === 'cpf') {
-      formattedValue = formatCpfCnpj(value);
-    } else if (name === 'phone') {
-      formattedValue = formatPhone(value);
-    }
-    onFilterChange({ ...filters, [name]: formattedValue });
+    onFilterChange({ ...filters, [name]: value });
   };
 
   const clearFilters = () => {
     onFilterChange({
+      id: '',
       name: '',
       cpf: '',
       cnh: '',
       phone: '',
-      classification: '',
-      ownerId: '',
-      status: 'all',
+      ddd: [],
+      classification: [],
+      ownerNames: [],
+      status: [],
     });
   };
 
+  const dddOptions = React.useMemo(() => {
+    const ddds = drivers
+      .map(d => d.phone.replace(/\D/g, '').substring(0, 2))
+      .filter(ddd => ddd.length === 2);
+    return Array.from(new Set(ddds)).sort();
+  }, [drivers]);
+
+  const ownerNameOptions = React.useMemo(() => {
+    return owners.map(o => o.name).sort();
+  }, [owners]);
+
+  const classificationOptions = Object.values(DriverClassification);
+  const statusOptions = ['Ativo', 'Restrito'];
+
   return (
     <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md mb-6 border dark:border-gray-700">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Text Filters */}
+        <div>
+          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">ID de Registro</label>
+          <input 
+            type="text" 
+            name="id" 
+            value={filters.id} 
+            onChange={handleInputChange} 
+            placeholder="Ex: DRV-100..." 
+            className="mt-1 p-2 w-full border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+          />
+        </div>
         <div>
           <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Nome</label>
           <input 
@@ -95,41 +119,40 @@ const DriverFilter: React.FC<DriverFilterProps> = ({ owners, filters, onFilterCh
 
         {/* Select Filters */}
         <div>
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Classificação</label>
-          <select 
-            name="classification" 
-            value={filters.classification} 
-            onChange={handleInputChange} 
-            className="mt-1 p-2 w-full border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-          >
-            <option value="">Todos</option>
-            {Object.values(DriverClassification).map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <MultiSelectDropdown
+            label="DDD"
+            options={dddOptions}
+            selectedValues={filters.ddd}
+            onChange={(vals) => onFilterChange({ ...filters, ddd: vals })}
+            placeholder="Todos"
+          />
         </div>
         <div>
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Proprietário</label>
-          <select 
-            name="ownerId" 
-            value={filters.ownerId} 
-            onChange={handleInputChange} 
-            className="mt-1 p-2 w-full border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-          >
-            <option value="">Todos</option>
-            {owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
+          <MultiSelectDropdown
+            label="Classificação"
+            options={classificationOptions}
+            selectedValues={filters.classification}
+            onChange={(vals) => onFilterChange({ ...filters, classification: vals })}
+            placeholder="Todas"
+          />
         </div>
         <div>
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
-          <select 
-            name="status" 
-            value={filters.status} 
-            onChange={handleInputChange} 
-            className="mt-1 p-2 w-full border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-          >
-            <option value="all">Todos</option>
-            <option value="active">Ativo</option>
-            <option value="restricted">Restrito</option>
-          </select>
+          <MultiSelectDropdown
+            label="Proprietário"
+            options={ownerNameOptions}
+            selectedValues={filters.ownerNames}
+            onChange={(vals) => onFilterChange({ ...filters, ownerNames: vals })}
+            placeholder="Todos"
+          />
+        </div>
+        <div>
+          <MultiSelectDropdown
+            label="Status"
+            options={statusOptions}
+            selectedValues={filters.status}
+            onChange={(vals) => onFilterChange({ ...filters, status: vals })}
+            placeholder="Todos"
+          />
         </div>
 
         <div className="flex items-end">

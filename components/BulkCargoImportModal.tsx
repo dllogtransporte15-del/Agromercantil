@@ -1,1514 +1,861 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import type { Cargo, Client, Product, User, DailyScheduleEntry } from '../types';
-import { CargoStatus, CargoType, VehicleSetType, VehicleBodyType, DailyScheduleType } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  X,
+  Upload,
+  FileText,
+  Camera,
+  Layers,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Plus,
+  Trash2,
+  Copy,
+  Sparkles,
+  ArrowRight,
+  ArrowLeft,
+  DollarSign,
+  Truck,
+  MapPin,
+  Package,
+  Calendar,
+  Percent,
+  RefreshCw,
+  ExternalLink,
+  ClipboardPaste,
+  ShieldCheck,
+  Check
+} from 'lucide-react';
+import {
+  Cargo,
+  CargoStatus,
+  CargoType,
+  Client,
+  DailyScheduleType,
+  Product,
+  VehicleBodyType,
+  VehicleSetType
+} from '../types';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
-import { processComigoImage, formatComigoObservations, ComigoExtractedData } from '../services/comigoImageParser';
-import { processAgromercantilImage, formatAgromercantilObservations, generateAgromercantilDailySchedule } from '../services/agromercantilImageParser';
-
-// ─────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────
-
-export interface ParsedCargo {
-  rawText: string;
-  origin: string;
-  originLocation?: string;
-  originMapLink?: string;
-  destination: string;
-  destinationLocation?: string;
-  destinationMapLink?: string;
-  productName: string;
-  productId?: string;
-  totalVolume: number;
-  baseValue: number;
-  companyFreightValuePerTon: number;
-  driverFreightValuePerTonPJ: number;
-  driverFreightValuePerTonPF: number;
-  driverFreightValuePerTon: number;
-  hasIcms: boolean;
-  icmsPercentage: number;
-  vehicleTypes?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[];
-  observations?: string;
-  loadingStartDate?: string;
-  loadingDeadline?: string;
-  cadenciaDia?: number;
-  dailySchedule?: DailyScheduleEntry[];
-  type: CargoType;
-  tollIncluded: boolean;
-  imageDataUrl?: string;
-  errors: string[];
-  warnings: string[];
-}
+import {
+  ParsedBulkCargo,
+  calculateFinancials,
+  getDefaultAllowedVehicles,
+  generateDailySchedule,
+  normalizeCity,
+  parseWhatsAppTextBlock,
+  processComigoDocumentOcr,
+  validateBulkCargo
+} from '../utils/bulkCargoParser';
+import { enhanceDocumentImage, EnhancedImageResult } from '../utils/imageEnhancer';
+import { DocumentAttachmentCard, ImageLightboxModal } from './ImageLightboxModal';
+import FormattedObservations from './FormattedObservations';
 
 interface BulkCargoImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSaveBulk: (cargos: Array<Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'>>) => Promise<void>;
   clients: Client[];
   products: Product[];
-  currentUser: User;
+  currentUserId: string;
+  onBulkSave: (cargos: Omit<Cargo, 'id'>[]) => Promise<void>;
 }
 
-// ─────────────────────────────────────────────
-// City Formatter (Converts to "Cidade, UF")
-// ─────────────────────────────────────────────
-
-function toTitleCase(str: string): string {
-  if (!str) return '';
-  const lowercaseWords = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'em', 'd\'', 'du']);
-  return str
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word, index) => {
-      if (index > 0 && lowercaseWords.has(word)) {
-        return word;
-      }
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    })
-    .join(' ');
-}
-
-export function normalizeCityFormat(cityRaw: string): string {
-  if (!cityRaw) return '';
-  let cleaned = cityRaw.trim().replace(/^[📍🏁]/g, '').trim();
-
-  // Remove surrounding parenthesis if any
-  cleaned = cleaned.replace(/^\((.+)\)$/, '$1').trim();
-
-  let match = cleaned.match(/^(.+?)\s*[-/,]\s*([a-zA-Z]{2})$/);
-  if (!match) {
-    match = cleaned.match(/^(.+?)\s+([a-zA-Z]{2})$/);
-  }
-
-  let cityName = cleaned;
-  let uf = '';
-
-  if (match) {
-    cityName = match[1].trim();
-    uf = match[2].trim().toUpperCase();
-  }
-
-  const cleanNormalize = (s: string) =>
-    s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, '');
-
-  if (uf) {
-    const cityNorm = cleanNormalize(cityName);
-    const foundByCity = BRAZILIAN_CITIES.find(c => {
-      const parts = c.split(',');
-      if (parts.length === 2 && parts[1].trim().toUpperCase() === uf) {
-        return cleanNormalize(parts[0]) === cityNorm;
-      }
-      return false;
-    });
-    if (foundByCity) return foundByCity;
-    return `${toTitleCase(cityName)}, ${uf}`;
-  } else {
-    const targetNorm = cleanNormalize(cityName);
-    const found = BRAZILIAN_CITIES.find(c => cleanNormalize(c) === targetNorm);
-    if (found) return found;
-    return toTitleCase(cleaned);
-  }
-}
-
-// ─────────────────────────────────────────────
-// Freight Calculator com Abatimento de ICMS
-// ─────────────────────────────────────────────
-
-function calcFreight(
-  companyValue: number,
-  isMilhao: boolean = false,
-  hasIcms: boolean = false,
-  icmsPercentage: number = 0
-) {
-  const company = companyValue;
-
-  // Abatimento de ICMS se ativo
-  const icmsRate = hasIcms ? ((Number(icmsPercentage) || 0) / 100) : 0;
-  const netCompany = parseFloat((company * (1 - icmsRate)).toFixed(2));
-
-  // O frete motorista PJ (-8%) e PF (-12%) incide sobre o valor líquido (após abater o ICMS)
-  const pj = parseFloat((netCompany * (1 - 0.08)).toFixed(2));
-  const pf = parseFloat((netCompany * (1 - 0.12)).toFixed(2));
-
-  return { company, pj, pf, netCompany, icmsDeduction: parseFloat((company * icmsRate).toFixed(2)) };
-}
-
-// ─────────────────────────────────────────────
-// Programação Diária Automática (40 ton, Demanda a Verificar)
-// Até 16h = hoje, após 16h = amanhã
-// ─────────────────────────────────────────────
-
-function getInitialDailySchedule(): DailyScheduleEntry[] {
-  const now = new Date();
-  const currentHour = now.getHours();
-
-  const targetDate = new Date(now);
-  if (currentHour >= 16) {
-    targetDate.setDate(targetDate.getDate() + 1);
-  }
-
-  const year = targetDate.getFullYear();
-  const month = String(targetDate.getMonth() + 1).padStart(2, '0');
-  const day = String(targetDate.getDate()).padStart(2, '0');
-  const dateStr = `${year}-${month}-${day}`;
-
-  return [
-    {
-      date: dateStr,
-      type: DailyScheduleType.Verificar,
-      tonnage: 40,
-    },
-  ];
-}
-
-// ─────────────────────────────────────────────
-// Data de Embarque Parser
-// ─────────────────────────────────────────────
-
-function parseLoadingDate(dateTextRaw: string): string | undefined {
-  const dateText = dateTextRaw.replace(/[🗓️🗓]|EMBARQUE:/gi, '').replace(/\*+/g, '').trim().toUpperCase();
-  if (!dateText) return undefined;
-
-  const now = new Date();
-  if (dateText.includes('IMEDIATO') || dateText.includes('HOJE')) {
-    return now.toISOString().split('T')[0];
-  }
-  if (dateText.includes('AMANHÃ') || dateText.includes('AMANHA')) {
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().split('T')[0];
-  }
-
-  const weekdaysMap: Record<string, number> = {
-    'DOMINGO': 0,
-    'SEGUNDA': 1,
-    'TERCA': 2,
-    'TERÇA': 2,
-    'QUARTA': 3,
-    'QUINTA': 4,
-    'SEXTA': 5,
-    'SABADO': 6,
-    'SÁBADO': 6,
-  };
-
-  for (const [name, targetDay] of Object.entries(weekdaysMap)) {
-    if (dateText.includes(name)) {
-      const result = new Date(now);
-      const currentDay = now.getDay();
-      let diff = targetDay - currentDay;
-      if (diff <= 0) diff += 7;
-      result.setDate(now.getDate() + diff);
-      const y = result.getFullYear();
-      const m = String(result.getMonth() + 1).padStart(2, '0');
-      const d = String(result.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    }
-  }
-
-  const dateMatch = dateText.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
-  if (dateMatch) {
-    const day = dateMatch[1].padStart(2, '0');
-    const month = dateMatch[2].padStart(2, '0');
-    const year = dateMatch[3] || new Date().getFullYear().toString();
-    return `${year}-${month}-${day}`;
-  }
-
-  return now.toISOString().split('T')[0];
-}
-
-// ─────────────────────────────────────────────
-// Route Parser (WhatsApp text)
-// ─────────────────────────────────────────────
-
-function parseRoute(line: string) {
-  const cleaned = line.replace(/[📍🏁]/g, '').trim();
-  const parts = cleaned.split(/\s+[xX]\s+/);
-  if (parts.length < 2) {
-    return {
-      origin: normalizeCityFormat(cleaned),
-      destination: '',
-      originLocation: '',
-      destinationLocation: '',
-    };
-  }
-
-  const extractCityAndLocation = (str: string) => {
-    const match = str.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
-    if (match) {
-      return {
-        city: normalizeCityFormat(match[1].trim()),
-        location: match[2].trim(),
-      };
-    }
-    return {
-      city: normalizeCityFormat(str.trim()),
-      location: '',
-    };
-  };
-
-  const orig = extractCityAndLocation(parts[0].trim());
-  const dest = extractCityAndLocation(parts[1].trim());
-  return {
-    origin: orig.city,
-    originLocation: orig.location,
-    destination: dest.city,
-    destinationLocation: dest.location,
-  };
-}
-
-function parseVehicleTypes(text: string): { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[] {
-  const upper = text.toUpperCase();
-  const results: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[] = [];
-
-  const bodyTypes: VehicleBodyType[] = [];
-  if (upper.includes('GRANELEIRO')) bodyTypes.push(VehicleBodyType.Graneleiro);
-  if (upper.includes('BASCULANTE') || upper.includes('CAÇAMBA') || upper.includes('CACAMBA')) bodyTypes.push(VehicleBodyType.Basculante);
-  const defaultBodies = bodyTypes.length > 0 ? bodyTypes : [VehicleBodyType.Graneleiro, VehicleBodyType.Basculante];
-
-  if (upper.includes('BITREM')) results.push({ setType: VehicleSetType.Bitrem7e, bodyTypes: defaultBodies });
-  if (upper.includes('RODOTREM')) results.push({ setType: VehicleSetType.Rodotrem, bodyTypes: defaultBodies });
-  if (upper.includes('TRUCK') && !upper.includes('BITRUCK')) results.push({ setType: VehicleSetType.Truck, bodyTypes: defaultBodies });
-  if (upper.includes('BITRUCK')) results.push({ setType: VehicleSetType.Bitruck, bodyTypes: defaultBodies });
-  if (upper.includes('LS')) results.push({ setType: VehicleSetType.LSSimples, bodyTypes: defaultBodies });
-  if (upper.includes('4° EIXO') || upper.includes('4 EIXO') || upper.includes('4º EIXO') || upper.includes('QUARTO EIXO')) {
-    results.push({ setType: VehicleSetType.Carreta4e, bodyTypes: defaultBodies });
-  }
-
-  return results.length > 0 ? results : [];
-}
-
-/**
- * Retorna todos os tipos de veículos exceto Truck e Bitruck, com carrocerias Graneleiro e Basculante
- */
-export function getMilhaoDefaultVehicleTypes(): { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[] {
-  const bodies = [VehicleBodyType.Graneleiro, VehicleBodyType.Basculante];
-  return Object.values(VehicleSetType)
-    .filter(st => st !== VehicleSetType.Truck && st !== VehicleSetType.Bitruck)
-    .map(st => ({
-      setType: st,
-      bodyTypes: bodies,
-    }));
-}
-
-function findProduct(name: string, products: Product[], isMilhaoClient: boolean = false, isComigoClient: boolean = false): Product | undefined {
-  if (isComigoClient) {
-    const fert = products.find(p => p.name.toUpperCase().includes('FERTILIZANTE'));
-    if (fert) return fert;
-  }
-
-  const upper = (name || '').toUpperCase().trim();
-  if (upper) {
-    const exact = products.find(p => p.name.toUpperCase() === upper);
-    if (exact) return exact;
-
-    const partial = products.find(p => {
-      const pUpper = p.name.toUpperCase();
-      return pUpper.includes(upper) || upper.includes(pUpper);
-    });
-    if (partial) return partial;
-
-    const words = upper.split(/\s+/).filter(w => w.length >= 3 && !['PARA', 'GRANEL', 'SACS', 'SACAS'].includes(w));
-    for (const word of words) {
-      const wordMatch = products.find(p => p.name.toUpperCase().includes(word));
-      if (wordMatch) return wordMatch;
-    }
-  }
-
-  if (isMilhaoClient) {
-    const milhoProduct = products.find(p => p.name.toUpperCase().includes('MILHO'));
-    if (milhoProduct) return milhoProduct;
-  }
-
-  return products[0];
-}
-
-function parseEmojiCargo(block: string, products: Product[], isMilhaoClient: boolean = false): ParsedCargo {
-  const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  let origin = '';
-  let originLocation = '';
-  let originMapLink = '';
-  let destination = '';
-  let destinationLocation = '';
-  let productName = '';
-  let productId: string | undefined;
-  let baseValue = 0;
-  let vehicleText = '';
-  let observations: string[] = [];
-  let loadingStartDate: string | undefined;
-  let tollIncluded = false;
-  let inObs = false;
-
-  for (const line of lines) {
-    if (/^carga\s+\d+/i.test(line)) continue;
-
-    if (line.includes('📍') || line.includes('🏁')) {
-      const route = parseRoute(line);
-      origin = route.origin;
-      originLocation = route.originLocation || '';
-      destination = route.destination;
-      destinationLocation = route.destinationLocation || '';
-      inObs = false;
-      continue;
-    }
-
-    if (line.includes('🚛') || line.includes('🚚')) {
-      let cleanLine = line.replace(/[🚛🚚]/g, '').replace(/VEÍCULO:|VEICULO:/gi, '').trim();
-      if (cleanLine.includes('🚨')) {
-        const [vPart, ...alertParts] = cleanLine.split('🚨');
-        vehicleText += ' ' + vPart.replace(/\*+/g, '').trim();
-        const alertNote = alertParts.join('🚨').replace(/\*+/g, '').replace(/\)+$/, '').trim();
-        if (alertNote) {
-          observations.push(`🚨 ${alertNote}`);
-        }
-      } else {
-        vehicleText += ' ' + cleanLine.replace(/\*+/g, '').trim();
-      }
-      inObs = false;
-      continue;
-    }
-
-    if (line.includes('📌') || (line.includes('maps.app.goo.gl') && !originMapLink)) {
-      const urlMatch = line.match(/https?:\/\/[^\s]+/);
-      if (urlMatch) originMapLink = urlMatch[0];
-      inObs = false;
-      continue;
-    }
-
-    if (line.includes('💰') || (line.toUpperCase().includes('VALOR:') && baseValue === 0)) {
-      const valMatch = line.match(/R\$\s*([\d.,]+)/i) || line.match(/VALOR:\s*R?\$?\s*([\d.,]+)/i);
-      if (valMatch) baseValue = parseFloat(valMatch[1].replace(',', '.'));
-      inObs = false;
-      continue;
-    }
-
-    if (line.includes('🧾') || line.toUpperCase().startsWith('PRODUTO:')) {
-      productName = line.replace(/🧾|PRODUTO:/gi, '').replace(/\*+/g, '').trim();
-      inObs = false;
-      continue;
-    }
-
-    if (line.includes('🗓️') || line.includes('🗓') || line.toUpperCase().startsWith('EMBARQUE:')) {
-      loadingStartDate = parseLoadingDate(line);
-      inObs = false;
-      continue;
-    }
-
-    if (line.includes('✅') && (line.toUpperCase().includes('PEDÁGIO') || line.toUpperCase().includes('PEDAGIO'))) {
-      tollIncluded = true;
-      inObs = false;
-      continue;
-    }
-
-    if (line.includes('🚨') || line.toUpperCase().includes('LINK DA CARGA:')) {
-      observations.push(line.replace(/\*+/g, '').trim());
-      inObs = false;
-      continue;
-    }
-
-    if (line.includes('⚖️') || line.toUpperCase().startsWith('PESO:')) {
-      observations.push(line.replace(/\*+/g, '').trim());
-      inObs = false;
-      continue;
-    }
-
-    if (line.includes('🤑') || line.toUpperCase().startsWith('DESCARGA:')) {
-      observations.push(line.replace(/\*+/g, '').trim());
-      inObs = false;
-      continue;
-    }
-
-    if (line.includes('⚠️') || line.toUpperCase().startsWith('OBS:') || line.toUpperCase().startsWith('OBSERVA')) {
-      const cleanObsHeader = line.replace(/⚠️|OBS:|OBSERVAÇÕES:|OBSERVACOES:/gi, '').replace(/\*+/g, '').trim();
-      if (cleanObsHeader) {
-        observations.push(cleanObsHeader);
-      }
-      inObs = true;
-      continue;
-    }
-
-    if (inObs) {
-      const obsLine = line.replace(/\*+/g, '').replace(/^[-•]\s*/, '').trim();
-      if (obsLine) observations.push(obsLine);
-    } else {
-      const extraLine = line.replace(/\*+/g, '').trim();
-      if (extraLine) observations.push(extraLine);
-    }
-  }
-
-  const foundProd = findProduct(productName, products, isMilhaoClient, false);
-  if (foundProd) {
-    productId = foundProd.id;
-    if (!productName) productName = foundProd.name;
-  } else {
-    warnings.push(`Produto "${productName}" não encontrado no cadastro. Selecione manualmente.`);
-  }
-
-  if (!origin) errors.push('Origem não encontrada (verifique o emoji 📍)');
-  if (!destination) errors.push('Destino não encontrado (verifique o emoji 📍)');
-  if (baseValue <= 0) errors.push('Valor do frete não encontrado (verifique o emoji 💰)');
-
-  const { company, pj, pf } = calcFreight(baseValue, isMilhaoClient, false, 0);
-  const obsList = [
-    ...(tollIncluded ? ['PEDÁGIO INCLUSO'] : []),
-    ...observations,
-  ];
-  const obsText = obsList.filter(Boolean).join('\n');
-
-  return {
-    rawText: block,
-    origin,
-    originLocation,
-    originMapLink,
-    destination,
-    destinationLocation,
-    productName: productName || (foundProd?.name || 'Milho'),
-    productId,
-    totalVolume: isMilhaoClient ? 100 : 0,
-    baseValue,
-    companyFreightValuePerTon: company,
-    driverFreightValuePerTonPJ: pj,
-    driverFreightValuePerTonPF: pf,
-    driverFreightValuePerTon: pj,
-    hasIcms: false,
-    icmsPercentage: 12,
-    vehicleTypes: isMilhaoClient ? getMilhaoDefaultVehicleTypes() : (vehicleText.trim() ? parseVehicleTypes(vehicleText) : []),
-    observations: obsText || undefined,
-    loadingStartDate,
-    dailySchedule: getInitialDailySchedule(),
-    type: CargoType.Spot,
-    tollIncluded,
-    errors,
-    warnings,
-  };
-}
-
-function splitIntoBlocks(text: string): string[] {
-  const parts = text.split(/(?=^carga\s+\d+)/im).filter(p => p.trim().length > 0);
-  if (parts.length > 1) return parts;
-  const byBlank = text.split(/\n\s*\n\s*\n/).filter(p => p.trim().length > 0);
-  if (byBlank.length > 1) return byBlank;
-  return [text];
-}
-
-function parseRawText(text: string, products: Product[], isMilhaoClient: boolean = false): ParsedCargo[] {
-  return splitIntoBlocks(text).map(block => parseEmojiCargo(block, products, isMilhaoClient));
-}
-
-// ─────────────────────────────────────────────
-// Lightbox Modal para Visualização da Imagem
-// ─────────────────────────────────────────────
-
-interface ImageLightboxModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  imageUrl: string | null;
-  title?: string;
-}
-
-const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({ isOpen, onClose, imageUrl, title }) => {
-  const [zoom, setZoom] = useState(1);
-  const [rotation, setRotation] = useState(0);
-
+export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
+  isOpen,
+  onClose,
+  clients,
+  products,
+  currentUserId,
+  onBulkSave
+}) => {
+  // Wizard step: 1 (Client & Strategy), 2 (Data Input), 3 (Review & Edit)
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+
+  // Step 1: Client & Strategy
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
+  const [strategyTab, setStrategyTab] = useState<'text' | 'image'>('text');
+
+  // Step 2: Input states
+  const [whatsAppText, setWhatsAppText] = useState<string>('');
+  const [uploadedImages, setUploadedImages] = useState<{ id: string; file: File; dataUrl: string; name: string }[]>([]);
+  const [isProcessingInput, setIsProcessingInput] = useState<boolean>(false);
+  const [processingProgress, setProcessingProgress] = useState<string>('');
+
+  // Step 3: Parsed cargos list
+  const [parsedCargos, setParsedCargos] = useState<ParsedBulkCargo[]>([]);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  // Gemini API Key (optional override if user wants to use customized key)
+  const [geminiApiKey, setGeminiApiKey] = useState<string>(
+    (import.meta as any).env?.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || ''
+  );
+
+  // Temporary state for adding allowed vehicle to a card
+  const [newVehicleSets, setNewVehicleSets] = useState<{ [tempId: string]: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] } }>({});
+
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+
+  // Reset modal state when opening
   useEffect(() => {
     if (isOpen) {
-      setZoom(1);
-      setRotation(0);
+      setCurrentStep(1);
+      if (clients.length > 0 && !selectedClientId) {
+        setSelectedClientId(clients[0].id);
+      }
+      setWhatsAppText('');
+      setUploadedImages([]);
+      setParsedCargos([]);
+      setIsProcessingInput(false);
+      setIsSaving(false);
     }
-  }, [isOpen]);
+  }, [isOpen, clients]);
 
-  if (!isOpen || !imageUrl) return null;
-
-  return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in"
-      onClick={onClose}
-    >
-      <div
-        className="relative max-w-5xl w-full max-h-[95vh] flex flex-col bg-gray-900 border border-gray-700 rounded-2xl overflow-hidden shadow-2xl"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header do visualizador */}
-        <div className="flex items-center justify-between px-6 py-3 bg-gray-800/90 border-b border-gray-700 text-white z-10">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">📸</span>
-            <div>
-              <h3 className="text-sm font-bold">{title || 'Visualizador de Roteiro Digitalizado'}</h3>
-              <p className="text-[11px] text-gray-400">Visualização interativa (sem download)</p>
-            </div>
-          </div>
-
-          {/* Controles de Zoom e Rotação */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setZoom(prev => Math.max(0.5, prev - 0.25))}
-              className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs text-gray-200 transition-colors"
-              title="Diminuir Zoom"
-            >
-              🔍 −
-            </button>
-            <span className="text-xs font-mono px-2 py-1 bg-gray-800 rounded">{Math.round(zoom * 100)}%</span>
-            <button
-              onClick={() => setZoom(prev => Math.min(3, prev + 0.25))}
-              className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs text-gray-200 transition-colors"
-              title="Aumentar Zoom"
-            >
-              🔍 +
-            </button>
-            <button
-              onClick={() => setRotation(prev => (prev + 90) % 360)}
-              className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs text-gray-200 transition-colors ml-1"
-              title="Girar 90°"
-            >
-              ↻ Girar
-            </button>
-            <button
-              onClick={() => { setZoom(1); setRotation(0); }}
-              className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs text-gray-200 transition-colors"
-              title="Resetar Zoom"
-            >
-              ↺ 100%
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 bg-red-600/80 hover:bg-red-600 rounded-lg text-xs text-white transition-colors ml-2"
-              title="Fechar (Esc)"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        {/* Área da imagem */}
-        <div className="flex-1 overflow-auto p-4 flex items-center justify-center min-h-[400px] max-h-[82vh] bg-black/40 select-none">
-          <img
-            src={imageUrl}
-            alt="Documento Digitalizado"
-            style={{
-              transform: `scale(${zoom}) rotate(${rotation}deg)`,
-              transition: 'transform 0.2s ease-out',
-            }}
-            className="max-w-full max-h-[78vh] object-contain rounded-lg shadow-lg cursor-grab active:cursor-grabbing"
-          />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────
-// UI Components
-// ─────────────────────────────────────────────
-
-const StepIndicator: React.FC<{ current: number; steps: string[] }> = ({ current, steps }) => (
-  <div className="flex items-center justify-center mb-6">
-    {steps.map((label, i) => (
-      <React.Fragment key={i}>
-        <div className="flex flex-col items-center">
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${
-            i < current ? 'bg-green-500 text-white' :
-            i === current ? 'bg-primary text-white ring-4 ring-primary/20' :
-            'bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400'
-          }`}>
-            {i < current ? '✓' : i + 1}
-          </div>
-          <span className={`text-xs mt-1 font-medium whitespace-nowrap ${i === current ? 'text-primary' : 'text-gray-400'}`}>{label}</span>
-        </div>
-        {i < steps.length - 1 && (
-          <div className={`flex-1 h-0.5 mx-2 mb-4 transition-all duration-300 min-w-8 ${i < current ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-600'}`} />
-        )}
-      </React.Fragment>
-    ))}
-  </div>
-);
-
-const FreightBadge: React.FC<{ label: string; value: number; sublabel?: string; color: string }> = ({ label, value, sublabel, color }) => (
-  <div className={`flex flex-col items-center px-3 py-1.5 rounded-lg ${color}`}>
-    <span className="text-[11px] opacity-75">{label}</span>
-    <div className="flex items-baseline gap-1 mt-0.5">
-      <span className="font-bold text-sm">R$ {value.toFixed(2).replace('.', ',')}</span>
-      {sublabel && <span className="text-xs font-semibold opacity-90">({sublabel})</span>}
-    </div>
-  </div>
-);
-
-// ─────────────────────────────────────────────
-// Gerenciador de Tipos de Veículos e Carrocerias
-// ─────────────────────────────────────────────
-
-const CargoVehicleTypesManager: React.FC<{
-  vehicleTypes?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[];
-  onChange: (updated: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]) => void;
-}> = ({ vehicleTypes = [], onChange }) => {
-  const [selectedSet, setSelectedSet] = useState<VehicleSetType>(VehicleSetType.LSSimples);
-  const [selectedBodies, setSelectedBodies] = useState<VehicleBodyType[]>([VehicleBodyType.Graneleiro, VehicleBodyType.Basculante]);
-
-  const toggleBody = (bt: VehicleBodyType) => {
-    setSelectedBodies(prev =>
-      prev.includes(bt) ? prev.filter(b => b !== bt) : [...prev, bt]
-    );
-  };
-
-  const handleAdd = () => {
-    if (selectedBodies.length === 0) return;
-    const existsIndex = vehicleTypes.findIndex(v => v.setType === selectedSet);
-    if (existsIndex >= 0) {
-      const next = [...vehicleTypes];
-      next[existsIndex] = { setType: selectedSet, bodyTypes: selectedBodies };
-      onChange(next);
-    } else {
-      onChange([...vehicleTypes, { setType: selectedSet, bodyTypes: selectedBodies }]);
-    }
-  };
-
-  const handleRemove = (setType: VehicleSetType) => {
-    onChange(vehicleTypes.filter(v => v.setType !== setType));
-  };
-
-  const handleAddPresetGrain = () => {
-    onChange(getMilhaoDefaultVehicleTypes());
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300">
-          🚛 Tipos de Veículos e Carrocerias
-        </label>
-        {vehicleTypes.length === 0 && (
-          <button
-            type="button"
-            onClick={handleAddPresetGrain}
-            className="text-[10px] text-primary hover:underline font-semibold"
-          >
-            ⚡ Adicionar Padrão (Todos exceto Truck/Bitruck)
-          </button>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 p-2 bg-white dark:bg-gray-700/60 rounded-lg border border-gray-200 dark:border-gray-600">
-        <select
-          value={selectedSet}
-          onChange={e => setSelectedSet(e.target.value as VehicleSetType)}
-          className="text-xs px-2 py-1 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-        >
-          {Object.values(VehicleSetType).map(st => (
-            <option key={st} value={st}>{st}</option>
-          ))}
-        </select>
-
-        <div className="flex items-center gap-2">
-          {Object.values(VehicleBodyType).map(bt => (
-            <label key={bt} className="flex items-center gap-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={selectedBodies.includes(bt)}
-                onChange={() => toggleBody(bt)}
-                className="rounded text-primary focus:ring-primary h-3.5 w-3.5"
-              />
-              <span>{bt}</span>
-            </label>
-          ))}
-        </div>
-
-        <button
-          type="button"
-          onClick={handleAdd}
-          className="px-2.5 py-1 text-xs font-semibold bg-primary text-white rounded hover:bg-primary-dark transition-colors shadow-sm ml-auto"
-        >
-          + Adicionar
-        </button>
-      </div>
-
-      {vehicleTypes.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 pt-0.5">
-          {vehicleTypes.map(vt => (
-            <span
-              key={vt.setType}
-              className="inline-flex items-center gap-1 text-[11px] font-medium bg-blue-50 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800/50 px-2 py-0.5 rounded-full"
-            >
-              <strong>{vt.setType}:</strong> {vt.bodyTypes?.join('/') || 'Qualquer'}
-              <button
-                type="button"
-                onClick={() => handleRemove(vt.setType)}
-                className="text-blue-600 dark:text-blue-300 hover:text-red-600 dark:hover:text-red-400 font-bold ml-0.5"
-                title="Remover tipo de veículo"
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────
-// Main Modal
-// ─────────────────────────────────────────────
-
-const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
-  isOpen, onClose, onSaveBulk, clients, products, currentUser,
-}) => {
-  const [step, setStep] = useState<0 | 1 | 2>(0);
-  const [selectedClientId, setSelectedClientId] = useState('');
-  const [importMode, setImportMode] = useState<'text' | 'image'>('text');
-  
-  // Text state
-  const [rawText, setRawText] = useState('');
-  
-  // Image state
-  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
-  const [isProcessingImages, setIsProcessingImages] = useState(false);
-  const [processingStatus, setProcessingStatus] = useState('');
-  const [apiKey, setApiKey] = useState((import.meta as any).env?.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || 'AIzaSyD9WTYJJcBcswabE3cAE3gX6fAz3FLZGyA');
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [apiKeySavedSuccess, setApiKeySavedSuccess] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
-  
-  const [editedCargos, setEditedCargos] = useState<ParsedCargo[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveResult, setSaveResult] = useState<{ success: number; failed: number } | null>(null);
-
-  // Lightbox modal state
-  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
-  const [lightboxTitle, setLightboxTitle] = useState<string>('');
-
-  const selectedClient = clients.find(c => c.id === selectedClientId);
-
-  const isMilhaoClient = useMemo(() => {
-    if (!selectedClient) return false;
-    const name = (selectedClient.nomeFantasia || selectedClient.razaoSocial || '').toLowerCase();
-    return name.includes('milhao') || name.includes('milhão');
-  }, [selectedClient]);
-
-  const isComigoClient = useMemo(() => {
-    if (!selectedClient) return false;
-    const name = (selectedClient.nomeFantasia || selectedClient.razaoSocial || '').toLowerCase();
-    return name.includes('comigo');
-  }, [selectedClient]);
-
-  const isAgromercantilClient = useMemo(() => {
-    if (!selectedClient) return false;
-    const name = (selectedClient.nomeFantasia || selectedClient.razaoSocial || '').toLowerCase();
-    return name.includes('agromercantil') || name.includes('agro mercantil') || name.includes('mercantil');
-  }, [selectedClient]);
-
+  // Auto-detect strategy based on client
   useEffect(() => {
-    if (isComigoClient || isAgromercantilClient) {
-      setImportMode('image');
-    } else {
-      setImportMode('text');
+    if (!selectedClientId) return;
+    const client = clients.find((c) => c.id === selectedClientId);
+    if (!client) return;
+
+    const name = (client.razaoSocial || client.nomeFantasia || '').toLowerCase();
+    if (name.includes('comigo')) {
+      setStrategyTab('image');
+    } else if (name.includes('milh')) {
+      setStrategyTab('text');
     }
-  }, [isComigoClient, isAgromercantilClient]);
+  }, [selectedClientId, clients]);
 
-  // Paste image handler (Ctrl+V)
+  // Native Clipboard paste listener (Ctrl + V for screenshots/images)
   useEffect(() => {
-    if (step !== 1 || !isOpen) return;
+    if (!isOpen || currentStep !== 2 || strategyTab !== 'image') return;
 
-    const handlePaste = (e: ClipboardEvent) => {
-      if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
-        const imageFiles = Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'));
-        if (imageFiles.length > 0) {
-          e.preventDefault();
-          setImportMode('image');
-          setAttachedFiles(prev => [...prev, ...imageFiles]);
+    const handlePaste = async (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.indexOf('image') !== -1) {
+          const blob = item.getAsFile();
+          if (blob) {
+            try {
+              setIsProcessingInput(true);
+              setProcessingProgress('Aprimorando captura de tela colada...');
+              const enhanced = await enhanceDocumentImage(blob, `screenshot_colado_${Date.now()}.jpg`);
+              setUploadedImages((prev) => [
+                ...prev,
+                {
+                  id: `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                  file: enhanced.file,
+                  dataUrl: enhanced.dataUrl,
+                  name: `Captura Colada ${prev.length + 1}.jpg`
+                }
+              ]);
+            } catch (err) {
+              console.error('Erro ao aprimorar imagem colada:', err);
+            } finally {
+              setIsProcessingInput(false);
+              setProcessingProgress('');
+            }
+          }
         }
       }
     };
 
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [step, isOpen]);
+  }, [isOpen, currentStep, strategyTab]);
 
-  const handleParseText = () => {
-    if (!rawText.trim()) return;
-    const parsed = parseRawText(rawText, products, isMilhaoClient);
-    setEditedCargos(parsed.map(p => ({ ...p })));
-    setStep(2);
-  };
+  if (!isOpen) return null;
 
-  const handleProcessImages = async () => {
-    if (attachedFiles.length === 0) return;
-    setIsProcessingImages(true);
-    setImportError(null);
-    const parsedList: ParsedCargo[] = [];
+  const selectedClient = clients.find((c) => c.id === selectedClientId);
 
-    const effectiveApiKey = apiKey || localStorage.getItem('gemini_api_key') || (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+  // Handle Drag & Drop / File selection
+  const handleFilesAdded = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
 
-    if (isAgromercantilClient) {
-      for (let i = 0; i < attachedFiles.length; i++) {
-        const file = attachedFiles[i];
-        setProcessingStatus(`Digitalizando e interpretando lotes da Agromercantil (Imagem ${i + 1} de ${attachedFiles.length})...`);
-        try {
-          const extracted = await processAgromercantilImage(file, effectiveApiKey);
-
-          // REGRA AGROMERCANTIL: cadastrar apenas linhas onde o Status for "Proposta Final"
-          const propostaFinalRows = extracted.rows.filter(r =>
-            (r.status || '').toLowerCase().includes('proposta final')
-          );
-
-          if (extracted.errorMessage && propostaFinalRows.length === 0) {
-            setImportError(extracted.errorMessage);
-          }
-
-          for (const row of propostaFinalRows) {
-            const prod = findProduct(row.produto, products, false, false);
-            const baseVal = row.precoNegociado || 0;
-            const { company, pj, pf } = calcFreight(baseVal, false, false, 0);
-            const schedule = generateAgromercantilDailySchedule(row.volNegociado || 0, row.cadenciaDia, row.inicioEmbarque);
-            const obs = formatAgromercantilObservations(row);
-
-            const todayStr = new Date().toISOString().split('T')[0];
-            const effectiveStartDate = (row.inicioEmbarque && row.inicioEmbarque >= todayStr) ? row.inicioEmbarque : todayStr;
-
-            const cargo: ParsedCargo = {
-              rawText: row.rawText || '',
-              origin: normalizeCityFormat(row.cidadeOrigem || ''),
-              originLocation: row.origem || undefined,
-              destination: normalizeCityFormat(row.cidadeDestino || ''),
-              destinationLocation: row.destino || undefined,
-              productName: prod?.name || row.produto || 'Milho em Grãos',
-              productId: prod?.id,
-              totalVolume: row.volNegociado || 0,
-              baseValue: baseVal,
-              cadenciaDia: row.cadenciaDia,
-              companyFreightValuePerTon: company,
-              driverFreightValuePerTonPJ: pj,
-              driverFreightValuePerTonPF: pf,
-              driverFreightValuePerTon: pj,
-              hasIcms: false,
-              icmsPercentage: 12,
-              vehicleTypes: getMilhaoDefaultVehicleTypes(),
-              observations: obs || undefined,
-              loadingStartDate: effectiveStartDate,
-              loadingDeadline: row.fimEmbarque || undefined,
-              dailySchedule: schedule,
-              type: CargoType.Spot,
-              tollIncluded: false,
-              imageDataUrl: extracted.imageDataUrl,
-              errors: [],
-              warnings: baseVal === 0 ? ['Informe o Frete Empresa para calcular os fretes dos motoristas.'] : [],
-            };
-
-            parsedList.push(cargo);
-          }
-        } catch (err: any) {
-          console.error(`Erro ao processar imagem ${file.name}:`, err);
-          setImportError(`Erro ao processar ${file.name}: ${err?.message || 'Falha na leitura da imagem'}`);
-        }
-      }
-    } else {
-      // COMIGO e outros clientes
-      const fertProduct = findProduct('Fertilizante', products, false, true);
-
-      for (let i = 0; i < attachedFiles.length; i++) {
-        const file = attachedFiles[i];
-        setProcessingStatus(`Digitalizando e aprimorando imagem ${i + 1} de ${attachedFiles.length}...`);
-        try {
-          const extracted = await processComigoImage(file, effectiveApiKey);
-          const obs = formatComigoObservations(extracted);
-          const baseCompanyVal = extracted.freteEmpresaSugerido || 0;
-          const { company, pj, pf } = calcFreight(baseCompanyVal, false, false, 0);
-
-          const cargo: ParsedCargo = {
-            rawText: extracted.rawText || '',
-            origin: 'Rio Verde, GO',
-            originLocation: 'COMIGO - Rio Verde',
-            destination: normalizeCityFormat(extracted.destinoSugerido || 'Aparecida do Rio Doce, GO'),
-            destinationLocation: extracted.destinoLocal || extracted.fazenda,
-            productName: fertProduct?.name || 'Fertilizante',
-            productId: fertProduct?.id,
-            totalVolume: extracted.toneladas || 0,
-            baseValue: baseCompanyVal,
-            companyFreightValuePerTon: company,
-            driverFreightValuePerTonPJ: pj,
-            driverFreightValuePerTonPF: pf,
-            driverFreightValuePerTon: pj,
-            hasIcms: false,
-            icmsPercentage: 12,
-            observations: obs || undefined,
-            loadingStartDate: extracted.dataEntrega ? parseLoadingDate(extracted.dataEntrega) : new Date().toISOString().split('T')[0],
-            dailySchedule: getInitialDailySchedule(),
-            type: CargoType.Spot,
-            tollIncluded: false,
-            imageDataUrl: extracted.imageDataUrl,
-            errors: [],
-            warnings: baseCompanyVal === 0 ? ['Informe o Frete Empresa para calcular os fretes dos motoristas.'] : [],
-          };
-
-          parsedList.push(cargo);
-        } catch (err: any) {
-          console.error(`Erro ao processar imagem ${file.name}:`, err);
-          setImportError(`Erro ao processar ${file.name}: ${err?.message || 'Falha na leitura da imagem'}`);
-        }
-      }
-    }
-
-    setIsProcessingImages(false);
-    setProcessingStatus('');
-
-    if (parsedList.length > 0) {
-      setEditedCargos(parsedList);
-      setImportError(null);
-      setStep(2);
-    } else {
-      setImportError(prev => prev || 'Nenhuma carga com status "Proposta Final" foi identificada na imagem. Para processar imagens de tabelas com IA multimodal, certifique-se de configurar sua Chave de API Gemini abaixo.');
-    }
-  };
-
-  const updateEdited = (index: number, field: keyof ParsedCargo, value: any) => {
-    setEditedCargos(prev => {
-      const next = [...prev];
-      let val = value;
-      if (field === 'origin' || field === 'destination') {
-        val = normalizeCityFormat(value);
-      }
-      const cargo: any = { ...next[index], [field]: val };
-
-      // Se for Agromercantil e mudar data de início ou volume, recalcula a programação diária
-      if (isAgromercantilClient && (field === 'loadingStartDate' || field === 'totalVolume' || field === 'cadenciaDia')) {
-        const total = field === 'totalVolume' ? (Number(val) || 0) : (cargo.totalVolume || 0);
-        const cadencia = field === 'cadenciaDia' ? (Number(val) || 0) : (cargo.cadenciaDia || 0);
-        const start = field === 'loadingStartDate' ? val : cargo.loadingStartDate;
-        cargo.dailySchedule = generateAgromercantilDailySchedule(total, cadencia, start);
-      }
-
-      // Se mudar o frete empresa ou parâmetros de ICMS, recalcula tudo imediatamente
-      if (field === 'companyFreightValuePerTon' || field === 'baseValue' || field === 'hasIcms' || field === 'icmsPercentage') {
-        const numCompany = field === 'companyFreightValuePerTon' || field === 'baseValue' ? (Number(val) || 0) : (cargo.companyFreightValuePerTon || 0);
-        const hasIcms = field === 'hasIcms' ? Boolean(val) : Boolean(cargo.hasIcms);
-        const icmsPct = field === 'icmsPercentage' ? (Number(val) || 0) : (Number(cargo.icmsPercentage) || 0);
-
-        const { company, pj, pf } = calcFreight(numCompany, isMilhaoClient, hasIcms, icmsPct);
-        cargo.companyFreightValuePerTon = company;
-        cargo.driverFreightValuePerTonPJ = pj;
-        cargo.driverFreightValuePerTonPF = pf;
-        cargo.driverFreightValuePerTon = pj;
-        cargo.baseValue = numCompany;
-        cargo.hasIcms = hasIcms;
-        cargo.icmsPercentage = icmsPct;
-
-        if (numCompany > 0) {
-          cargo.warnings = (cargo.warnings || []).filter((w: string) => !w.includes('Informe o Frete Empresa'));
-        }
-      }
-
-      next[index] = cargo;
-      return next;
-    });
-  };
-
-  const validCount = editedCargos.filter(c => c.errors.length === 0 && c.productId).length;
-
-  const handleConfirm = async () => {
-    if (!selectedClientId) return;
-    setIsSaving(true);
-    const validCargos = editedCargos.filter(c => c.errors.length === 0 && c.productId);
-
-    const cargoData: Array<Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'>> = validCargos.map(c => {
-      const attachments = c.imageDataUrl ? [c.imageDataUrl] : [];
-
-      return {
-        sequenceId: 0,
-        clientId: selectedClientId,
-        productId: c.productId!,
-        origin: normalizeCityFormat(c.origin),
-        originLocation: c.originLocation,
-        originMapLink: c.originMapLink,
-        destination: normalizeCityFormat(c.destination),
-        destinationLocation: c.destinationLocation,
-        totalVolume: c.totalVolume || 0,
-        scheduledVolume: 0,
-        loadedVolume: 0,
-        companyFreightValuePerTon: c.companyFreightValuePerTon,
-        driverFreightValuePerTon: c.driverFreightValuePerTonPJ,
-        driverFreightValuePerTonPJ: c.driverFreightValuePerTonPJ,
-        driverFreightValuePerTonPF: c.driverFreightValuePerTonPF,
-        hasIcms: c.hasIcms,
-        icmsPercentage: c.icmsPercentage || 0,
-        requiresScheduling: false,
-        type: c.type,
-        status: CargoStatus.EmAndamento,
-        loadingStartDate: c.loadingStartDate,
-        loadingDeadline: c.loadingDeadline,
-        dailySchedule: c.dailySchedule && c.dailySchedule.length > 0 ? c.dailySchedule : getInitialDailySchedule(),
-        allowedVehicleTypes: c.vehicleTypes && c.vehicleTypes.length > 0 ? c.vehicleTypes : undefined,
-        observations: c.observations,
-        attachments,
-        freightLegs: [{
-          companyFreightValuePerTon: c.companyFreightValuePerTon,
-          driverFreightValuePerTon: c.driverFreightValuePerTonPJ,
-          driverFreightValuePerTonPJ: c.driverFreightValuePerTonPJ,
-          driverFreightValuePerTonPF: c.driverFreightValuePerTonPF,
-          hasIcms: c.hasIcms,
-          icmsPercentage: c.icmsPercentage || 0,
-          disableDriverFreightPF: false,
-        }],
-        destinations: [{
-          id: `dest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          city: normalizeCityFormat(c.destination),
-          location: c.destinationLocation,
-          targetTonnage: c.totalVolume || 0,
-          freightLegs: [{
-            companyFreightValuePerTon: c.companyFreightValuePerTon,
-            driverFreightValuePerTon: c.driverFreightValuePerTonPJ,
-            driverFreightValuePerTonPJ: c.driverFreightValuePerTonPJ,
-            driverFreightValuePerTonPF: c.driverFreightValuePerTonPF,
-            hasIcms: c.hasIcms,
-            icmsPercentage: c.icmsPercentage || 0,
-            disableDriverFreightPF: false,
-          }],
-        }],
-      };
-    });
+    setIsProcessingInput(true);
+    setProcessingProgress(`Aprimorando ${files.length} documento(s) em Canvas...`);
 
     try {
-      await onSaveBulk(cargoData);
-      setSaveResult({ success: cargoData.length, failed: editedCargos.length - validCargos.length });
-    } catch {
-      setSaveResult({ success: 0, failed: editedCargos.length });
+      const newImgs: { id: string; file: File; dataUrl: string; name: string }[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.type.startsWith('image/') || file.name.match(/\.(jpg|jpeg|png|webp)$/i)) {
+          setProcessingProgress(`Otimizando contraste e nitidez (${i + 1}/${files.length}): ${file.name}`);
+          const enhanced = await enhanceDocumentImage(file, file.name);
+          newImgs.push({
+            id: `img_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`,
+            file: enhanced.file,
+            dataUrl: enhanced.dataUrl,
+            name: file.name
+          });
+        }
+      }
+      setUploadedImages((prev) => [...prev, ...newImgs]);
+    } catch (err) {
+      console.error('Erro ao aprimorar imagens:', err);
+      alert('Ocorreu um erro ao processar uma das imagens selecionadas.');
+    } finally {
+      setIsProcessingInput(false);
+      setProcessingProgress('');
+    }
+  };
+
+  // Process WhatsApp text block
+  const handleProcessText = () => {
+    if (!whatsAppText.trim()) {
+      alert('Por favor, cole as mensagens do WhatsApp antes de continuar.');
+      return;
+    }
+
+    setIsProcessingInput(true);
+    try {
+      const parsed = parseWhatsAppTextBlock(whatsAppText, selectedClient, products);
+      if (parsed.length === 0) {
+        alert('Não foi possível identificar nenhuma carga no texto informado.');
+        return;
+      }
+      setParsedCargos(parsed);
+      setCurrentStep(3);
+    } catch (err) {
+      console.error('Erro ao processar texto do WhatsApp:', err);
+      alert('Ocorreu um erro ao interpretar o texto do WhatsApp.');
+    } finally {
+      setIsProcessingInput(false);
+    }
+  };
+
+  // Process Images with OCR / Gemini
+  const handleProcessImages = async () => {
+    if (uploadedImages.length === 0) {
+      alert('Por favor, adicione ao menos uma imagem ou roteiro para processar.');
+      return;
+    }
+
+    setIsProcessingInput(true);
+    const parsedList: ParsedBulkCargo[] = [];
+
+    try {
+      for (let i = 0; i < uploadedImages.length; i++) {
+        const img = uploadedImages[i];
+        setProcessingProgress(`Executando OCR e IA no documento (${i + 1}/${uploadedImages.length}): ${img.name}`);
+        const parsed = await processComigoDocumentOcr(
+          img.dataUrl,
+          selectedClient,
+          products,
+          geminiApiKey
+        );
+        parsedList.push(parsed);
+      }
+
+      setParsedCargos(parsedList);
+      setCurrentStep(3);
+    } catch (err) {
+      console.error('Erro no processamento de OCR:', err);
+      alert('Ocorreu um erro durante o processamento de OCR dos documentos.');
+    } finally {
+      setIsProcessingInput(false);
+      setProcessingProgress('');
+    }
+  };
+
+  // Step 3 Actions: update cargo field
+  const updateCargoField = (tempId: string, updates: Partial<ParsedBulkCargo>) => {
+    setParsedCargos((prev) =>
+      prev.map((c) => {
+        if (c.tempId !== tempId) return c;
+        const updated = { ...c, ...updates };
+
+        // Recalcula financeiro se mudou frete ou ICMS
+        if (
+          updates.companyFreightValuePerTon !== undefined ||
+          updates.hasIcms !== undefined ||
+          updates.icmsPercentage !== undefined
+        ) {
+          const fin = calculateFinancials(
+            updated.companyFreightValuePerTon,
+            updated.hasIcms,
+            updated.icmsPercentage
+          );
+          updated.driverFreightValuePerTon = fin.driverFreightPj;
+          updated.driverFreightValuePerTonPf = fin.driverFreightPf;
+        }
+
+        // Revalida
+        const val = validateBulkCargo(updated);
+        updated.status = val.status;
+        updated.validationErrors = val.validationErrors;
+        updated.validationWarnings = val.validationWarnings;
+
+        return updated;
+      })
+    );
+  };
+
+  // Duplicate a card
+  const handleDuplicateCargo = (cargo: ParsedBulkCargo) => {
+    const copy: ParsedBulkCargo = {
+      ...cargo,
+      tempId: `TEMP-COPY-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
+    };
+    setParsedCargos((prev) => [...prev, copy]);
+  };
+
+  // Remove a card
+  const handleRemoveCargo = (tempId: string) => {
+    setParsedCargos((prev) => prev.filter((c) => c.tempId !== tempId));
+  };
+
+  // Add a blank new cargo card
+  const handleAddBlankCargo = () => {
+    const defaultProduct = products[0];
+    const fin = calculateFinancials(150, false, 0);
+    const newBlank: ParsedBulkCargo = {
+      tempId: `TEMP-MANUAL-${Date.now()}`,
+      clientId: selectedClientId || clients[0]?.id || '',
+      productId: defaultProduct?.id || '',
+      origin: '',
+      originLocation: '',
+      destination: '',
+      destinationLocation: '',
+      totalVolume: 40,
+      companyFreightValuePerTon: 150,
+      hasIcms: false,
+      icmsPercentage: 0,
+      driverFreightValuePerTon: fin.driverFreightPj,
+      driverFreightValuePerTonPf: fin.driverFreightPf,
+      allowedVehicleTypes: getDefaultAllowedVehicles(),
+      observations: '',
+      status: 'error',
+      validationErrors: ['Origem e Destino obrigatórios'],
+      validationWarnings: []
+    };
+    const val = validateBulkCargo(newBlank);
+    newBlank.status = val.status;
+    newBlank.validationErrors = val.validationErrors;
+    newBlank.validationWarnings = val.validationWarnings;
+
+    setParsedCargos((prev) => [...prev, newBlank]);
+  };
+
+  // Vehicle sets management for individual card
+  const handleAddVehicleSet = (tempId: string, setType: VehicleSetType, bodyTypes: VehicleBodyType[]) => {
+    const cargo = parsedCargos.find((c) => c.tempId === tempId);
+    if (!cargo) return;
+
+    if (bodyTypes.length === 0) {
+      alert('Selecione ao menos um tipo de carroceria (ex: Graneleiro ou Basculante).');
+      return;
+    }
+
+    const currentSets = cargo.allowedVehicleTypes || [];
+    const filtered = currentSets.filter((s) => s.setType !== setType);
+    const updated = [...filtered, { setType, bodyTypes }];
+
+    updateCargoField(tempId, { allowedVehicleTypes: updated });
+  };
+
+  const handleRemoveVehicleSet = (tempId: string, setType: VehicleSetType) => {
+    const cargo = parsedCargos.find((c) => c.tempId === tempId);
+    if (!cargo) return;
+    const updated = (cargo.allowedVehicleTypes || []).filter((s) => s.setType !== setType);
+    updateCargoField(tempId, { allowedVehicleTypes: updated });
+  };
+
+  const handleApplyStandardVehicles = (tempId: string) => {
+    updateCargoField(tempId, { allowedVehicleTypes: getDefaultAllowedVehicles() });
+  };
+
+  // Confirm and Save All Valid Cargos
+  const handleConfirmSaveAll = async () => {
+    const validCargos = parsedCargos.filter((c) => c.status !== 'error');
+
+    if (validCargos.length === 0) {
+      alert('Não há cargas válidas para salvar. Corrija os erros destacados em vermelho.');
+      return;
+    }
+
+    if (validCargos.length < parsedCargos.length) {
+      const proceed = window.confirm(
+        `Atenção: Existem ${parsedCargos.length - validCargos.length} carga(s) com erros que NÃO serão salvas.\n\nDeseja continuar e salvar as ${validCargos.length} carga(s) válidas?`
+      );
+      if (!proceed) return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      // Converte cada ParsedBulkCargo em um objeto Cargo para persistência no banco
+      const cargosToInsert: Omit<Cargo, 'id'>[] = validCargos.map((p) => {
+        // Regra de corte das 16h para programação diária
+        const dailySchedule = generateDailySchedule(p.totalVolume || 40);
+        const parentClient = clients.find(cl => cl.id === p.clientId);
+
+        return {
+          sequenceId: 0, // Será recalculado atomicamente no salvamento
+          clientId: p.clientId,
+          productId: p.productId,
+          origin: p.origin,
+          originLocation: p.originLocation || '',
+          originMapLink: p.originMapLink || '',
+          destination: p.destination,
+          destinationLocation: p.destinationLocation || '',
+          destinationMapLink: p.destinationMapLink || '',
+          totalVolume: p.totalVolume || 40,
+          scheduledVolume: 0,
+          loadedVolume: 0,
+          companyFreightValuePerTon: p.companyFreightValuePerTon,
+          companyFreightHasToll: false,
+          driverFreightValuePerTon: p.driverFreightValuePerTon,
+          driverFreightHasToll: false,
+          hasIcms: p.hasIcms,
+          icmsPercentage: p.icmsPercentage,
+          requiresScheduling: false,
+          type: CargoType.Spot,
+          status: CargoStatus.EmAndamento,
+          salespersonName: parentClient?.salespersonName || '',
+          salespersonCommissionPerTon: parentClient?.salespersonCommissionPerTon || 0,
+          createdAt: new Date().toISOString(),
+          createdById: currentUserId,
+          history: [
+            {
+              id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              userId: currentUserId,
+              timestamp: new Date().toISOString(),
+              description: `Carga criada via Importação em Lote (${strategyTab === 'image' ? 'OCR/Imagem' : 'WhatsApp'}).`
+            }
+          ],
+          allowedVehicleTypes: p.allowedVehicleTypes,
+          freightLegs: [
+            {
+              companyFreightValuePerTon: p.companyFreightValuePerTon,
+              driverFreightValuePerTon: p.driverFreightValuePerTon,
+              driverFreightValuePerTonPf: p.driverFreightValuePerTonPf,
+              hasIcms: p.hasIcms,
+              icmsPercentage: p.icmsPercentage
+            }
+          ],
+          dailySchedule,
+          observations: p.observations || '',
+          attachments: p.attachments || []
+        };
+      });
+
+      await onBulkSave(cargosToInsert);
+      onClose();
+    } catch (err: any) {
+      console.error('Erro ao salvar lote de cargas:', err);
+      alert(`Erro ao salvar cargas: ${err?.message || 'Falha na comunicação com o banco de dados.'}`);
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleClose = () => {
-    setStep(0); setSelectedClientId(''); setRawText(''); setAttachedFiles([]);
-    setEditedCargos([]); setSaveResult(null); setIsSaving(false); setIsProcessingImages(false);
-    setLightboxImage(null);
-    onClose();
-  };
-
-  if (!isOpen) return null;
+  const validCount = parsedCargos.filter((c) => c.status !== 'error').length;
+  const errorCount = parsedCargos.filter((c) => c.status === 'error').length;
+  const warningCount = parsedCargos.filter((c) => c.status === 'warning').length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-700">
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Importar Cargas em Lote</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-              {isComigoClient ? 'Importação inteligente de Roteiros COMIGO via Anexo de Imagem / OCR' : 'Cole o texto ou anexe imagens e o sistema estrutura os dados automaticamente'}
-            </p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-fadeIn overflow-y-auto">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[94vh] flex flex-col overflow-hidden text-slate-800 dark:text-slate-100">
+        
+        {/* MODAL HEADER */}
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl shadow-inner">
+              <Layers className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                Importação em Lote de Cargas Multimodal
+                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono">
+                  OCR & WhatsApp
+                </span>
+              </h2>
+              <p className="text-xs text-slate-300">
+                Assistente inteligente com regras customizadas por cliente, cálculo de ICMS e agendamento automático.
+              </p>
+            </div>
           </div>
-          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 transition-colors">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+
+          <button
+            onClick={onClose}
+            className="p-2 text-slate-400 hover:text-white hover:bg-slate-700/60 rounded-full transition-all"
+            title="Fechar Modal"
+          >
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="px-6 pt-4 flex-shrink-0">
-          <StepIndicator current={step} steps={['Selecionar Cliente', isComigoClient || importMode === 'image' ? 'Anexar Imagens' : 'Colar Texto', 'Revisar e Criar']} />
+        {/* STEP PROGRESS BAR */}
+        <div className="bg-slate-100 dark:bg-slate-800/60 px-6 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-6 text-xs font-semibold">
+            <button
+              onClick={() => setCurrentStep(1)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${
+                currentStep === 1
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-bold">1</span>
+              <span>1. Cliente & Estratégia</span>
+            </button>
+
+            <ArrowRight className="w-4 h-4 text-slate-400" />
+
+            <button
+              onClick={() => {
+                if (selectedClientId) setCurrentStep(2);
+              }}
+              disabled={!selectedClientId}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${
+                currentStep === 2
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50'
+              }`}
+            >
+              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-bold">2</span>
+              <span>2. Entrada de Dados</span>
+            </button>
+
+            <ArrowRight className="w-4 h-4 text-slate-400" />
+
+            <button
+              onClick={() => {
+                if (parsedCargos.length > 0) setCurrentStep(3);
+              }}
+              disabled={parsedCargos.length === 0}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${
+                currentStep === 3
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50'
+              }`}
+            >
+              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-bold">3</span>
+              <span>3. Revisão & Criação ({parsedCargos.length})</span>
+            </button>
+          </div>
+
+          {currentStep === 3 && (
+            <div className="hidden sm:flex items-center gap-2 text-xs">
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 font-bold border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" /> {validCount} Válidas
+              </span>
+              {errorCount > 0 && (
+                <span className="px-2.5 py-1 rounded-lg bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300 font-bold border border-red-300 dark:border-red-800 flex items-center gap-1">
+                  <XCircle className="w-3.5 h-3.5" /> {errorCount} com Erro
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-6 pb-4 min-h-0">
+        {/* MODAL BODY CONTENT */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* ======================================================== */}
+          {/* PASSO 1: SELEÇÃO DO CLIENTE E ESTRATÉGIA                 */}
+          {/* ======================================================== */}
+          {currentStep === 1 && (
+            <div className="max-w-3xl mx-auto space-y-6 animate-fadeIn">
+              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl">
+                <h3 className="font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-2 text-sm">
+                  <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  Detecção Automática de Modelo por Cliente
+                </h3>
+                <p className="text-xs text-emerald-800 dark:text-emerald-300/90 mt-1">
+                  Selecione o cliente pagador. O sistema ativará automaticamente as regras customizadas (Ex: <strong>COMIGO</strong> ativa o modo Imagem/OCR com Roteiro em Rio Verde; <strong>Milhão Ingredients</strong> ativa o modo Texto WhatsApp com margens automáticas).
+                </p>
+              </div>
 
-          {/* STEP 0: Select Client */}
-          {step === 0 && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Selecione o cliente para aplicar o modelo e as regras correspondentes:
-              </p>
+              {/* Cliente Selector */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Cliente *</label>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">
+                  Selecione o Cliente <span className="text-red-500">*</span>
+                </label>
                 <select
                   value={selectedClientId}
-                  onChange={e => setSelectedClientId(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent text-base"
+                  onChange={(e) => setSelectedClientId(e.target.value)}
+                  className="w-full p-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 text-sm shadow-sm"
                 >
-                  <option value="">— Selecione um cliente —</option>
-                  {clients.map(c => (
-                    <option key={c.id} value={c.id}>{c.nomeFantasia}</option>
+                  <option value="" disabled>Selecione um cliente cadastrado...</option>
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.razaoSocial || client.nomeFantasia} (CNPJ: {client.cnpj})
+                    </option>
                   ))}
                 </select>
               </div>
 
-              {/* Informações da regra AGROMERCANTIL */}
-              {isAgromercantilClient && (
-                <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4">
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl mt-0.5">🌱</span>
-                    <div className="space-y-1">
-                      <p className="text-sm font-bold text-emerald-800 dark:text-emerald-200">Cliente Agromercantil — Importação de Lotes por Imagem da Tabela</p>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                        • <strong>Filtro de Status:</strong> Cadastra apenas os lotes com Status = <code>"Proposta Final"</code> (demais status como "Negociação em Curso" são filtrados automaticamente).
-                      </p>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                        • <strong>Frete Empresa:</strong> Preço Negociado (calcula margens PJ -8% e PF -12%).
-                      </p>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                        • <strong>Volume Total (ton):</strong> Vol. Negociado.
-                      </p>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                        • <strong>Origem e Destino:</strong> Cidade Origem / Cidade Destino + Endereços e Fazendas locais.
-                      </p>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                        • <strong>Datas de Embarque:</strong> Início do Carregamento e Prazo de Carregamento.
-                      </p>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                        • <strong>Programação Diária (Cadência / Dia):</strong> Adiciona automaticamente cotas fixas por dia nos próximos dias compatíveis com o volume total (Ex: 600t com 120t/dia = 5 dias com 120t).
-                      </p>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                        • <strong>Produto:</strong> Identificado a partir da coluna Produto (ex: Milho em Grãos, Soja em Grãos).
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Informações da regra COMIGO */}
-              {isComigoClient && (
-                <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4">
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl mt-0.5">🌾</span>
-                    <div className="space-y-1">
-                      <p className="text-sm font-bold text-emerald-800 dark:text-emerald-200">Cliente COMIGO — Modelo por Anexo de Imagem</p>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                        • <strong>Origem Padrão:</strong> Fixa em <code>Rio Verde, GO</code>.
-                      </p>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                        • <strong>Produto Padrão:</strong> <strong>Fertilizante</strong>.
-                      </p>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                        • <strong>Destino Automático:</strong> Detectado a partir do roteiro de entrega para você confirmar.
-                      </p>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                        • <strong>Frete & Abatimento ICMS:</strong> Frete Empresa com cálculo de PJ (−8%) e PF (−12%), abatendo o ICMS se informado.
-                      </p>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                        • <strong>Aprimoramento Automático:</strong> Imagens recebem realce de contraste e nitidez sem perda de informação.
-                      </p>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                        • <strong>Programação Diária:</strong> 40 ton em <em>Demanda a Verificar</em> (hoje até 16h, ou amanhã).
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Informações da regra MILHÃO */}
-              {isMilhaoClient && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl mt-0.5">🌽</span>
-                    <div className="space-y-1">
-                      <p className="text-sm font-bold text-blue-800 dark:text-blue-200">Cliente Milhão Ingredients — Modelo WhatsApp</p>
-                      <p className="text-xs text-blue-700 dark:text-blue-300">
-                        • <strong>Cidades:</strong> Convertidas para <code>"Cidade, UF"</code>.
-                      </p>
-                      <p className="text-xs text-blue-700 dark:text-blue-300">
-                        • <strong>Produto:</strong> Seleciona automaticamente <strong>Milho</strong>.
-                      </p>
-                      <p className="text-xs text-blue-700 dark:text-blue-300">
-                        • <strong>Volume Padrão:</strong> <strong>100 ton</strong> (editável na conferência).
-                      </p>
-                      <p className="text-xs text-blue-700 dark:text-blue-300">
-                        • <strong>Veículos Padrão:</strong> Todos os tipos de veículos (exceto Truck e Bitruck) com carrocerias <strong>Graneleiro e Basculante</strong>.
-                      </p>
-                      <p className="text-xs text-blue-700 dark:text-blue-300">
-                        • <strong>Margens:</strong> Frete Empresa (Valor informado), PJ (−8%), PF (−12%).
-                      </p>
-                      <p className="text-xs text-blue-700 dark:text-blue-300">
-                        • <strong>Programação Diária:</strong> 40 ton em <em>Demanda a Verificar</em> (hoje até 16h, ou amanhã).
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <button
-                disabled={!selectedClientId}
-                onClick={() => setStep(1)}
-                className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md"
-              >
-                Continuar →
-              </button>
-            </div>
-          )}
-
-          {/* STEP 1: Input (Text or Image) */}
-          {step === 1 && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                  <span className="font-semibold text-primary">{selectedClient?.nomeFantasia}</span>
-                  <span>·</span>
-                  <span>{importMode === 'image' ? (isAgromercantilClient ? 'Anexe os prints/fotos das planilhas de lotes' : 'Anexe os roteiros em imagem') : 'Cole o texto das cargas'}</span>
-                </div>
-
-                {/* Mode Selector Tabs */}
-                <div className="flex bg-gray-100 dark:bg-gray-700 p-0.5 rounded-lg text-xs">
-                  <button
-                    onClick={() => setImportMode('image')}
-                    className={`px-3 py-1.5 rounded-md font-medium transition-all ${
-                      importMode === 'image' ? 'bg-white dark:bg-gray-800 text-primary shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900'
+              {/* Strategy Selector Tabs */}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">
+                  Estratégia de Entrada de Dados
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div
+                    onClick={() => setStrategyTab('image')}
+                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex items-start gap-3.5 ${
+                      strategyTab === 'image'
+                        ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-md ring-2 ring-emerald-500/20'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300'
                     }`}
                   >
-                    📷 Anexo de Imagem / OCR
-                  </button>
-                  <button
-                    onClick={() => setImportMode('text')}
-                    className={`px-3 py-1.5 rounded-md font-medium transition-all ${
-                      importMode === 'text' ? 'bg-white dark:bg-gray-800 text-primary shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900'
+                    <div className={`p-3 rounded-xl ${strategyTab === 'image' ? 'bg-emerald-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                      <Camera className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-900 dark:text-white">📷 Anexo de Imagem / OCR</h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        Para digitalizações de roteiros COMIGO, autorizações de carregamento, fotos e capturas com Ctrl+V.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => setStrategyTab('text')}
+                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex items-start gap-3.5 ${
+                      strategyTab === 'text'
+                        ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-md ring-2 ring-emerald-500/20'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300'
                     }`}
                   >
-                    📝 Texto (WhatsApp)
-                  </button>
+                    <div className={`p-3 rounded-xl ${strategyTab === 'text' ? 'bg-emerald-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                      <FileText className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-900 dark:text-white">📝 Texto (WhatsApp)</h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        Para blocos de texto e mensagens de grupos com emojis (Ex: Milhão Ingredients, fretes spot em texto).
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* MODO IMAGEM (COMIGO e outros) */}
-              {importMode === 'image' && (
-                <div className="space-y-4">
-                  {/* Dropzone */}
-                  <div
-                    onDragOver={e => e.preventDefault()}
-                    onDrop={e => {
-                      e.preventDefault();
-                      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                        const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
-                        if (files.length > 0) setAttachedFiles(prev => [...prev, ...files]);
-                      }
-                    }}
-                    className="border-2 border-dashed border-primary/40 dark:border-primary/30 hover:border-primary bg-primary/5 dark:bg-primary/10 rounded-2xl p-8 text-center transition-all cursor-pointer relative"
-                    onClick={() => document.getElementById('comigo-file-input')?.click()}
+              {/* Action Button */}
+              <div className="pt-4 flex justify-end">
+                <button
+                  type="button"
+                  disabled={!selectedClientId}
+                  onClick={() => setCurrentStep(2)}
+                  className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-600/20 transition-all active:scale-95"
+                >
+                  Avançar para Entrada de Dados <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* PASSO 2: ENTRADA DE DADOS (IMAGEM OU TEXTO)              */}
+          {/* ======================================================== */}
+          {currentStep === 2 && (
+            <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn">
+              {/* Tab Header Selector */}
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setStrategyTab('image')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                      strategyTab === 'image'
+                        ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
                   >
-                    <input
-                      id="comigo-file-input"
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      className="hidden"
-                      onChange={e => {
-                        if (e.target.files && e.target.files.length > 0) {
-                          const files = Array.from(e.target.files);
-                          setAttachedFiles(prev => [...prev, ...files]);
-                        }
-                      }}
-                    />
-                    <div className="flex flex-col items-center justify-center space-y-2">
-                      <div className="w-14 h-14 rounded-full bg-primary/10 text-primary flex items-center justify-center text-2xl">
-                        📸
-                      </div>
-                      <p className="font-semibold text-gray-900 dark:text-white text-base">
-                        {isAgromercantilClient ? 'Clique para selecionar ou arraste os prints das tabelas de lotes' : 'Clique para selecionar ou arraste as fotos/prints dos roteiros'}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Você também pode colar direto com <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded font-mono text-[11px]">Ctrl + V</kbd>
-                      </p>
-                      <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full mt-1">
-                        ✨ Aprimoramento e nitidez aplicados automaticamente
-                      </span>
+                    <Camera className="w-4 h-4" /> 📷 Modo Imagem / OCR ({uploadedImages.length})
+                  </button>
+                  <button
+                    onClick={() => setStrategyTab('text')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                      strategyTab === 'text'
+                        ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" /> 📝 Modo Texto (WhatsApp)
+                  </button>
+                </div>
+
+                <div className="text-xs text-slate-500">
+                  Cliente: <strong>{selectedClient?.razaoSocial || selectedClient?.nomeFantasia}</strong>
+                </div>
+              </div>
+
+              {/* TAB CONTENT: MODO IMAGEM */}
+              {strategyTab === 'image' && (
+                <div className="space-y-4">
+                  {/* Drag and drop zone */}
+                  <div
+                    ref={dropZoneRef}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleFilesAdded(e.dataTransfer.files);
+                    }}
+                    className="border-2 border-dashed border-emerald-400/80 dark:border-emerald-600/60 rounded-2xl p-8 text-center bg-emerald-50/30 dark:bg-emerald-950/10 hover:bg-emerald-50/60 transition-all cursor-pointer relative group"
+                    onClick={() => {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.multiple = true;
+                      input.accept = 'image/*,.pdf';
+                      input.onchange = (e: any) => handleFilesAdded(e.target.files);
+                      input.click();
+                    }}
+                  >
+                    <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                      <Upload className="w-7 h-7" />
                     </div>
+                    <h3 className="font-bold text-slate-800 dark:text-white text-base">
+                      Arraste ou Selecione Roteiros e Fotos de Cargas
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Suporte a múltiplas imagens (JPG, PNG, WEBP) e captura direta com <strong className="text-emerald-600 dark:text-emerald-400">Ctrl + V</strong>.
+                    </p>
+                    <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold mt-2">
+                      ✨ Aprimoramento automático em Canvas: Auto-Contraste, Equalização de Histograma e Nitidez integrados.
+                    </p>
                   </div>
 
-                  {/* Attached images gallery */}
-                  {attachedFiles.length > 0 && (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                          {attachedFiles.length} imagem(ns) selecionada(s)
-                        </span>
+                  {/* Uploaded images gallery */}
+                  {uploadedImages.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
+                        <span>Documentos Prontos para OCR ({uploadedImages.length})</span>
                         <button
-                          onClick={() => setAttachedFiles([])}
-                          className="text-xs text-red-500 hover:underline"
+                          type="button"
+                          onClick={() => setUploadedImages([])}
+                          className="text-red-500 hover:underline"
                         >
-                          Limpar todas
+                          Limpar Todas
                         </button>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {attachedFiles.map((file, i) => (
-                          <div key={i} className="relative group border rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 aspect-video flex items-center justify-center">
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {uploadedImages.map((img, idx) => (
+                          <div
+                            key={img.id}
+                            className="p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-3 relative group"
+                          >
                             <img
-                              src={URL.createObjectURL(file)}
-                              alt={file.name}
-                              className="w-full h-full object-cover cursor-pointer"
-                              onClick={() => {
-                                setLightboxImage(URL.createObjectURL(file));
-                                setLightboxTitle(file.name);
-                              }}
+                              src={img.dataUrl}
+                              alt={img.name}
+                              className="w-12 h-12 object-cover rounded-lg border border-slate-300 dark:border-slate-600 flex-shrink-0"
                             />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{img.name}</p>
+                              <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-semibold">
+                                ✓ Canvas Aprimorado
+                              </span>
+                            </div>
                             <button
+                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setAttachedFiles(prev => prev.filter((_, idx) => idx !== i));
+                                setUploadedImages((prev) => prev.filter((item) => item.id !== img.id));
                               }}
-                              className="absolute top-1 right-1 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                              className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700"
+                              title="Remover Imagem"
                             >
-                              ✕
+                              <Trash2 className="w-4 h-4" />
                             </button>
-                            <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded truncate max-w-[90%]">
-                              {file.name}
-                            </span>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
 
-                  {/* Mensagem de Erro / Alerta de Processamento */}
-                  {importError && (
-                    <div className="p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-red-800 dark:text-red-200 text-xs space-y-2 animate-fade-in">
-                      <div className="flex items-start gap-2">
-                        <span className="text-base mt-0.5">⚠️</span>
-                        <div className="space-y-1 flex-1">
-                          <p className="font-bold text-sm">Não foi possível processar as cargas da imagem</p>
-                          <p className="leading-relaxed">{importError}</p>
-                        </div>
+                  {/* Processing Status Banner */}
+                  {isProcessingInput && (
+                    <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-xl flex items-center gap-3">
+                      <RefreshCw className="w-5 h-5 text-emerald-600 dark:text-emerald-400 animate-spin" />
+                      <div>
+                        <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200">Processando Inteligência de Imagem / OCR...</p>
+                        <p className="text-xs text-emerald-700 dark:text-emerald-300">{processingProgress || 'Aguarde um momento.'}</p>
                       </div>
                     </div>
                   )}
 
-                  {/* Configuração de Chave de API Gemini */}
-                  <div className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/20 rounded-xl border border-emerald-200 dark:border-emerald-800 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">✨</span>
-                        <span className="text-xs font-bold text-gray-900 dark:text-white">Reconhecimento Inteligente por IA (Gemini Vision)</span>
-                      </div>
-                      <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${
-                        apiKey.trim() ? 'bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300'
-                      }`}>
-                        {apiKey.trim() ? '✓ Chave Configurada (Pronta)' : '⚠️ Chave Não Informada'}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="relative flex-1">
-                        <input
-                          type={showApiKey ? "text" : "password"}
-                          value={apiKey}
-                          onChange={e => {
-                            const val = e.target.value.trim();
-                            setApiKey(val);
-                            localStorage.setItem('gemini_api_key', val);
-                            setApiKeySavedSuccess(true);
-                            setTimeout(() => setApiKeySavedSuccess(false), 2500);
-                          }}
-                          placeholder="Cole aqui sua chave de API do Gemini (AIzaSy...)"
-                          className="w-full pl-3 pr-9 py-2 text-xs font-mono border border-emerald-300 dark:border-emerald-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowApiKey(!showApiKey)}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs"
-                          title={showApiKey ? "Ocultar chave" : "Mostrar chave"}
-                        >
-                          {showApiKey ? "🙈" : "👁️"}
-                        </button>
-                      </div>
-
-                      {typeof navigator !== 'undefined' && navigator.clipboard && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              const clipText = await navigator.clipboard.readText();
-                              if (clipText) {
-                                const clean = clipText.trim();
-                                setApiKey(clean);
-                                localStorage.setItem('gemini_api_key', clean);
-                                setApiKeySavedSuccess(true);
-                                setTimeout(() => setApiKeySavedSuccess(false), 2500);
-                              }
-                            } catch (e) {
-                              console.warn('Clipboard error', e);
-                            }
-                          }}
-                          className="px-3 py-2 bg-white dark:bg-gray-800 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 rounded-lg text-xs font-medium hover:bg-emerald-50 dark:hover:bg-gray-700 transition-colors whitespace-nowrap shadow-sm"
-                        >
-                          📋 Colar
-                        </button>
-                      )}
-                    </div>
-
-                    {apiKeySavedSuccess && (
-                      <p className="text-[11px] text-green-600 dark:text-green-400 font-semibold animate-fade-in">
-                        ✓ Chave salva com sucesso no navegador!
-                      </p>
-                    )}
-
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 gap-1 pt-0.5">
-                      <span>A chave fica salva com segurança no seu navegador para estruturar as tabelas por IA.</span>
-                      <a
-                        href="https://aistudio.google.com/app/apikey"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold whitespace-nowrap"
-                      >
-                        Obter Chave Gratuita ↗
-                      </a>
-                    </div>
-                  </div>
-
-                  {/* Action buttons */}
-                  <div className="flex gap-3 pt-2">
+                  {/* Submit OCR Button */}
+                  <div className="pt-4 flex justify-between items-center">
                     <button
-                      onClick={() => setStep(0)}
-                      className="flex-1 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-semibold hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
+                      type="button"
+                      onClick={() => setCurrentStep(1)}
+                      className="px-4 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold rounded-xl text-xs flex items-center gap-1.5"
                     >
-                      ← Voltar
+                      <ArrowLeft className="w-4 h-4" /> Voltar
                     </button>
                     <button
-                      disabled={attachedFiles.length === 0 || isProcessingImages}
+                      type="button"
+                      disabled={uploadedImages.length === 0 || isProcessingInput}
                       onClick={handleProcessImages}
-                      className="flex-1 py-2.5 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-md"
+                      className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm flex items-center gap-2 shadow-lg shadow-emerald-600/20"
                     >
-                      {isProcessingImages ? (
-                        <>
-                          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                          <span>{processingStatus || 'Processando Imagens...'}</span>
-                        </>
-                      ) : (
-                        `Processar ${attachedFiles.length} Imagem(ns) →`
-                      )}
+                      <Sparkles className="w-4 h-4" />
+                      {isProcessingInput ? 'Processando Documentos...' : `Processar ${uploadedImages.length} Imagem(ns) com OCR ➔`}
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* MODO TEXTO (WhatsApp) */}
-              {importMode === 'text' && (
+              {/* TAB CONTENT: MODO TEXTO WHATSAPP */}
+              {strategyTab === 'text' && (
                 <div className="space-y-4">
-                  <div className="bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Exemplo de Formato Aceito</p>
-                    <pre className="text-xs text-gray-600 dark:text-gray-300 font-mono leading-relaxed whitespace-pre-wrap">{`carga 1
-📍 PEROLANDIA-GO (COMAG) X ACREUNA-GO (SIAP) 🏁
-🚛 VEÍCULO: GRANELEIRO/CAÇAMBA
-📌 LOCAL DE EMBARQUE: https://maps.app.goo.gl/...
-⚖️ PESO: PESO LIBERADO
-💰 VALOR: R$ 80 A TON
-🧾 PRODUTO: MILHO A GRANEL
-🗓️ EMBARQUE: SEGUNDA FEIRA
-🚨 LINK DA CARGA: https://transporter.azship.com.br/...`}</pre>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Cole o bloco de mensagens do WhatsApp (com emojis e rotas):
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWhatsAppText(
+                            `📍 GOIANIRA-GO (MILHÃO) X DESCALVADO-SP (ROYAL CANIN) 🏁\n💰 VALOR: R$ 230 A TON\n🧾 PRODUTO: MILHO\n📌 LOCALIZAÇÃO: https://maps.app.goo.gl/example1\n⚖️ PESO: 50 TON\n🚨 09 EIXOS LIBERADO\n\n📍 PEROLANDIA-GO (MILHÃO) X UBERLANDIA-MG (CARGILL) 🏁\n💰 VALOR: R$ 180 A TON\n🧾 PRODUTO: MILHO\n📌 LOCALIZAÇÃO: https://maps.app.goo.gl/example2\n🤑 DESCARGA RÁPIDA`
+                          );
+                        }}
+                        className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+                      >
+                        📋 Inserir Exemplo Milhão
+                      </button>
+                      <span>•</span>
+                      <button
+                        type="button"
+                        onClick={() => setWhatsAppText('')}
+                        className="text-[11px] text-red-500 hover:underline"
+                      >
+                        Limpar
+                      </button>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Texto das cargas *</label>
-                    <textarea
-                      value={rawText}
-                      onChange={e => setRawText(e.target.value)}
-                      rows={12}
-                      className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent text-sm font-mono resize-none"
-                      placeholder="Cole aqui o texto das cargas (carga 1, carga 2, etc.)"
-                    />
-                  </div>
+                  <textarea
+                    rows={12}
+                    value={whatsAppText}
+                    onChange={(e) => setWhatsAppText(e.target.value)}
+                    placeholder="Cole aqui o texto do WhatsApp com as cargas..."
+                    className="w-full p-4 font-mono text-xs border border-slate-300 dark:border-slate-700 rounded-2xl bg-slate-50 dark:bg-slate-800/90 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 shadow-inner"
+                  />
 
-                  <div className="flex gap-3">
-                    <button onClick={() => setStep(0)} className="flex-1 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-semibold hover:bg-gray-50 dark:hover:bg-gray-700 transition-all">
-                      ← Voltar
+                  <div className="pt-4 flex justify-between items-center">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentStep(1)}
+                      className="px-4 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold rounded-xl text-xs flex items-center gap-1.5"
+                    >
+                      <ArrowLeft className="w-4 h-4" /> Voltar
                     </button>
-                    <button disabled={!rawText.trim()} onClick={handleParseText} className="flex-1 py-2.5 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-40 disabled:cursor-not-allowed transition-all">
-                      Interpretar Cargas →
+                    <button
+                      type="button"
+                      disabled={!whatsAppText.trim() || isProcessingInput}
+                      onClick={handleProcessText}
+                      className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm flex items-center gap-2 shadow-lg shadow-emerald-600/20"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      Interpretar Mensagens e Gerar Cargas ➔
                     </button>
                   </div>
                 </div>
@@ -1516,380 +863,559 @@ const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
             </div>
           )}
 
-          {/* STEP 2: Review */}
-          {step === 2 && !saveResult && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    <span className="font-semibold text-gray-900 dark:text-white">{editedCargos.length} carga(s)</span> pronta(s) para{' '}
-                    <span className="font-semibold text-primary">{selectedClient?.nomeFantasia}</span>
-                  </p>
-                  {editedCargos.length - validCount > 0 && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
-                      ⚠️ {editedCargos.length - validCount} carga(s) com pendências. Revise os campos antes de confirmar.
-                    </p>
+          {/* ======================================================== */}
+          {/* PASSO 3: REVISÃO EM LOTE, EDIÇÃO E CRIAÇÃO               */}
+          {/* ======================================================== */}
+          {currentStep === 3 && (
+            <div className="space-y-6 animate-fadeIn">
+              {/* Batch Action Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Cargas Identificadas:
+                  </span>
+                  <span className="text-sm font-black text-slate-900 dark:text-white">
+                    {parsedCargos.length} Carga(s)
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 text-xs font-bold border border-emerald-300 dark:border-emerald-800">
+                    {validCount} Prontas
+                  </span>
+                  {errorCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-lg bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300 text-xs font-bold border border-red-300 dark:border-red-800">
+                      {errorCount} com Erro
+                    </span>
                   )}
                 </div>
-                <button onClick={() => setStep(1)} className="text-sm text-primary hover:underline">← Voltar para anexos/texto</button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAddBlankCargo}
+                    className="px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl hover:bg-slate-50 flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-emerald-500" /> Adicionar Carga Manual
+                  </button>
+                </div>
               </div>
 
-              {/* Lista de Cargas Extraídas */}
-              {editedCargos.map((cargo, idx) => {
-                const icmsRate = cargo.hasIcms ? ((Number(cargo.icmsPercentage) || 0) / 100) : 0;
-                const netCompanyVal = parseFloat((cargo.companyFreightValuePerTon * (1 - icmsRate)).toFixed(2));
-                const icmsVal = parseFloat((cargo.companyFreightValuePerTon * icmsRate).toFixed(2));
+              {/* List of Cargo Cards */}
+              <div className="space-y-5">
+                {parsedCargos.map((cargo, index) => {
+                  const fin = calculateFinancials(
+                    cargo.companyFreightValuePerTon,
+                    cargo.hasIcms,
+                    cargo.icmsPercentage
+                  );
 
-                return (
-                  <div key={idx} className={`border rounded-xl overflow-hidden transition-all ${
-                    cargo.errors.length > 0 ? 'border-red-300 dark:border-red-700' :
-                    cargo.warnings.length > 0 ? 'border-amber-300 dark:border-amber-700' :
-                    'border-green-300 dark:border-green-700'
-                  }`}>
-                    <div className={`flex items-center justify-between px-4 py-2.5 ${
-                      cargo.errors.length > 0 ? 'bg-red-50 dark:bg-red-900/20' :
-                      cargo.warnings.length > 0 ? 'bg-amber-50 dark:bg-amber-900/20' :
-                      'bg-green-50 dark:bg-green-900/20'
-                    }`}>
-                      <span className="font-semibold text-sm text-gray-800 dark:text-gray-200">
-                        Carga {idx + 1} {cargo.destination ? `— ${cargo.destination}` : ''}
-                      </span>
-                      <span className={`text-xs font-medium px-2.5 py-0.5 rounded-full ${
-                        cargo.errors.length > 0 ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
-                        cargo.warnings.length > 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' :
-                        'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
-                      }`}>
-                        {cargo.errors.length > 0 ? `❌ ${cargo.errors.length} erro(s)` : cargo.warnings.length > 0 ? `⚠️ ${cargo.warnings.length} aviso(s)` : '✅ Pronta'}
-                      </span>
-                    </div>
-
-                    {(cargo.errors.length > 0 || cargo.warnings.length > 0) && (
-                      <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
-                        {cargo.errors.map((e, i) => <p key={i} className="text-xs text-red-600 dark:text-red-400">❌ {e}</p>)}
-                        {cargo.warnings.map((w, i) => <p key={i} className="text-xs text-amber-600 dark:text-amber-400">⚠️ {w}</p>)}
-                      </div>
-                    )}
-
-                    <div className="p-4 bg-white dark:bg-gray-800 space-y-4">
-                      {/* Miniatura do Roteiro com Abertura em Modal */}
-                      {cargo.imageDataUrl && (
-                        <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700 flex items-center gap-4">
-                          <img
-                            src={cargo.imageDataUrl}
-                            alt="Roteiro"
-                            className="w-20 h-20 object-cover rounded-lg border cursor-pointer hover:scale-105 transition-transform"
-                            onClick={() => {
-                              setLightboxImage(cargo.imageDataUrl || null);
-                              setLightboxTitle(`Roteiro da Carga ${idx + 1} (${cargo.destination || 'COMIGO'})`);
-                            }}
-                            title="Clique para visualizar em tela cheia sem baixar"
-                          />
-                          <div className="flex-1 text-xs text-gray-600 dark:text-gray-400">
-                            <p className="font-semibold text-gray-800 dark:text-gray-200">📸 Roteiro de Entrega Digitalizado</p>
-                            <p className="mt-0.5">A imagem original foi aprimorada e será salva automaticamente nos anexos da carga.</p>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setLightboxImage(cargo.imageDataUrl || null);
-                                setLightboxTitle(`Roteiro da Carga ${idx + 1} (${cargo.destination || 'COMIGO'})`);
-                              }}
-                              className="mt-1.5 text-primary text-xs font-semibold hover:underline inline-flex items-center gap-1"
-                            >
-                              Ver imagem ampliada ↗
-                            </button>
+                  return (
+                    <div
+                      key={cargo.tempId}
+                      className={`p-5 rounded-2xl border-2 transition-all bg-white dark:bg-slate-800/90 shadow-sm ${
+                        cargo.status === 'error'
+                          ? 'border-red-400/80 dark:border-red-600/80'
+                          : cargo.status === 'warning'
+                          ? 'border-amber-400/80 dark:border-amber-600/80'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-emerald-500/50'
+                      }`}
+                    >
+                      {/* CARD HEADER */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-slate-100 dark:border-slate-700">
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-7 h-7 rounded-xl bg-slate-900 dark:bg-slate-700 text-white flex items-center justify-center text-xs font-black">
+                            #{index + 1}
+                          </span>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                                {cargo.origin || 'Origem não informada'} ➔ {cargo.destination || 'Destino não informado'}
+                              </h4>
+                              {cargo.status === 'ready' && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" /> Pronta
+                                </span>
+                              )}
+                              {cargo.status === 'warning' && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3" /> Ajuste Necessário
+                                </span>
+                              )}
+                              {cargo.status === 'error' && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300 flex items-center gap-1">
+                                  <XCircle className="w-3 h-3" /> Erro nos Dados
+                                </span>
+                              )}
+                            </div>
                           </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleDuplicateCargo(cargo)}
+                            className="p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-xs"
+                            title="Duplicar Carga"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCargo(cargo.tempId)}
+                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg text-xs"
+                            title="Remover Carga"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* VALIDATION ERRORS BANNER */}
+                      {cargo.validationErrors.length > 0 && (
+                        <div className="mb-4 p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl text-red-800 dark:text-red-300 text-xs space-y-1">
+                          <strong className="font-bold flex items-center gap-1">
+                            <XCircle className="w-3.5 h-3.5" /> Corrija os seguintes campos para liberar a gravação:
+                          </strong>
+                          <ul className="list-disc list-inside space-y-0.5 pl-1">
+                            {cargo.validationErrors.map((err, i) => (
+                              <li key={i}>{err}</li>
+                            ))}
+                          </ul>
                         </div>
                       )}
 
-                      {/* Campos de Origem, Destino e Produto */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* CARD GRID FORM */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                        {/* Cliente */}
                         <div>
-                          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                            📍 Origem (Cidade, UF) {isComigoClient && <span className="text-[10px] text-emerald-600 font-semibold">(Padrão COMIGO: Rio Verde, GO)</span>}
-                          </label>
-                          <input
-                            type="text"
-                            value={cargo.origin}
-                            onChange={e => updateEdited(idx, 'origin', e.target.value)}
-                            onBlur={e => updateEdited(idx, 'origin', normalizeCityFormat(e.target.value))}
-                            className="w-full px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
-                          />
-                          {cargo.originLocation && (
-                            <p className="text-xs text-gray-500 mt-0.5 truncate" title={cargo.originLocation}>Origem Local: {cargo.originLocation}</p>
-                          )}
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                            🏁 Destino (Cidade, UF) *
-                          </label>
-                          <input
-                            type="text"
-                            list="brazilian-cities-list"
-                            value={cargo.destination}
-                            onChange={e => updateEdited(idx, 'destination', e.target.value)}
-                            onBlur={e => updateEdited(idx, 'destination', normalizeCityFormat(e.target.value))}
-                            placeholder="Digite ou selecione a cidade..."
-                            className="w-full px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
-                          />
-                          {cargo.destinationLocation && (
-                            <p className="text-xs text-gray-500 mt-0.5 truncate" title={cargo.destinationLocation}>Destino Local: {cargo.destinationLocation}</p>
-                          )}
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                            🧾 Produto *
-                          </label>
+                          <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Cliente</label>
                           <select
-                            value={cargo.productId || ''}
-                            onChange={e => updateEdited(idx, 'productId', e.target.value)}
-                            className="w-full px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
+                            value={cargo.clientId}
+                            onChange={(e) => updateCargoField(cargo.tempId, { clientId: e.target.value })}
+                            className="w-full p-2 border rounded-lg bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 font-medium"
                           >
-                            <option value="">— Selecionar produto —</option>
-                            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            {clients.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.razaoSocial || c.nomeFantasia}
+                              </option>
+                            ))}
                           </select>
                         </div>
 
+                        {/* Produto */}
                         <div>
-                          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                            ⚖️ Volume Total (ton)
+                          <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Produto</label>
+                          <select
+                            value={cargo.productId}
+                            onChange={(e) => updateCargoField(cargo.tempId, { productId: e.target.value })}
+                            className="w-full p-2 border rounded-lg bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 font-medium"
+                          >
+                            {products.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name} ({p.unit})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Origem */}
+                        <div>
+                          <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">
+                            Origem (Cidade, UF)
+                          </label>
+                          <input
+                            type="text"
+                            list={`cities-list-${cargo.tempId}`}
+                            value={cargo.origin}
+                            onChange={(e) => updateCargoField(cargo.tempId, { origin: e.target.value })}
+                            placeholder="Ex: Rio Verde, GO"
+                            className="w-full p-2 border rounded-lg bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 font-medium"
+                          />
+                          <datalist id={`cities-list-${cargo.tempId}`}>
+                            {BRAZILIAN_CITIES.slice(0, 100).map((c) => (
+                              <option key={c} value={c} />
+                            ))}
+                          </datalist>
+                        </div>
+
+                        {/* Destino */}
+                        <div>
+                          <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">
+                            Destino (Cidade, UF)
+                          </label>
+                          <input
+                            type="text"
+                            list={`cities-list-dest-${cargo.tempId}`}
+                            value={cargo.destination}
+                            onChange={(e) => updateCargoField(cargo.tempId, { destination: e.target.value })}
+                            placeholder="Ex: Descalvado, SP"
+                            className="w-full p-2 border rounded-lg bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 font-medium"
+                          />
+                          <datalist id={`cities-list-dest-${cargo.tempId}`}>
+                            {BRAZILIAN_CITIES.slice(0, 100).map((c) => (
+                              <option key={c} value={c} />
+                            ))}
+                          </datalist>
+                        </div>
+
+                        {/* Local de Origem */}
+                        <div>
+                          <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">
+                            Local / Coleta (Origem)
+                          </label>
+                          <input
+                            type="text"
+                            value={cargo.originLocation || ''}
+                            onChange={(e) => updateCargoField(cargo.tempId, { originLocation: e.target.value })}
+                            placeholder="Ex: MILHÃO ou COMIGO - Rio Verde"
+                            className="w-full p-2 border rounded-lg bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-xs"
+                          />
+                        </div>
+
+                        {/* Local de Destino / Fazenda */}
+                        <div>
+                          <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">
+                            Local / Fazenda (Destino)
+                          </label>
+                          <input
+                            type="text"
+                            value={cargo.destinationLocation || ''}
+                            onChange={(e) => updateCargoField(cargo.tempId, { destinationLocation: e.target.value })}
+                            placeholder="Ex: ROYAL CANIN ou Fazenda Santa Maria"
+                            className="w-full p-2 border rounded-lg bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-xs"
+                          />
+                        </div>
+
+                        {/* Volume Total */}
+                        <div>
+                          <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">
+                            Volume Total (Ton)
                           </label>
                           <input
                             type="number"
-                            value={cargo.totalVolume || ''}
-                            onChange={e => updateEdited(idx, 'totalVolume', parseFloat(e.target.value) || 0)}
-                            placeholder="Ex: 134"
-                            className="w-full px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
+                            value={cargo.totalVolume}
+                            onChange={(e) =>
+                              updateCargoField(cargo.tempId, { totalVolume: parseFloat(e.target.value) || 0 })
+                            }
+                            className="w-full p-2 border rounded-lg bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 font-bold text-slate-800 dark:text-white"
                           />
                         </div>
 
-                        {/* Datas de Embarque (Início e Prazo) */}
+                        {/* Link Google Maps Origem */}
                         <div>
-                          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                            📅 Data de Início do Carregamento
+                          <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1 flex items-center justify-between">
+                            <span>Link Maps (Origem)</span>
+                            {cargo.originMapLink && (
+                              <a
+                                href={cargo.originMapLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-500 hover:underline flex items-center gap-0.5 text-[10px]"
+                              >
+                                Testar <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                            )}
                           </label>
                           <input
-                            type="date"
-                            value={cargo.loadingStartDate || ''}
-                            onChange={e => updateEdited(idx, 'loadingStartDate', e.target.value)}
-                            className="w-full px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                            ⏱️ Prazo de Carregamento (Fim)
-                          </label>
-                          <input
-                            type="date"
-                            value={cargo.loadingDeadline || ''}
-                            onChange={e => updateEdited(idx, 'loadingDeadline', e.target.value)}
-                            className="w-full px-2.5 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary"
+                            type="text"
+                            value={cargo.originMapLink || ''}
+                            onChange={(e) => updateCargoField(cargo.tempId, { originMapLink: e.target.value })}
+                            placeholder="https://maps.app.goo.gl/..."
+                            className="w-full p-2 border rounded-lg bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-xs font-mono"
                           />
                         </div>
                       </div>
 
-                      {/* Bloco de Fretes, ICMS e Tipos de Veículos */}
-                      <div className="p-3.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
-                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
-                          {/* Frete Empresa */}
-                          <div className="md:col-span-3">
-                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                              💰 Frete Empresa (R$/ton) *
-                            </label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={cargo.companyFreightValuePerTon || ''}
-                              onChange={e => updateEdited(idx, 'companyFreightValuePerTon', parseFloat(e.target.value) || 0)}
-                              placeholder="Digite o valor (ex: 40.00)"
-                              className="w-full px-3 py-2 text-sm font-bold border-2 border-primary/40 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
-                            />
-                          </div>
+                      {/* MOTOR FINANCEIRO COM ABATIMENTO DE ICMS E MARGENS */}
+                      <div className="mt-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700">
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                          <h5 className="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5 uppercase tracking-wide">
+                            <DollarSign className="w-4 h-4 text-emerald-500" />
+                            Motor Financeiro & Margens (-8% PJ / -12% PF)
+                          </h5>
 
-                          {/* ICMS Toggle */}
-                          <div className="md:col-span-3 pt-6 flex items-center gap-2">
-                            <label className="flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-gray-300 cursor-pointer whitespace-nowrap">
+                          <div className="flex items-center gap-3">
+                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300">
                               <input
                                 type="checkbox"
                                 checked={cargo.hasIcms}
-                                onChange={e => updateEdited(idx, 'hasIcms', e.target.checked)}
-                                className="rounded text-primary focus:ring-primary h-4 w-4"
+                                onChange={(e) =>
+                                  updateCargoField(cargo.tempId, {
+                                    hasIcms: e.target.checked,
+                                    icmsPercentage: e.target.checked && cargo.icmsPercentage === 0 ? 12 : cargo.icmsPercentage
+                                  })
+                                }
+                                className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4"
                               />
-                              <span>Tem ICMS?</span>
+                              Tem ICMS?
                             </label>
+
                             {cargo.hasIcms && (
                               <div className="flex items-center gap-1">
                                 <input
                                   type="number"
                                   value={cargo.icmsPercentage}
-                                  onChange={e => updateEdited(idx, 'icmsPercentage', parseFloat(e.target.value) || 0)}
-                                  className="w-14 px-2 py-1 text-xs border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                  onChange={(e) =>
+                                    updateCargoField(cargo.tempId, {
+                                      icmsPercentage: parseFloat(e.target.value) || 0
+                                    })
+                                  }
+                                  className="w-16 p-1 text-center font-bold text-xs border rounded bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600"
                                 />
-                                <span className="text-xs text-gray-500">%</span>
+                                <span className="text-xs font-bold text-slate-500">%</span>
                               </div>
                             )}
                           </div>
+                        </div>
 
-                          {/* Tipos de Veículos e Carrocerias */}
-                          <div className="md:col-span-6">
-                            <CargoVehicleTypesManager
-                              vehicleTypes={cargo.vehicleTypes}
-                              onChange={(newTypes) => updateEdited(idx, 'vehicleTypes', newTypes)}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                              Frete Empresa (R$/ton)
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={cargo.companyFreightValuePerTon}
+                              onChange={(e) =>
+                                updateCargoField(cargo.tempId, {
+                                  companyFreightValuePerTon: parseFloat(e.target.value) || 0
+                                })
+                              }
+                              className="w-full p-2 border rounded-lg bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 font-bold text-slate-900 dark:text-white"
                             />
                           </div>
-                        </div>
 
-                        {/* Badges de Fretes Calculados */}
-                        {cargo.companyFreightValuePerTon > 0 && (
-                          <div className="space-y-1.5 pt-1">
-                            <div className="flex flex-wrap gap-2">
-                              <FreightBadge
-                                label="Frete Empresa (Bruto)"
-                                value={cargo.companyFreightValuePerTon}
-                                sublabel="Base"
-                                color="bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800"
-                              />
-                              {cargo.hasIcms && (
-                                <FreightBadge
-                                  label={`Base Líquida (-${cargo.icmsPercentage}% ICMS)`}
-                                  value={netCompanyVal}
-                                  sublabel={`-R$ ${icmsVal.toFixed(2)}`}
-                                  color="bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800"
-                                />
-                              )}
-                              <FreightBadge
-                                label="Motorista PJ (Margem 8%)"
-                                value={cargo.driverFreightValuePerTonPJ}
-                                sublabel={cargo.hasIcms ? "-8% pós-ICMS" : "-8%"}
-                                color="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800"
-                              />
-                              <FreightBadge
-                                label="Motorista PF (Margem 12%)"
-                                value={cargo.driverFreightValuePerTonPF}
-                                sublabel={cargo.hasIcms ? "-12% pós-ICMS" : "-12%"}
-                                color="bg-violet-50 dark:bg-violet-900/30 text-violet-800 dark:text-violet-200 border border-violet-200 dark:border-violet-800"
-                              />
-                            </div>
-                            {cargo.hasIcms && (
-                              <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                                ℹ️ Com ICMS de <strong>{cargo.icmsPercentage}%</strong> (abatimento de R$ {icmsVal.toFixed(2)}/ton), a base líquida de cálculo é de <strong>R$ {netCompanyVal.toFixed(2)}/ton</strong>.
-                              </p>
-                            )}
+                          {/* Real-time calculated badges */}
+                          <div className="p-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60">
+                            <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 block">
+                              Frete Empresa (Bruto)
+                            </span>
+                            <span className="text-sm font-black text-blue-900 dark:text-blue-200">
+                              R$ {cargo.companyFreightValuePerTon.toFixed(2).replace('.', ',')}
+                              <span className="text-[10px] font-normal text-blue-600 ml-1">[Base]</span>
+                            </span>
                           </div>
-                        )}
+
+                          <div className={`p-2.5 rounded-lg border ${
+                            cargo.hasIcms
+                              ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60'
+                              : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700'
+                          }`}>
+                            <span className="text-[10px] uppercase font-bold text-amber-700 dark:text-amber-400 block">
+                              Base Líquida {cargo.hasIcms ? `(-${cargo.icmsPercentage}% ICMS)` : '(Sem ICMS)'}
+                            </span>
+                            <span className="text-sm font-black text-slate-900 dark:text-slate-100">
+                              R$ {fin.netBase.toFixed(2).replace('.', ',')}
+                              {cargo.hasIcms && (
+                                <span className="text-[10px] font-normal text-red-500 ml-1">
+                                  [-R$ {fin.icmsDeduction.toFixed(2).replace('.', ',')}]
+                                </span>
+                              )}
+                            </span>
+                          </div>
+
+                          <div className="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60">
+                            <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400 block">
+                              Motorista PJ (-8% pós-ICMS)
+                            </span>
+                            <span className="text-sm font-black text-emerald-900 dark:text-emerald-200">
+                              R$ {fin.driverFreightPj.toFixed(2).replace('.', ',')}
+                            </span>
+                            <span className="text-[10px] text-purple-600 dark:text-purple-300 block font-medium">
+                              PF (-12%): R$ {fin.driverFreightPf.toFixed(2).replace('.', ',')}
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
-                      {/* Programação Diária Badge com detalhamento de todos os dias */}
-                      {cargo.dailySchedule && cargo.dailySchedule.length > 0 && (
-                        <div className="flex flex-col gap-1.5 text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-2.5 text-amber-800 dark:text-amber-200">
-                          <div className="flex items-center gap-2">
-                            <span className="text-base">📅</span>
-                            <div>
-                              <span className="font-bold">Programação Diária:</span> {cargo.dailySchedule.length} dia(s) programado(s) — Total:{' '}
-                              <strong>{cargo.dailySchedule.reduce((acc, curr) => acc + (curr.tonnage || 0), 0).toFixed(2)} ton</strong>
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap gap-1.5 pt-1 pl-6">
-                            {cargo.dailySchedule.map((ds, sIdx) => (
-                              <span key={sIdx} className="bg-amber-100 dark:bg-amber-800/40 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded text-[11px] font-mono font-medium">
-                                {ds.date.split('-').reverse().join('/')}: {ds.tonnage} ton ({ds.type})
-                              </span>
-                            ))}
-                          </div>
+                      {/* SELETOR DE CONJUNTOS E CARROCERIAS (VEÍCULOS PERMITIDOS) */}
+                      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700">
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                            <Truck className="w-3.5 h-3.5 text-blue-500" />
+                            Tipos de Veículos Permitidos:
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleApplyStandardVehicles(cargo.tempId)}
+                            className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                          >
+                            ⚡ Adicionar Padrão (LS, 4º Eixo, Bitrem)
+                          </button>
                         </div>
-                      )}
 
-                      {/* Observações / Informações Extras */}
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                          📝 Observações da Carga (Informações do Roteiro)
-                        </label>
-                        <textarea
-                          rows={4}
-                          value={cargo.observations || ''}
-                          onChange={e => updateEdited(idx, 'observations', e.target.value)}
-                          placeholder="Nenhuma observação informada."
-                          className="w-full px-2.5 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary resize-none font-mono leading-relaxed"
-                        />
+                        {/* Removable tags list */}
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          {(cargo.allowedVehicleTypes || []).map((vt, vIdx) => (
+                            <span
+                              key={vIdx}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                            >
+                              🚛 {vt.setType}: {vt.bodyTypes.join('/')}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveVehicleSet(cargo.tempId, vt.setType)}
+                                className="text-blue-400 hover:text-red-500 ml-1 text-xs"
+                                title="Remover conjunto"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                          {(!cargo.allowedVehicleTypes || cargo.allowedVehicleTypes.length === 0) && (
+                            <span className="text-xs text-amber-600 dark:text-amber-400 italic">
+                              ⚠️ Nenhum conjunto permitido adicionado.
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Add vehicle set form row */}
+                        <div className="flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-slate-900/40 p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+                          <select
+                            id={`select-set-${cargo.tempId}`}
+                            defaultValue={VehicleSetType.LSSimples}
+                            className="p-1.5 border rounded bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 font-medium"
+                          >
+                            {Object.values(VehicleSetType).map((st) => (
+                              <option key={st} value={st}>
+                                {st}
+                              </option>
+                            ))}
+                          </select>
+
+                          <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                            <input
+                              type="checkbox"
+                              id={`cb-gran-${cargo.tempId}`}
+                              defaultChecked
+                              className="rounded text-blue-600"
+                            />
+                            Graneleiro
+                          </label>
+
+                          <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                            <input
+                              type="checkbox"
+                              id={`cb-basc-${cargo.tempId}`}
+                              defaultChecked
+                              className="rounded text-blue-600"
+                            />
+                            Basculante
+                          </label>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const selEl = document.getElementById(`select-set-${cargo.tempId}`) as HTMLSelectElement;
+                              const granEl = document.getElementById(`cb-gran-${cargo.tempId}`) as HTMLInputElement;
+                              const bascEl = document.getElementById(`cb-basc-${cargo.tempId}`) as HTMLInputElement;
+
+                              const bodyTypes: VehicleBodyType[] = [];
+                              if (granEl?.checked) bodyTypes.push(VehicleBodyType.Graneleiro);
+                              if (bascEl?.checked) bodyTypes.push(VehicleBodyType.Basculante);
+
+                              if (selEl?.value) {
+                                handleAddVehicleSet(cargo.tempId, selEl.value as VehicleSetType, bodyTypes);
+                              }
+                            }}
+                            className="px-2.5 py-1 bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 text-white font-bold rounded-lg text-[11px] flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" /> Adicionar
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* OBSERVAÇÕES & ANEXOS */}
+                      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Observações Editor & Clickable Link Preview */}
+                        <div className="md:col-span-2 space-y-2">
+                          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                            Observações e Detalhes do Roteiro (Links clicáveis automaticamente):
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={cargo.observations || ''}
+                            onChange={(e) => updateCargoField(cargo.tempId, { observations: e.target.value })}
+                            placeholder="Informações adicionais, contatos, fazendas e roteiro..."
+                            className="w-full p-2.5 border rounded-xl bg-slate-50 dark:bg-slate-900/60 border-slate-300 dark:border-slate-700 text-xs font-mono"
+                          />
+                          {cargo.observations && (
+                            <div className="p-2.5 bg-slate-100 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400">
+                              <span className="font-bold text-[10px] uppercase text-slate-500 block mb-1">Pré-visualização de Links:</span>
+                              <FormattedObservations text={cargo.observations} />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Anexo Digitalizado com Visualizador Lightbox */}
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
+                            Anexo / Roteiro Digitalizado:
+                          </label>
+                          {cargo.attachments && cargo.attachments.length > 0 ? (
+                            <div className="space-y-2">
+                              {cargo.attachments.map((att, attIdx) => (
+                                <DocumentAttachmentCard
+                                  key={attIdx}
+                                  attachment={att}
+                                  index={attIdx}
+                                  label="Roteiro Digitalizado"
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="p-4 border border-dashed rounded-xl text-center text-xs text-slate-400">
+                              Nenhum anexo fotográfico vinculado.
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
 
-          {/* Save result */}
-          {step === 2 && saveResult && (
-            <div className="flex flex-col items-center justify-center py-12 space-y-4">
-              {saveResult.success > 0 ? (
-                <>
-                  <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                    <svg className="w-10 h-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xl font-bold text-gray-900 dark:text-white">{saveResult.success} carga(s) criada(s) com sucesso!</p>
-                    {saveResult.failed > 0 && <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">{saveResult.failed} carga(s) não foram criadas (erros).</p>}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="w-20 h-20 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                    <svg className="w-10 h-10 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </div>
-                  <p className="text-xl font-bold text-gray-900 dark:text-white">Nenhuma carga foi criada</p>
-                </>
-              )}
-              <button onClick={handleClose} className="px-8 py-2.5 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-all shadow-md">Fechar</button>
+              {/* FOOTER ACTIONS */}
+              <div className="pt-6 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(2)}
+                  className="px-5 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs flex items-center gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <ArrowLeft className="w-4 h-4" /> Voltar para Entrada
+                </button>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2.5 text-slate-600 dark:text-slate-400 font-semibold text-xs hover:underline"
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={validCount === 0 || isSaving}
+                    onClick={handleConfirmSaveAll}
+                    className="px-8 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm flex items-center gap-2 shadow-xl shadow-emerald-600/30 active:scale-95 transition-all"
+                  >
+                    {isSaving ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Gravando {validCount} Cargas no Banco...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        Confirmar e Criar {validCount} Carga(s) no Sistema ➔
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
-
-        {/* Footer for review step */}
-        {step === 2 && !saveResult && (
-          <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 flex-shrink-0">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              <span className="font-semibold text-green-600 dark:text-green-400">{validCount}</span> de{' '}
-              <span className="font-semibold">{editedCargos.length}</span> carga(s) prontas
-            </p>
-            <div className="flex gap-3">
-              <button onClick={() => setStep(1)} className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-all">
-                ← Voltar
-              </button>
-              <button
-                disabled={validCount === 0 || isSaving}
-                onClick={handleConfirm}
-                className="px-6 py-2 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-md"
-              >
-                {isSaving ? (
-                  <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Criando...</>
-                ) : `Criar ${validCount} Carga(s)`}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Datalist global para autocomplete de cidades brasileiras */}
-        <datalist id="brazilian-cities-list">
-          {BRAZILIAN_CITIES.map((c, i) => (
-            <option key={i} value={c} />
-          ))}
-        </datalist>
-
-        {/* Modal Interativo de Visualização Ampliada da Imagem */}
-        <ImageLightboxModal
-          isOpen={!!lightboxImage}
-          onClose={() => setLightboxImage(null)}
-          imageUrl={lightboxImage}
-          title={lightboxTitle}
-        />
-
       </div>
     </div>
   );

@@ -1,18 +1,16 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import type { Cargo, Client, Product, User, FreightLeg, DailyScheduleEntry, Branch } from '../types';
-import { CargoStatus, CargoType, UserProfile, VehicleSetType, VehicleBodyType, DailyScheduleType } from '../types';
+import type { Cargo, Client, Product, User, FreightLeg, DailyScheduleEntry, Branch, FreightOffer } from '../types';
+import { CargoStatus, CargoType, UserProfile, VehicleSetType, VehicleBodyType, DailyScheduleType, FreightCalculationType, INTERNAL_PROFILES } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { XIcon } from './icons/XIcon';
 import { PaperclipIcon } from './icons/PaperclipIcon';
 import { UserPlusIcon } from './icons/UserPlusIcon';
-import { Zap, CheckCircle2, Loader2 } from 'lucide-react';
+import { Users, Search, Sparkles, History, Zap, Check, Loader2, Globe2 } from 'lucide-react';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { geocodeCity } from '../utils/geocoding';
 import { useToast } from '../hooks/useToast';
-import { formatCityState } from '../utils/formatters';
-import { findRouteHistorySuggestion, RouteSuggestion } from '../utils/routeHistorySuggester';
-import DatePicker, { DateObject } from "react-multi-date-picker";
+import { autoFormatInput } from '../utils/formatters';
+import { findRouteHistorySuggestion, RouteHistorySuggestion } from '../utils/routeHistorySuggester';
 
 interface LoadFormModalProps {
   isOpen: boolean;
@@ -26,190 +24,260 @@ interface LoadFormModalProps {
   loads: Cargo[];
   branches: Branch[];
   initialStep?: number;
+  offerToConvert?: FreightOffer | null;
 }
 
 const STEPS = ['Informações da Carga', 'Programação Diária', 'Valores e Regras'];
 
-const DEFAULT_ALLOWED_VEHICLE_TYPES = Object.values(VehicleSetType).map(setType => ({
-    setType,
-    bodyTypes: Object.values(VehicleBodyType)
-}));
+const DEFAULT_ALLOWED_VEHICLE_TYPES: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[] = [
+  {
+    setType: VehicleSetType.LSSimples,
+    bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
+  },
+  {
+    setType: VehicleSetType.LSTrucada,
+    bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
+  },
+  {
+    setType: VehicleSetType.Vanderleia,
+    bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
+  },
+  {
+    setType: VehicleSetType.Bitrem7e,
+    bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
+  },
+  {
+    setType: VehicleSetType.Rodotrem,
+    bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
+  }
+];
 
-const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, loadToEdit, clients, products, currentUser, users, loads, branches, initialStep = 1 }) => {
+const LoadFormModal: React.FC<LoadFormModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSave, 
+  loadToEdit, 
+  clients, 
+  products, 
+  currentUser,
+  users,
+  loads,
+  branches,
+  initialStep = 0,
+  offerToConvert = null
+}) => {
   const getInitialState = (): Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'> => {
     const newSequenceId = loads.length > 0 ? Math.max(...loads.map(c => c.sequenceId)) + 1 : 101;
-    return ({
-    sequenceId: newSequenceId,
-    clientId: clients[0]?.id || '',
-    productId: products[0]?.id || '',
-    origin: '',
-    originLocation: '',
-    originMapLink: '',
-    destination: '',
-    destinationLocation: '',
-    destinationMapLink: '',
-    destinations: [{
-      id: Math.random().toString(36).substr(2, 9),
-      city: '',
-      location: '',
-      mapLink: '',
+    
+    if (offerToConvert) {
+      const companyVal = offerToConvert.counterOfferValue || offerToConvert.freightValuePerTon || 0;
+      return {
+        sequenceId: newSequenceId,
+        clientId: offerToConvert.clientId,
+        productId: offerToConvert.productId,
+        origin: offerToConvert.origin,
+        originLocation: offerToConvert.originLocation || '',
+        originMapLink: '',
+        destination: offerToConvert.destination,
+        destinationLocation: offerToConvert.destinationLocation || '',
+        destinationMapLink: '',
+        totalVolume: offerToConvert.totalTonnage,
+        scheduledVolume: 0,
+        loadedVolume: 0,
+        companyFreightValuePerTon: companyVal,
+        companyFreightHasToll: false,
+        driverFreightValuePerTon: 0,
+        driverFreightHasToll: false,
+        driverFreightPfHasToll: false,
+        hasIcms: offerToConvert.hasIcms ?? false,
+        icmsPercentage: offerToConvert.icmsPercentage ?? 0,
+        freightCalculationType: FreightCalculationType.PerTon,
+        icmsValue: 0,
+        requiresScheduling: false,
+        type: CargoType.Spot,
+        status: CargoStatus.EmAndamento,
+        loadingDeadline: '',
+        allowedVehicleTypes: DEFAULT_ALLOWED_VEHICLE_TYPES,
+        freightLegs: [
+          { companyFreightValuePerTon: companyVal, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: offerToConvert.hasIcms ?? false, icmsPercentage: offerToConvert.icmsPercentage ?? 0, freightCalculationType: FreightCalculationType.PerTon, icmsValue: 0 },
+          { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0, freightCalculationType: FreightCalculationType.PerTon, icmsValue: 0 }
+        ],
+        dailySchedule: [],
+        observations: offerToConvert.dailySchedule ? `Cadência sugerida pelo cliente: ${offerToConvert.dailySchedule}` : '',
+        attachments: offerToConvert.attachments || [],
+        salespersonCommissionPerTon: 0,
+        branchId: currentUser.branchId,
+        schedulingSystemUrl: '',
+        schedulingUser: '',
+        schedulingPassword: '',
+        allowedProfiles: [...INTERNAL_PROFILES],
+        tmsLoteNumber: '',
+        clientCnpj: offerToConvert.clientCnpj || '',
+        clientBranchId: offerToConvert.clientBranchId || '',
+        isExport: offerToConvert.isExport !== undefined ? offerToConvert.isExport : undefined
+      };
+    }
+
+    const firstClient = clients[0];
+    return {
+      sequenceId: newSequenceId,
+      clientId: firstClient?.id || '',
+      productId: products[0]?.id || '',
+      origin: '',
+      originLocation: '',
+      originMapLink: '',
+      destination: '',
+      destinationLocation: '',
+      destinationMapLink: '',
+      totalVolume: 0,
+      scheduledVolume: 0,
+      loadedVolume: 0,
+      companyFreightValuePerTon: 0,
+      companyFreightHasToll: false,
+      driverFreightValuePerTon: 0,
+      driverFreightHasToll: false,
+      driverFreightPfHasToll: false,
+      hasIcms: false,
+      icmsPercentage: 0,
+      freightCalculationType: FreightCalculationType.PerTon,
+      icmsValue: 0,
+      requiresScheduling: false,
+      type: CargoType.Spot,
+      status: CargoStatus.EmAndamento,
+      loadingDeadline: '',
+      allowedVehicleTypes: [],
       freightLegs: [
-        { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightHasTollPJ: false, driverFreightValuePerTonPF: 0, driverFreightHasTollPF: false, hasIcms: false, icmsPercentage: 0 },
-        { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightHasTollPJ: false, driverFreightValuePerTonPF: 0, driverFreightHasTollPF: false, hasIcms: false, icmsPercentage: 0 }
-      ]
-    }],
-    totalVolume: 0,
-    scheduledVolume: 0,
-    loadedVolume: 0,
-    companyFreightValuePerTon: 0,
-    companyFreightHasToll: false,
-    driverFreightValuePerTon: 0,
-    driverFreightValuePerTonPJ: 0,
-    driverFreightHasTollPJ: false,
-    driverFreightValuePerTonPF: 0,
-    driverFreightHasTollPF: false,
-    driverFreightHasToll: false,
-    hasIcms: false,
-    icmsPercentage: 0,
-    requiresScheduling: false,
-    requiresTracker: false,
-    type: CargoType.Spot,
-    status: CargoStatus.EmAndamento,
-    loadingStartDate: '',
-    loadingDeadline: '',
-    allowedVehicleTypes: DEFAULT_ALLOWED_VEHICLE_TYPES,
-    freightLegs: [
-      { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightHasTollPJ: false, driverFreightValuePerTonPF: 0, driverFreightHasTollPF: false, hasIcms: false, icmsPercentage: 0 },
-      { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightHasTollPJ: false, driverFreightValuePerTonPF: 0, driverFreightHasTollPF: false, hasIcms: false, icmsPercentage: 0 }
-    ],
-    dailySchedule: [],
-    observations: '',
-    attachments: [],
-    salespersonCommissionPerTon: 0,
-    branchId: currentUser.branchId,
-  })};
+        { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0, freightCalculationType: FreightCalculationType.PerTon, icmsValue: 0 },
+        { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0, freightCalculationType: FreightCalculationType.PerTon, icmsValue: 0 }
+      ],
+      dailySchedule: [],
+      observations: '',
+      attachments: [],
+      salespersonName: firstClient?.salespersonName || '',
+      salespersonCommissionPerTon: firstClient?.salespersonCommissionPerTon || 0,
+      branchId: currentUser.branchId,
+      schedulingSystemUrl: '',
+      schedulingUser: '',
+      schedulingPassword: '',
+      allowedProfiles: [...INTERNAL_PROFILES],
+      tmsLoteNumber: '',
+      clientCnpj: firstClient?.cnpj || '',
+      clientBranchId: '',
+      isExport: undefined
+    };
+  };
   
   const [step, setStep] = useState(initialStep);
   const [load, setLoad] = useState<Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById' | 'scheduledVolume' | 'loadedVolume'> & { createdById?: string }>(getInitialState());
   const [hasMultiLeg, setHasMultiLeg] = useState(false);
   const [showSalesperson, setShowSalesperson] = useState(false);
   
-  const [newScheduleDates, setNewScheduleDates] = useState<DateObject[]>([]);
+  const [newScheduleStartDate, setNewScheduleStartDate] = useState('');
+  const [newScheduleEndDate, setNewScheduleEndDate] = useState('');
   const [newScheduleType, setNewScheduleType] = useState<DailyScheduleType>(DailyScheduleType.Livre);
   const [newScheduleTonnage, setNewScheduleTonnage] = useState<number | undefined>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // State for the new allowed vehicle types UI
+  // State for allowed vehicle types rules UI
   const [currentSetType, setCurrentSetType] = useState<VehicleSetType>(VehicleSetType.LSSimples);
   const [currentBodyTypes, setCurrentBodyTypes] = useState<VehicleBodyType[]>([]);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { showToast } = useToast();
 
-  const [suggestion, setSuggestion] = useState<RouteSuggestion | null>(null);
+  // Sugestão de Valores por Histórico de Rotas (raio até 150km)
+  const [routeSuggestion, setRouteSuggestion] = useState<RouteHistorySuggestion | null>(null);
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [appliedSuggestion, setAppliedSuggestion] = useState(false);
 
   const commercialUsers = useMemo(() => {
-    return users.filter(u => u.profile === UserProfile.Comercial);
+    return users.filter(u => u.profile === UserProfile.Comercial || u.profile === UserProfile.Admin);
   }, [users]);
 
-  const prevIsOpen = useRef(isOpen);
+  const internalUsers = useMemo(() => {
+    return users.filter(u => u.active !== false && u.profile !== UserProfile.Cliente && u.profile !== UserProfile.Motorista);
+  }, [users]);
 
-  const checkHistorySuggestion = async (originCity: string, destCity: string) => {
-    if (!originCity || !destCity || originCity.trim().length < 3 || destCity.trim().length < 3) {
-      setSuggestion(null);
-      return;
-    }
-    setLoadingSuggestion(true);
-    try {
-      const res = await findRouteHistorySuggestion({
-        origin: originCity,
-        destination: destCity,
-        cargos: loads || [],
-        userId: currentUser.authId || currentUser.id,
-        maxRadiusKm: 150
-      });
-      setSuggestion(res);
-    } catch (err) {
-      console.error('Error finding route suggestion in LoadFormModal:', err);
-    } finally {
-      setLoadingSuggestion(false);
-    }
+  const filteredInternalUsers = useMemo(() => {
+    if (!userSearchTerm.trim()) return internalUsers;
+    const term = userSearchTerm.toLowerCase();
+    return internalUsers.filter(u =>
+      u.name.toLowerCase().includes(term) ||
+      u.profile.toLowerCase().includes(term) ||
+      (u.email && u.email.toLowerCase().includes(term))
+    );
+  }, [internalUsers, userSearchTerm]);
+
+  const toggleUserAccess = (userId: string) => {
+    setLoad(prev => {
+      const current = prev.allowedUserIds || [];
+      if (current.includes(userId)) {
+        return { ...prev, allowedUserIds: current.filter(id => id !== userId) };
+      } else {
+        return { ...prev, allowedUserIds: [...current, userId] };
+      }
+    });
   };
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const destCity = load.destinations?.[0]?.city || load.destination || '';
-    const originCity = load.origin || '';
-    if (originCity.trim().length >= 3 && destCity.trim().length >= 3) {
-      const timer = setTimeout(() => {
-        checkHistorySuggestion(originCity, destCity);
-      }, 400);
-      return () => clearTimeout(timer);
-    } else {
-      setSuggestion(null);
-    }
-  }, [load.origin, load.destinations?.[0]?.city, load.destination, isOpen, loads]);
+  const handleSelectAllUsers = () => {
+    setLoad(prev => ({
+      ...prev,
+      allowedUserIds: internalUsers.map(u => u.id)
+    }));
+  };
+
+  const handleDeselectAllUsers = () => {
+    setLoad(prev => ({
+      ...prev,
+      allowedUserIds: []
+    }));
+  };
+
+  const prevIsOpen = useRef(isOpen);
 
   useEffect(() => {
     if (isOpen && !prevIsOpen.current) {
         setStep(initialStep);
         if (loadToEdit) {
             const { history, createdAt, id, scheduledVolume, loadedVolume, ...editableLoad } = loadToEdit;
-            let initialDestinations = editableLoad.destinations;
-            if (!initialDestinations || initialDestinations.length === 0) {
-                const legs = editableLoad.freightLegs && editableLoad.freightLegs.length > 0
-                    ? editableLoad.freightLegs.map(leg => ({
-                        ...leg,
-                        companyFreightHasToll: leg.companyFreightHasToll ?? editableLoad.companyFreightHasToll ?? false,
-                        driverFreightValuePerTonPJ: leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon,
-                        driverFreightHasTollPJ: leg.driverFreightHasTollPJ ?? leg.driverFreightHasToll ?? editableLoad.driverFreightHasTollPJ ?? editableLoad.driverFreightHasToll ?? false,
-                        driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
-                        driverFreightHasTollPF: leg.driverFreightHasTollPF ?? leg.driverFreightHasToll ?? editableLoad.driverFreightHasTollPF ?? editableLoad.driverFreightHasToll ?? false,
-                        disableDriverFreightPF: leg.disableDriverFreightPF || false,
-                      }))
-                    : [{ 
-                        companyFreightValuePerTon: editableLoad.companyFreightValuePerTon, 
-                        companyFreightHasToll: editableLoad.companyFreightHasToll ?? false,
-                        driverFreightValuePerTon: editableLoad.driverFreightValuePerTon, 
-                        driverFreightValuePerTonPJ: editableLoad.driverFreightValuePerTonPJ ?? editableLoad.driverFreightValuePerTon, 
-                        driverFreightHasTollPJ: editableLoad.driverFreightHasTollPJ ?? editableLoad.driverFreightHasToll ?? false,
-                        driverFreightValuePerTonPF: editableLoad.driverFreightValuePerTonPF ?? editableLoad.driverFreightValuePerTon, 
-                        driverFreightHasTollPF: editableLoad.driverFreightHasTollPF ?? editableLoad.driverFreightHasToll ?? false,
-                        hasIcms: editableLoad.hasIcms, 
-                        icmsPercentage: editableLoad.icmsPercentage, 
-                        disableDriverFreightPF: editableLoad.disableDriverFreightPF || false 
-                      }];
-                while (legs.length < 2) {
-                    legs.push({ companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightHasTollPJ: false, driverFreightValuePerTonPF: 0, driverFreightHasTollPF: false, hasIcms: false, icmsPercentage: 0, disableDriverFreightPF: false });
-                }
-                initialDestinations = [{
-                    id: Math.random().toString(36).substr(2, 9),
-                    city: editableLoad.destination || '',
-                    location: editableLoad.destinationLocation || '',
-                    mapLink: editableLoad.destinationMapLink || '',
-                    freightLegs: legs
-                }];
-            } else {
-                initialDestinations = initialDestinations.map(d => {
-                    const legs = d.freightLegs && d.freightLegs.length > 0 ? d.freightLegs.map(leg => ({
-                        ...leg,
-                        companyFreightHasToll: leg.companyFreightHasToll ?? editableLoad.companyFreightHasToll ?? false,
-                        driverFreightValuePerTonPJ: leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon,
-                        driverFreightHasTollPJ: leg.driverFreightHasTollPJ ?? leg.driverFreightHasToll ?? editableLoad.driverFreightHasTollPJ ?? editableLoad.driverFreightHasToll ?? false,
-                        driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
-                        driverFreightHasTollPF: leg.driverFreightHasTollPF ?? leg.driverFreightHasToll ?? editableLoad.driverFreightHasTollPF ?? editableLoad.driverFreightHasToll ?? false,
-                        disableDriverFreightPF: leg.disableDriverFreightPF || false,
-                    })) : [{ companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightHasTollPJ: false, driverFreightValuePerTonPF: 0, driverFreightHasTollPF: false, hasIcms: false, icmsPercentage: 0, disableDriverFreightPF: false }];
-                    while (legs.length < 2) {
-                        legs.push({ companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightHasTollPJ: false, driverFreightValuePerTonPF: 0, driverFreightHasTollPF: false, hasIcms: false, icmsPercentage: 0, disableDriverFreightPF: false });
-                    }
-                    return { ...d, freightLegs: legs };
-                });
+            const calcType = editableLoad.freightCalculationType || editableLoad.freightLegs?.[0]?.freightCalculationType || FreightCalculationType.PerTon;
+            const legs = editableLoad.freightLegs && editableLoad.freightLegs.length > 0
+                ? editableLoad.freightLegs.map(l => ({
+                    companyFreightValuePerTon: l.companyFreightValuePerTon || 0,
+                    companyFreightHasToll: l.companyFreightHasToll ?? editableLoad.companyFreightHasToll ?? false,
+                    driverFreightValuePerTon: l.driverFreightValuePerTon || 0,
+                    driverFreightHasToll: l.driverFreightHasToll ?? editableLoad.driverFreightHasToll ?? false,
+                    driverFreightValuePerTonPf: l.driverFreightValuePerTonPf ?? l.driverFreightValuePerTon ?? 0,
+                    driverFreightPfHasToll: l.driverFreightPfHasToll ?? editableLoad.driverFreightPfHasToll ?? false,
+                    disablePfFreight: !!l.disablePfFreight,
+                    hasIcms: !!l.hasIcms,
+                    icmsPercentage: l.icmsPercentage || 0,
+                    freightCalculationType: l.freightCalculationType || calcType,
+                    icmsValue: l.icmsValue || editableLoad.icmsValue || 0,
+                  }))
+                : [{
+                    companyFreightValuePerTon: editableLoad.companyFreightValuePerTon || 0,
+                    companyFreightHasToll: editableLoad.companyFreightHasToll || false,
+                    driverFreightValuePerTon: editableLoad.driverFreightValuePerTon || 0,
+                    driverFreightHasToll: editableLoad.driverFreightHasToll || false,
+                    driverFreightValuePerTonPf: editableLoad.driverFreightValuePerTon || 0,
+                    driverFreightPfHasToll: editableLoad.driverFreightPfHasToll || false,
+                    disablePfFreight: false,
+                    hasIcms: editableLoad.hasIcms,
+                    icmsPercentage: editableLoad.icmsPercentage,
+                    freightCalculationType: calcType,
+                    icmsValue: editableLoad.icmsValue || 0,
+                  }];
+            
+            while (legs.length < 2) {
+                legs.push({ companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0, freightCalculationType: calcType, icmsValue: 0 });
             }
             
             setLoad({ 
                 ...editableLoad, 
-                destinations: initialDestinations,
+                freightCalculationType: calcType,
+                icmsValue: editableLoad.icmsValue || 0,
+                freightLegs: legs, 
                 dailySchedule: editableLoad.dailySchedule || [],
                 observations: editableLoad.observations || '',
                 attachments: editableLoad.attachments || [],
@@ -217,111 +285,182 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                 salespersonName: editableLoad.salespersonName || '',
                 salespersonCommissionPerTon: editableLoad.salespersonCommissionPerTon || 0,
                 originLocation: editableLoad.originLocation || '',
+                destinationLocation: editableLoad.destinationLocation || '',
                 branchId: editableLoad.branchId,
-                companyFreightHasToll: editableLoad.companyFreightHasToll ?? false,
-                driverFreightHasTollPJ: editableLoad.driverFreightHasTollPJ ?? editableLoad.driverFreightHasToll ?? false,
-                driverFreightHasTollPF: editableLoad.driverFreightHasTollPF ?? editableLoad.driverFreightHasToll ?? false,
-                driverFreightHasToll: editableLoad.driverFreightHasToll ?? false,
+                schedulingSystemUrl: editableLoad.schedulingSystemUrl || '',
+                schedulingUser: editableLoad.schedulingUser || '',
+                schedulingPassword: editableLoad.schedulingPassword || '',
+                allowedProfiles: (editableLoad.allowedProfiles && editableLoad.allowedProfiles.length > 0) ? editableLoad.allowedProfiles : [...INTERNAL_PROFILES],
+                allowedUserIds: (editableLoad.allowedUserIds && editableLoad.allowedUserIds.length > 0) ? editableLoad.allowedUserIds : internalUsers.map(u => u.id),
+                tmsLoteNumber: editableLoad.tmsLoteNumber || '',
+                clientCnpj: editableLoad.clientCnpj || '',
+                clientBranchId: editableLoad.clientBranchId || '',
+                isExport: editableLoad.isExport !== undefined ? editableLoad.isExport : undefined
             });
-            setHasMultiLeg(initialDestinations[0].freightLegs.length > 1 && initialDestinations[0].freightLegs[1].companyFreightValuePerTon > 0);
+            setHasMultiLeg(editableLoad.freightLegs ? editableLoad.freightLegs.length > 1 : false);
             setShowSalesperson(!!editableLoad.salespersonName);
         } else {
             const { scheduledVolume, loadedVolume, ...initialState } = getInitialState();
-            let baseState = { ...initialState };
-            
-            if (loads && loads.length > 0) {
-                const lastLoad = loads.reduce((prev, current) => (prev.sequenceId > current.sequenceId) ? prev : current);
-                baseState = {
-                    ...baseState,
-                    clientId: lastLoad.clientId,
-                    productId: lastLoad.productId,
-                    origin: lastLoad.origin,
-                    originLocation: lastLoad.originLocation,
-                    originMapLink: lastLoad.originMapLink,
-                    destination: lastLoad.destination,
-                    destinationLocation: lastLoad.destinationLocation,
-                    destinationMapLink: lastLoad.destinationMapLink,
-                    destinations: lastLoad.destinations ? JSON.parse(JSON.stringify(lastLoad.destinations)) : baseState.destinations,
-                    totalVolume: lastLoad.totalVolume,
-                    companyFreightValuePerTon: lastLoad.companyFreightValuePerTon,
-                    companyFreightHasToll: lastLoad.companyFreightHasToll ?? false,
-                    driverFreightValuePerTon: lastLoad.driverFreightValuePerTon,
-                    driverFreightValuePerTonPJ: lastLoad.driverFreightValuePerTonPJ,
-                    driverFreightHasTollPJ: lastLoad.driverFreightHasTollPJ ?? lastLoad.driverFreightHasToll ?? false,
-                    driverFreightValuePerTonPF: lastLoad.driverFreightValuePerTonPF,
-                    driverFreightHasTollPF: lastLoad.driverFreightHasTollPF ?? lastLoad.driverFreightHasToll ?? false,
-                    driverFreightHasToll: lastLoad.driverFreightHasToll ?? false,
-                    hasIcms: lastLoad.hasIcms,
-                    icmsPercentage: lastLoad.icmsPercentage,
-                    requiresScheduling: lastLoad.requiresScheduling,
-                    requiresTracker: lastLoad.requiresTracker || false,
-                    type: lastLoad.type,
-                    allowedVehicleTypes: lastLoad.allowedVehicleTypes ? JSON.parse(JSON.stringify(lastLoad.allowedVehicleTypes)) : baseState.allowedVehicleTypes,
-                    freightLegs: lastLoad.freightLegs ? JSON.parse(JSON.stringify(lastLoad.freightLegs)) : baseState.freightLegs,
-                    salespersonName: lastLoad.salespersonName,
-                    salespersonCommissionPerTon: lastLoad.salespersonCommissionPerTon,
-                    branchId: lastLoad.branchId || currentUser.branchId,
-                    externalOrder: lastLoad.externalOrder ? JSON.parse(JSON.stringify(lastLoad.externalOrder)) : baseState.externalOrder,
-                };
-            }
-            
-            setLoad({ ...baseState, createdById: currentUser.id });
-            
-            if (baseState.destinations && baseState.destinations[0]?.freightLegs) {
-                 setHasMultiLeg(baseState.destinations[0].freightLegs.length > 1 && baseState.destinations[0].freightLegs[1].companyFreightValuePerTon > 0);
-            } else {
-                 setHasMultiLeg(false);
-            }
-            setShowSalesperson(!!baseState.salespersonName);
+            const initClient = clients.find(c => c.id === initialState.clientId);
+            const initSalesperson = initClient?.salespersonName || initialState.salespersonName || '';
+            const initCommission = initClient?.salespersonCommissionPerTon !== undefined && initClient.salespersonCommissionPerTon > 0
+              ? initClient.salespersonCommissionPerTon
+              : (initialState.salespersonCommissionPerTon || 0);
+
+            setLoad({
+              ...initialState,
+              salespersonName: initSalesperson,
+              salespersonCommissionPerTon: initCommission,
+              createdById: currentUser.id,
+              allowedUserIds: internalUsers.map(u => u.id)
+            });
+            setHasMultiLeg(false);
+            setShowSalesperson(Boolean(initSalesperson));
         }
     }
     prevIsOpen.current = isOpen;
-  }, [isOpen, initialStep, currentUser]);
+  }, [isOpen, initialStep, currentUser, internalUsers]);
+
+  // Busca sugestão de valores com base no histórico de cargas ou cotações no raio de 150km
+  useEffect(() => {
+    if (!isOpen || !load.origin || !load.destination) {
+      setRouteSuggestion(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setLoadingSuggestion(true);
+      try {
+        const suggestion = await findRouteHistorySuggestion(load.origin, load.destination, loads);
+        setRouteSuggestion(suggestion);
+        setAppliedSuggestion(false);
+      } catch (err) {
+        console.warn('[LoadFormModal] Erro ao buscar sugestão de rota:', err);
+      } finally {
+        setLoadingSuggestion(false);
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, load.origin, load.destination, loads]);
+
+  const handleApplyLoadSuggestion = (sug: RouteHistorySuggestion) => {
+    handleLegChange(0, 'companyFreightValuePerTon', sug.companyFreightRate);
+    handleLegChange(0, 'driverFreightValuePerTon', sug.driverFreightRate);
+    handleLegChange(0, 'driverFreightValuePerTonPf', sug.driverFreightRate);
+    setAppliedSuggestion(true);
+    showToast(`Valores da ${sug.source === 'cargo' ? 'última carga' : 'última cotação'} aplicados com sucesso!`, 'success');
+  };
   
-  const calculateDestinationTotals = (destination: any) => {
-    const legs = destination?.freightLegs || [];
+  // Financial & Margin Calculations
+  const { 
+    totalCompanyFreight, 
+    totalDriverFreightPj, 
+    totalDriverFreightPf, 
+    marginPjPercentage, 
+    marginPfPercentage, 
+    hasCompanyToll, 
+    hasDriverPjToll, 
+    hasDriverPfToll,
+    displayCompanyFreightTotal,
+    displayDriverFreightPjTotal,
+    displayDriverFreightPfTotal
+  } = useMemo(() => {
+    const legs = load.freightLegs || [];
     const activeLegs = hasMultiLeg ? legs.slice(0, 2) : legs.slice(0, 1);
+    const calcType = load.freightCalculationType || FreightCalculationType.PerTon;
+    const isFixed = calcType === FreightCalculationType.Fixed;
+    const isPlusIcms = calcType === FreightCalculationType.PerTonPlusIcms;
+    const volumeRef = load.totalVolume || 1;
 
-    const totalCompanyFreight = activeLegs.reduce((sum: number, leg: any) => sum + (leg.companyFreightValuePerTon || 0), 0);
-    const totalDriverFreightPJ = activeLegs.reduce((sum: number, leg: any) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon ?? 0), 0);
-    const totalDriverFreightPF = activeLegs.reduce((sum: number, leg: any) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon ?? 0), 0);
-    const hasCompanyToll = activeLegs.some((leg: any) => leg.companyFreightHasToll);
-    const hasDriverTollPJ = activeLegs.some((leg: any) => leg.driverFreightHasTollPJ);
-    const hasDriverTollPF = activeLegs.some((leg: any) => leg.driverFreightHasTollPF);
+    const totalCompanyFreight = activeLegs.reduce((sum, leg) => sum + (leg.companyFreightValuePerTon || 0), 0);
+    const totalDriverFreightPj = activeLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTon || 0), 0);
+    const totalDriverFreightPf = activeLegs.reduce((sum, leg) => sum + (leg.disablePfFreight ? 0 : (leg.driverFreightValuePerTonPf ?? (leg.driverFreightValuePerTon || 0))), 0);
+    const totalIcmsValue = activeLegs.reduce((sum, leg) => sum + (leg.icmsValue || 0), 0);
+    
+    const hasCompanyToll = activeLegs.some(leg => leg.companyFreightHasToll);
+    const hasDriverPjToll = activeLegs.some(leg => leg.driverFreightHasToll);
+    const hasDriverPfToll = activeLegs.some(leg => leg.driverFreightPfHasToll);
 
-    const totalNetCompanyValue = activeLegs.reduce((sum: number, leg: any) => {
+    let displayCompanyFreightTotal = 0;
+    let displayDriverFreightPjTotal = 0;
+    let displayDriverFreightPfTotal = 0;
+
+    let totalNetCompanyValue = 0;
+    let totalDriverCostPj = 0;
+    let totalDriverCostPf = 0;
+
+    if (isFixed) {
+      // Frete Fechado: valores já são o total fixo
+      displayCompanyFreightTotal = totalCompanyFreight;
+      displayDriverFreightPjTotal = totalDriverFreightPj;
+      displayDriverFreightPfTotal = totalDriverFreightPf;
+
+      const icmsRate = activeLegs[0]?.hasIcms ? (activeLegs[0].icmsPercentage || 0) / 100 : 0;
+      totalNetCompanyValue = totalCompanyFreight * (1 - icmsRate);
+      totalDriverCostPj = totalDriverFreightPj;
+      totalDriverCostPf = totalDriverFreightPf;
+    } else if (isPlusIcms) {
+      // VLR P/ton + ICMS: ICMS é calculado pelo percentual (%) sobre o valor do frete empresa por tonelada
+      const totalIcmsCalculated = activeLegs.reduce((sum, leg) => {
+        const rate = (leg.icmsPercentage || 0) / 100;
+        return sum + ((leg.companyFreightValuePerTon || 0) * rate * volumeRef);
+      }, 0);
+
+      displayCompanyFreightTotal = (totalCompanyFreight * volumeRef) + totalIcmsCalculated;
+      displayDriverFreightPjTotal = totalDriverFreightPj * volumeRef;
+      displayDriverFreightPfTotal = totalDriverFreightPf * volumeRef;
+
+      // Líquido da empresa = Frete Empresa total sem ICMS = totalCompanyFreight * volumeRef
+      totalNetCompanyValue = totalCompanyFreight * volumeRef;
+      totalDriverCostPj = displayDriverFreightPjTotal;
+      totalDriverCostPf = displayDriverFreightPfTotal;
+    } else {
+      // Por Tonelada: R$/ton
+      displayCompanyFreightTotal = totalCompanyFreight;
+      displayDriverFreightPjTotal = totalDriverFreightPj;
+      displayDriverFreightPfTotal = totalDriverFreightPf;
+
+      totalNetCompanyValue = activeLegs.reduce((sum, leg) => {
         const icmsRate = leg.hasIcms ? (leg.icmsPercentage || 0) / 100 : 0;
-        const netValue = (leg.companyFreightValuePerTon || 0) * (1 - icmsRate);
-        return sum + netValue;
-    }, 0);
+        return sum + ((leg.companyFreightValuePerTon || 0) * (1 - icmsRate));
+      }, 0);
+      totalDriverCostPj = totalDriverFreightPj;
+      totalDriverCostPf = totalDriverFreightPf;
+    }
 
-    const commission = load.salespersonCommissionPerTon || 0;
+    const totalCommission = isFixed
+      ? (load.salespersonCommissionPerTon || 0)
+      : (load.salespersonCommissionPerTon || 0) * (isPlusIcms ? volumeRef : 1);
+    
+    // PJ Margin
+    const netProfitPj = totalNetCompanyValue - totalDriverCostPj - totalCommission;
+    const marginPj = (totalNetCompanyValue > 0) ? (netProfitPj / totalNetCompanyValue) * 100 : 0;
+    const marginPjPercentage = isNaN(marginPj) || !isFinite(marginPj) ? '0,00%' : `${marginPj.toFixed(2).replace('.', ',')}%`;
 
-    const calcMargin = (driverFreight: number) => {
-        const profit = totalNetCompanyValue - driverFreight - commission;
-        return (totalNetCompanyValue > 0) ? (profit / totalNetCompanyValue) * 100 : 0;
-    };
-
-    const marginPJ = calcMargin(totalDriverFreightPJ);
-    const marginPF = calcMargin(totalDriverFreightPF);
-    const formatMargin = (m: number) => isNaN(m) || !isFinite(m) ? '0,00%' : `${m.toFixed(2).replace('.', ',')}%`;
+    // PF Margin
+    const netProfitPf = totalNetCompanyValue - totalDriverCostPf - totalCommission;
+    const marginPf = (totalNetCompanyValue > 0) ? (netProfitPf / totalNetCompanyValue) * 100 : 0;
+    const marginPfPercentage = isNaN(marginPf) || !isFinite(marginPf) ? '0,00%' : `${marginPf.toFixed(2).replace('.', ',')}%`;
 
     return { 
-        totalCompanyFreight, 
-        totalDriverFreightPJ, 
-        totalDriverFreightPF, 
-        hasCompanyToll,
-        hasDriverTollPJ,
-        hasDriverTollPF,
-        netMarginPercentagePJ: formatMargin(marginPJ), 
-        netMarginPercentagePF: formatMargin(marginPF), 
-        marginPJ, 
-        marginPF 
+      totalCompanyFreight, 
+      totalDriverFreightPj, 
+      totalDriverFreightPf, 
+      marginPjPercentage, 
+      marginPfPercentage, 
+      hasCompanyToll, 
+      hasDriverPjToll, 
+      hasDriverPfToll,
+      displayCompanyFreightTotal,
+      displayDriverFreightPjTotal,
+      displayDriverFreightPfTotal
     };
-  };
+  }, [load.freightLegs, hasMultiLeg, load.salespersonCommissionPerTon, load.freightCalculationType, load.totalVolume]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
+    const formattedValue = autoFormatInput(name, value);
     
     if (type === 'checkbox') {
         const checked = (e.target as HTMLInputElement).checked;
@@ -330,88 +469,36 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
         setLoad(prev => ({ ...prev, [name]: parseFloat(value) || 0 }));
     }
     else {
-        setLoad(prev => ({ ...prev, [name]: value }));
+        setLoad(prev => ({ ...prev, [name]: formattedValue }));
     }
   };
 
-  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-      const { name, value } = e.target;
-      if (name === 'origin') {
-          setLoad(prev => ({ ...prev, [name]: formatCityState(value) }));
-      }
-  };
-
-  const handleDestinationChange = (destIndex: number, field: string, value: string) => {
-      setLoad(prev => {
-          const newDests = [...(prev.destinations || [])];
-          let finalValue: any = value;
-          if (field === 'targetTonnage') {
-              finalValue = parseFloat(value) || undefined;
-          }
-          newDests[destIndex] = { ...newDests[destIndex], [field]: finalValue };
-          return { ...prev, destinations: newDests };
-      });
-  };
-
-  const handleDestinationBlur = (destIndex: number, field: string, value: string) => {
-      if (field === 'city') {
-          setLoad(prev => {
-              const newDests = [...(prev.destinations || [])];
-              newDests[destIndex] = { ...newDests[destIndex], [field]: formatCityState(value) };
-              return { ...prev, destinations: newDests };
-          });
-      }
-  };
-
-  const handleAddDestination = () => {
-      setLoad(prev => ({
-          ...prev,
-          destinations: [
-              ...(prev.destinations || []),
-              {
-                  id: Math.random().toString(36).substr(2, 9),
-                  city: '',
-                  location: '',
-                  mapLink: '',
-                  targetTonnage: undefined,
-                  freightLegs: [
-                      { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightHasTollPJ: false, driverFreightValuePerTonPF: 0, driverFreightHasTollPF: false, hasIcms: false, icmsPercentage: 0 },
-                      { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightHasTollPJ: false, driverFreightValuePerTonPF: 0, driverFreightHasTollPF: false, hasIcms: false, icmsPercentage: 0 }
-                  ]
-              }
-          ]
-      }));
-  };
-
-  const handleRemoveDestination = (destIndex: number) => {
-      setLoad(prev => ({
-          ...prev,
-          destinations: (prev.destinations || []).filter((_, i) => i !== destIndex)
-      }));
-  };
-
-  const handleLegChange = (destIndex: number, legIndex: number, field: keyof FreightLeg, value: string | number | boolean) => {
+  const handleLegChange = (index: number, field: keyof FreightLeg, value: string | number | boolean) => {
     setLoad(prev => {
-        const newDests = [...(prev.destinations || [])];
-        const destToUpdate = { ...newDests[destIndex] };
-        const newLegs = [...destToUpdate.freightLegs];
-        const legToUpdate = { ...newLegs[legIndex] };
+        const newLegs = [...(prev.freightLegs || [])];
+        const legToUpdate = { ...newLegs[index] };
         
         let finalValue = value;
-        if (field === 'companyFreightValuePerTon' || field === 'driverFreightValuePerTon' || field === 'driverFreightValuePerTonPJ' || field === 'driverFreightValuePerTonPF' || field === 'icmsPercentage') {
+        if (field === 'companyFreightValuePerTon' || field === 'driverFreightValuePerTon' || field === 'driverFreightValuePerTonPf' || field === 'icmsPercentage' || field === 'icmsValue') {
             finalValue = parseFloat(value as string) || 0;
         }
 
         (legToUpdate as any)[field] = finalValue;
         
+        // Ao marcar ou desmarcar + Pedágio no Frete Empresa, replica automaticamente no Frete Motorista PJ e PF
+        if (field === 'companyFreightHasToll') {
+            const hasToll = Boolean(value);
+            legToUpdate.companyFreightHasToll = hasToll;
+            legToUpdate.driverFreightHasToll = hasToll;
+            legToUpdate.driverFreightPfHasToll = hasToll;
+        }
+
         if (field === 'hasIcms' && value === false) {
             legToUpdate.icmsPercentage = 0;
         }
         
-        newLegs[legIndex] = legToUpdate;
-        destToUpdate.freightLegs = newLegs;
-        newDests[destIndex] = destToUpdate;
-        return { ...prev, destinations: newDests };
+        newLegs[index] = legToUpdate;
+        return { ...prev, freightLegs: newLegs };
     });
   };
   
@@ -438,310 +525,128 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
       }));
   };
 
-  const handleApplySuggestion = (s: RouteSuggestion) => {
-    if (!load.destinations || load.destinations.length === 0) return;
-
-    setLoad(prev => {
-      const newDests = [...(prev.destinations || [])];
-      const firstDest = { ...newDests[0] };
-      const newLegs = [...(firstDest.freightLegs || [])];
-      const leg0 = { ...(newLegs[0] || { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 }) };
-
-      if (s.companyFreightRate > 0) {
-        leg0.companyFreightValuePerTon = s.companyFreightRate;
-      }
-      if (s.driverFreightRatePJ !== undefined && s.driverFreightRatePJ > 0) {
-        leg0.driverFreightValuePerTonPJ = s.driverFreightRatePJ;
-      } else if (s.driverFreightRate > 0) {
-        leg0.driverFreightValuePerTonPJ = s.driverFreightRate;
-      }
-      if (s.driverFreightRatePF !== undefined && s.driverFreightRatePF > 0) {
-        leg0.driverFreightValuePerTonPF = s.driverFreightRatePF;
-      } else if (s.driverFreightRate > 0) {
-        leg0.driverFreightValuePerTonPF = s.driverFreightRate;
-      }
-      if (s.driverFreightRate > 0) {
-        leg0.driverFreightValuePerTon = s.driverFreightRate;
-      }
-      if (s.hasCompanyToll !== undefined) {
-        leg0.companyFreightHasToll = s.hasCompanyToll;
-      }
-      if (s.hasDriverTollPJ !== undefined) {
-        leg0.driverFreightHasTollPJ = s.hasDriverTollPJ;
-      }
-      if (s.hasDriverTollPF !== undefined) {
-        leg0.driverFreightHasTollPF = s.hasDriverTollPF;
-      }
-      if (s.hasIcms !== undefined) {
-        leg0.hasIcms = s.hasIcms;
-      }
-      if (s.icmsPercentage !== undefined && s.icmsPercentage > 0) {
-        leg0.icmsPercentage = s.icmsPercentage;
-      }
-
-      newLegs[0] = leg0;
-      firstDest.freightLegs = newLegs;
-      newDests[0] = firstDest;
-
-      return {
-        ...prev,
-        companyFreightValuePerTon: s.companyFreightRate || prev.companyFreightValuePerTon,
-        driverFreightValuePerTon: s.driverFreightRate || prev.driverFreightValuePerTon,
-        driverFreightValuePerTonPJ: s.driverFreightRatePJ ?? s.driverFreightRate ?? prev.driverFreightValuePerTonPJ,
-        driverFreightValuePerTonPF: s.driverFreightRatePF ?? s.driverFreightRate ?? prev.driverFreightValuePerTonPF,
-        companyFreightHasToll: s.hasCompanyToll ?? prev.companyFreightHasToll,
-        driverFreightHasTollPJ: s.hasDriverTollPJ ?? prev.driverFreightHasTollPJ,
-        driverFreightHasTollPF: s.hasDriverTollPF ?? prev.driverFreightHasTollPF,
-        hasIcms: s.hasIcms ?? prev.hasIcms,
-        icmsPercentage: s.icmsPercentage ?? prev.icmsPercentage,
-        destinations: newDests,
-        freightLegs: newLegs
-      };
-    });
-
-    setAppliedSuggestion(true);
-    showToast('Valores do histórico sugeridos foram aplicados com sucesso!', 'success');
-    setTimeout(() => setAppliedSuggestion(false), 3500);
-  };
-
-  const renderSuggestionBanner = () => {
-    if (loadingSuggestion) {
-      return (
-        <div className="p-3 my-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300 animate-pulse">
-          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-          <span>Buscando histórico de fretes no raio de 150km...</span>
-        </div>
-      );
-    }
-
-    if (!suggestion) return null;
-
-    const formatCurr = (val: number) =>
-      new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-
-    return (
-      <div className={`p-4 my-3 bg-gradient-to-r ${
-        suggestion.isExactRoute
-          ? 'from-emerald-50 to-teal-50 dark:from-gray-800 dark:to-emerald-950/40 border-emerald-400 dark:border-emerald-600/50'
-          : 'from-amber-50 to-orange-50 dark:from-gray-800 dark:to-gray-900 border-amber-300 dark:border-amber-600/50'
-      } border-2 rounded-xl shadow-sm`}>
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="flex items-center gap-2">
-            <span className={`p-1 text-white rounded-md shrink-0 ${suggestion.isExactRoute ? 'bg-emerald-600' : 'bg-amber-500'}`}>
-              <Zap className="w-3.5 h-3.5 fill-current" />
-            </span>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-xs font-bold uppercase ${suggestion.isExactRoute ? 'text-emerald-900 dark:text-emerald-300' : 'text-amber-900 dark:text-amber-300'}`}>
-                  {suggestion.isExactRoute ? '🎯 Rota Exata Encontrada (Último Preço)' : 'Sugestão por Histórico (≤ 150km)'}
-                </span>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                  suggestion.isExactRoute
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700'
-                    : suggestion.type === 'cargo'
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300'
-                    : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300'
-                }`}>
-                  {suggestion.sourceTitle}
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-600 dark:text-gray-400 mt-0.5">
-                {suggestion.isExactRoute ? (
-                  <span className="font-semibold text-gray-800 dark:text-gray-200">
-                    {suggestion.matchedOrigin} → {suggestion.matchedDestination}
-                  </span>
-                ) : (
-                  <>
-                    {suggestion.matchedOrigin} ({suggestion.originDistanceKm} km da origem) → {suggestion.matchedDestination} ({suggestion.destinationDistanceKm} km do destino)
-                  </>
-                )}
-              </p>
-            </div>
-          </div>
-          {suggestion.date && (
-            <span className="text-[10px] text-gray-400 shrink-0 font-medium">
-              {new Date(suggestion.date).toLocaleDateString('pt-BR')}
-            </span>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 my-2.5 bg-white/80 dark:bg-gray-800/80 p-2.5 rounded-lg border border-amber-200 dark:border-gray-700 text-xs">
-          <div>
-            <span className="block text-[10px] text-gray-500 uppercase font-semibold">
-              {suggestion.isExactRoute ? 'Último Frete Empresa' : 'Frete Empresa'}
-            </span>
-            <span className="font-bold text-gray-900 dark:text-white">
-              {formatCurr(suggestion.companyFreightRate)}/ton
-            </span>
-          </div>
-          <div>
-            <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 uppercase font-semibold">
-              {suggestion.isExactRoute ? 'Último Frete Mot. PJ' : 'Frete Motorista PJ'}
-            </span>
-            <span className="font-bold text-emerald-700 dark:text-emerald-300">
-              {formatCurr(suggestion.driverFreightRatePJ || suggestion.driverFreightRate)}/ton
-            </span>
-          </div>
-          <div>
-            <span className="block text-[10px] text-orange-600 dark:text-orange-400 uppercase font-semibold">
-              {suggestion.isExactRoute ? 'Último Frete Mot. PF' : 'Frete Motorista PF'}
-            </span>
-            <span className="font-bold text-orange-700 dark:text-orange-300">
-              {formatCurr(suggestion.driverFreightRatePF || suggestion.driverFreightRate)}/ton
-            </span>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => handleApplySuggestion(suggestion)}
-          className={`w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer ${
-            appliedSuggestion
-              ? 'bg-emerald-600 text-white'
-              : suggestion.isExactRoute
-              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-              : 'bg-amber-500 hover:bg-amber-600 text-gray-900 hover:text-white'
-          }`}
-        >
-          {appliedSuggestion ? (
-            <>
-              <CheckCircle2 className="w-4 h-4" /> Valores Aplicados!
-            </>
-          ) : (
-            <>
-              <Zap className="w-3.5 h-3.5 fill-current" /> 
-              {suggestion.isExactRoute
-                ? `Aplicar Último Preço Cotado (${formatCurr(suggestion.companyFreightRate)}/ton)`
-                : 'Aplicar Valores do Histórico'}
-            </>
-          )}
-        </button>
-      </div>
-    );
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
 
-    const normalizedDestinations = (load.destinations || []).map(dest => {
-        const activeLegs = hasMultiLeg ? dest.freightLegs.slice(0, 2) : dest.freightLegs.slice(0, 1);
-        return {
-            ...dest,
-            freightLegs: activeLegs.map(leg => ({
-                ...leg,
-                companyFreightHasToll: leg.companyFreightHasToll || false,
-                driverFreightValuePerTonPJ: leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon,
-                driverFreightHasTollPJ: leg.driverFreightHasTollPJ || false,
-                driverFreightValuePerTonPF: leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon,
-                driverFreightHasTollPF: leg.driverFreightHasTollPF || false,
-                driverFreightHasToll: leg.driverFreightHasTollPJ || leg.driverFreightHasToll || false,
-                disableDriverFreightPF: leg.disableDriverFreightPF || false,
-            }))
-        };
-    });
-
-    const firstDest = normalizedDestinations[0] || { city: '', location: '', mapLink: '', freightLegs: [] };
-    const firstDestLegs = firstDest.freightLegs;
-    const totalCompanyFreightCalc = firstDestLegs.reduce((sum, leg) => sum + leg.companyFreightValuePerTon, 0);
-    const totalDriverFreightPJCalc = firstDestLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPJ ?? leg.driverFreightValuePerTon), 0);
-    const totalDriverFreightPFCalc = firstDestLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTonPF ?? leg.driverFreightValuePerTon), 0);
-    const isPFDisabled = firstDestLegs.some(leg => leg.disableDriverFreightPF);
-    const hasCompanyToll = firstDestLegs.some(leg => leg.companyFreightHasToll);
-    const hasDriverTollPJ = firstDestLegs.some(leg => leg.driverFreightHasTollPJ);
-    const hasDriverTollPF = firstDestLegs.some(leg => leg.driverFreightHasTollPF);
-
-    // Geocode origin and FIRST destination
-    const [originCoords, destinationCoords] = await Promise.all([
-        geocodeCity(load.origin),
-        geocodeCity(firstDest.city)
-    ]);
-
-    // Auto-merge unadded vehicle types before saving
-    let finalAllowedVehicleTypes = load.allowedVehicleTypes || [];
-    if (currentBodyTypes.length > 0) {
-        const existingIndex = finalAllowedVehicleTypes.findIndex(avt => avt.setType === currentSetType);
-        if (existingIndex !== -1) {
-            const updatedTypes = [...finalAllowedVehicleTypes];
-            const existingEntry = updatedTypes[existingIndex];
-            const newBodyTypes = [...new Set([...(existingEntry.bodyTypes || []), ...currentBodyTypes])];
-            updatedTypes[existingIndex] = { ...existingEntry, bodyTypes: newBodyTypes };
-            finalAllowedVehicleTypes = updatedTypes;
-        } else {
-            finalAllowedVehicleTypes = [...finalAllowedVehicleTypes, { setType: currentSetType, bodyTypes: currentBodyTypes }];
-        }
+    if (load.isExport === undefined) {
+      showToast('Por favor, informe obrigatoriamente se a carga é de exportação ou mercado interno.', 'warning');
+      return;
     }
 
-    const finalLoadData = {
-        ...load,
-        destinations: normalizedDestinations,
-        destination: firstDest.city,
-        destinationLocation: firstDest.location,
-        destinationMapLink: firstDest.mapLink,
-        companyFreightValuePerTon: totalCompanyFreightCalc,
-        companyFreightHasToll: hasCompanyToll,
-        driverFreightValuePerTon: totalDriverFreightPJCalc, // legado: usa PJ como padrão
-        driverFreightValuePerTonPJ: totalDriverFreightPJCalc,
-        driverFreightHasTollPJ: hasDriverTollPJ,
-        driverFreightValuePerTonPF: totalDriverFreightPFCalc,
-        driverFreightHasTollPF: hasDriverTollPF,
-        driverFreightHasToll: hasDriverTollPJ || hasDriverTollPF,
-        freightLegs: firstDestLegs,
-        hasIcms: firstDestLegs[0]?.hasIcms || false,
-        icmsPercentage: firstDestLegs[0]?.icmsPercentage || 0,
-        originCoords: originCoords || undefined,
-        destinationCoords: destinationCoords || undefined,
-        allowedVehicleTypes: finalAllowedVehicleTypes,
-        disableDriverFreightPF: isPFDisabled,
-    };
+    setIsSubmitting(true);
 
-    if (loadToEdit) {
-      onSave({
-        ...loadToEdit, 
-        ...finalLoadData,
-        scheduledVolume: loadToEdit.scheduledVolume,
-        loadedVolume: loadToEdit.loadedVolume,
-      });
-    } else {
-      onSave({
-        ...finalLoadData,
-        scheduledVolume: 0,
-        loadedVolume: 0,
-      });
+    try {
+      const activeLegs = hasMultiLeg ? (load.freightLegs || []).slice(0, 2) : (load.freightLegs || []).slice(0, 1);
+      const calcType = load.freightCalculationType || FreightCalculationType.PerTon;
+      const isPlusIcmsType = calcType === FreightCalculationType.PerTonPlusIcms;
+      const totalIcms = isPlusIcmsType
+        ? activeLegs.reduce((sum, leg) => sum + ((leg.companyFreightValuePerTon || 0) * ((leg.icmsPercentage || 0) / 100) * (load.totalVolume || 1)), 0)
+        : activeLegs.reduce((sum, leg) => sum + (leg.icmsValue || 0), 0);
+
+      // Geocode origin and destination
+      const [originCoords, destinationCoords] = await Promise.all([
+          geocodeCity(load.origin),
+          geocodeCity(load.destination)
+      ]);
+
+      const finalLoadData = {
+          ...load,
+          freightCalculationType: calcType,
+          companyFreightValuePerTon: totalCompanyFreight,
+          companyFreightHasToll: activeLegs.some(leg => leg.companyFreightHasToll),
+          driverFreightValuePerTon: totalDriverFreightPj,
+          driverFreightHasToll: activeLegs.some(leg => leg.driverFreightHasToll),
+          driverFreightPfHasToll: activeLegs.some(leg => leg.driverFreightPfHasToll),
+          icmsValue: totalIcms,
+          freightLegs: activeLegs.map(leg => ({ 
+            ...leg, 
+            freightCalculationType: calcType,
+            hasIcms: isPlusIcmsType ? true : leg.hasIcms,
+            icmsValue: isPlusIcmsType 
+              ? (leg.companyFreightValuePerTon || 0) * ((leg.icmsPercentage || 0) / 100)
+              : leg.icmsValue
+          })),
+          hasIcms: isPlusIcmsType ? true : (activeLegs[0]?.hasIcms || false),
+          icmsPercentage: activeLegs[0]?.icmsPercentage || 0,
+          originCoords: originCoords || undefined,
+          destinationCoords: destinationCoords || undefined,
+      };
+
+      if (loadToEdit) {
+        onSave({
+          ...loadToEdit, 
+          ...finalLoadData,
+          scheduledVolume: loadToEdit.scheduledVolume,
+          loadedVolume: loadToEdit.loadedVolume,
+        });
+      } else {
+        onSave({
+          ...finalLoadData,
+          scheduledVolume: 0,
+          loadedVolume: 0,
+        });
+      }
+    } catch (err) {
+      console.error('Error saving load:', err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
   
   const handleAddSchedule = () => {
-    if (!newScheduleDates || newScheduleDates.length === 0) {
-        showToast('Por favor, selecione pelo menos uma data.', 'warning');
+    if (!newScheduleStartDate) {
+        showToast('Por favor, selecione a data inicial.', 'warning');
         return;
     }
-    
-    const datesStrings = newScheduleDates.map(d => `${d.year}-${String(d.month.number).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`);
-    const alreadyScheduled = datesStrings.filter(d => (load.dailySchedule || []).some(e => e.date === d));
-    
-    if (alreadyScheduled.length > 0) {
-        const formattedDates = alreadyScheduled.map(d => new Date(d + 'T12:00:00Z').toLocaleDateString('pt-BR'));
-        showToast(`As seguintes datas já estão na programação: ${formattedDates.join(', ')}. Remova-as primeiro.`, 'warning');
+    if (!newScheduleEndDate) {
+        showToast('Por favor, selecione a data final.', 'warning');
         return;
     }
-
+    if (newScheduleEndDate < newScheduleStartDate) {
+        showToast('A data final deve ser igual ou posterior à data inicial.', 'warning');
+        return;
+    }
     if (!newScheduleTonnage || newScheduleTonnage <= 0) {
-        showToast('A tonelagem estimada por dia deve ser maior que zero.', 'warning');
+        showToast('Informe a quantidade de toneladas previstas para o período.', 'warning');
         return;
     }
 
-    const newEntries: DailyScheduleEntry[] = datesStrings.map(dateStr => ({
-        date: dateStr,
-        type: newScheduleType,
-        tonnage: newScheduleTonnage,
-    }));
+    const entries: DailyScheduleEntry[] = [];
+    const start = new Date(newScheduleStartDate + 'T00:00:00');
+    const end = new Date(newScheduleEndDate + 'T00:00:00');
+    const existing = new Set((load.dailySchedule || []).map(e => e.date));
+    const skipped: string[] = [];
+
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().split('T')[0];
+        if (existing.has(dateStr)) {
+            skipped.push(new Date(dateStr + 'T00:00:00').toLocaleDateString('pt-BR'));
+        } else {
+            entries.push({
+                date: dateStr,
+                type: newScheduleType,
+                tonnage: newScheduleTonnage,
+            });
+        }
+    }
+
+    if (entries.length === 0) {
+        showToast('Todas as datas do período já possuem programação.', 'warning');
+        return;
+    }
+
+    if (skipped.length > 0) {
+        showToast(`${entries.length} dia(s) adicionado(s). Ignorados (já existiam): ${skipped.join(', ')}.`, 'warning');
+    }
 
     setLoad(prev => ({
         ...prev,
-        dailySchedule: [...(prev.dailySchedule || []), ...newEntries].sort((a,b) => a.date.localeCompare(b.date)),
+        dailySchedule: [...(prev.dailySchedule || []), ...entries].sort((a,b) => a.date.localeCompare(b.date)),
     }));
     
-    setNewScheduleDates([]);
+    setNewScheduleStartDate('');
+    setNewScheduleEndDate('');
     setNewScheduleType(DailyScheduleType.Livre);
     setNewScheduleTonnage(undefined);
   };
@@ -769,14 +674,12 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
         const existingIndex = allowedTypes.findIndex(avt => avt.setType === currentSetType);
         
         if (existingIndex !== -1) {
-            // Update existing entry by merging body types
             const updatedTypes = [...allowedTypes];
             const existingEntry = updatedTypes[existingIndex];
-            const newBodyTypes = [...new Set([...(existingEntry.bodyTypes || []), ...currentBodyTypes])];
+            const newBodyTypes = [...new Set([...existingEntry.bodyTypes, ...currentBodyTypes])];
             updatedTypes[existingIndex] = { ...existingEntry, bodyTypes: newBodyTypes };
             return { ...prev, allowedVehicleTypes: updatedTypes };
         } else {
-            // Add new entry
             return {
                 ...prev,
                 allowedVehicleTypes: [
@@ -796,113 +699,377 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
       }));
   };
 
-
   const nextStep = () => setStep(s => Math.min(s + 1, STEPS.length));
   const prevStep = () => setStep(s => Math.max(s - 1, 1));
 
   if (!isOpen) return null;
 
-  const leg1 = load.freightLegs?.[0] || { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 };
-  const leg2 = load.freightLegs?.[1] || { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightValuePerTonPF: 0, hasIcms: false, icmsPercentage: 0 };
-
-  const getMarginColorClass = (m: number) => {
-    if (isNaN(m) || !isFinite(m)) return 'text-gray-600 dark:text-gray-400 bg-gray-200 dark:bg-gray-700';
-    if (m < 5) return 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/50';
-    if (m < 6) return 'text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-900/50';
-    if (m < 7) return 'text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50';
-    return 'text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/50';
-  };
+  const leg1 = load.freightLegs?.[0] || { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 };
+  const leg2 = load.freightLegs?.[1] || { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-4xl w-full max-h-[90vh] flex flex-col">
-        <h2 className="text-2xl font-bold mb-2 text-gray-800 dark:text-white">{loadToEdit ? 'Editar Ordem de Carga' : 'Cadastrar Nova Carga'}</h2>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-4xl w-full max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-700 transition-all">
+        
+        {/* Title */}
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+          {loadToEdit ? 'Editar Carga' : 'Nova Carga'}
+        </h2>
 
-        {/* Stepper */}
-        <div className="mb-6 flex items-center justify-center border-b dark:border-gray-700 pb-4">
-            {STEPS.map((s, i) => (
+        {/* Stepper Header */}
+        <div className="mb-8 flex items-center justify-between border-b dark:border-gray-700 pb-6 px-2">
+            {STEPS.map((s, i) => {
+              const isCurrent = i + 1 === step;
+              const isCompleted = i + 1 < step;
+              return (
                 <React.Fragment key={s}>
-                    <div className="flex items-center">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${i + 1 <= step ? 'bg-primary text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'}`}>
+                    <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-300 ${
+                          isCurrent || isCompleted 
+                            ? 'bg-[#0F5132] text-white shadow-md shadow-emerald-900/20' 
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+                        }`}>
                             {i + 1}
                         </div>
-                        <span className={`ml-3 text-sm font-medium ${i + 1 <= step ? 'text-gray-800 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>{s}</span>
+                        <span className={`text-sm font-semibold tracking-tight ${
+                          isCurrent || isCompleted 
+                            ? 'text-gray-900 dark:text-white' 
+                            : 'text-gray-400 dark:text-gray-500'
+                        }`}>
+                          {s}
+                        </span>
                     </div>
-                    {i < STEPS.length - 1 && <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700 mx-4"></div>}
+                    {i < STEPS.length - 1 && (
+                      <div className="flex-1 h-[2px] bg-gray-200 dark:bg-gray-700 mx-4" />
+                    )}
                 </React.Fragment>
-            ))}
+              );
+            })}
         </div>
         
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+          
+          {/* STEP 1: Informações da Carga */}
           {step === 1 && (
-            <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                    <div className="col-span-1 md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Cliente Tomador</label>
-                    <select name="clientId" value={load.clientId} onChange={handleChange} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required>
-                        {clients.map(c => <option key={c.id} value={c.id}>{c.nomeFantasia}</option>)}
-                    </select>
+            <div className="space-y-4">
+                
+                {/* Cliente Tomador e CNPJ Pagador */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    <div className="space-y-1">
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                          Cliente Tomador (Empresa)
+                        </label>
+                        <select 
+                          name="clientId" 
+                          value={load.clientId} 
+                          onChange={(e) => {
+                            const newClientId = e.target.value;
+                            const selClient = clients.find(c => c.id === newClientId);
+                            const clientSalesperson = selClient?.salespersonName || '';
+                            const clientCommission = selClient?.salespersonCommissionPerTon || 0;
+                            
+                            setLoad(prev => ({
+                              ...prev,
+                              clientId: newClientId,
+                              clientCnpj: selClient?.cnpj || '',
+                              clientBranchId: '',
+                              salespersonName: clientSalesperson || prev.salespersonName || '',
+                              salespersonCommissionPerTon: clientSalesperson
+                                ? clientCommission
+                                : (prev.salespersonCommissionPerTon || 0)
+                            }));
+
+                            if (clientSalesperson) {
+                              setShowSalesperson(true);
+                            }
+                          }} 
+                          className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 focus:border-transparent transition-all shadow-xs font-medium" 
+                          required
+                        >
+                            {clients.map(c => (
+                              <option key={c.id} value={c.id}>
+                                {c.nomeFantasia || c.razaoSocial} {c.secondaryCnpjs && c.secondaryCnpjs.length > 0 ? `(${c.secondaryCnpjs.length + 1} CNPJs)` : `(${c.cnpj})`} {c.salespersonName ? `[Vendedor: ${c.salespersonName}]` : ''}
+                              </option>
+                            ))}
+                        </select>
                     </div>
 
-                    
-                    <div className="space-y-4">
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Origem (Cidade e Local)</label>
-                        <input name="origin" value={load.origin} onChange={handleChange} onBlur={handleBlur} placeholder="Cidade de Origem" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 mb-2" required list="cities-list" />
-                        <input name="originLocation" value={load.originLocation ?? ''} onChange={handleChange} placeholder="Nome do Local (Ex: Fazenda...)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 mb-2" />
-                        <input name="originMapLink" value={load.originMapLink ?? ''} onChange={handleChange} placeholder="Link do Google Maps (Origem)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
-                    </div>
-                    
-                    <div className="space-y-4 col-span-1 md:col-span-2">
-                        <div className="flex items-center gap-2 mb-1">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Destino (Cidade e Local)</label>
-                            <button 
-                                type="button" 
-                                onClick={handleAddDestination} 
-                                className="flex items-center justify-center p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-800/50 transition-colors"
-                                title="Adicionar Destino"
+                    <div className="space-y-1">
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                          CNPJ / Filial Pagadora
+                        </label>
+                        {(() => {
+                          const selectedClient = clients.find(c => c.id === load.clientId);
+                          const branches = selectedClient?.secondaryCnpjs || [];
+                          
+                          return (
+                            <select
+                              value={load.clientBranchId ? `branch_${load.clientBranchId}` : (load.clientCnpj || selectedClient?.cnpj || '')}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val.startsWith('branch_')) {
+                                  const branchId = val.replace('branch_', '');
+                                  const foundBranch = branches.find(b => b.id === branchId);
+                                  const branchSalesperson = foundBranch?.salespersonName || selectedClient?.salespersonName || '';
+                                  const branchCommission = (foundBranch?.salespersonCommissionPerTon !== undefined && foundBranch?.salespersonCommissionPerTon > 0)
+                                    ? foundBranch.salespersonCommissionPerTon
+                                    : (selectedClient?.salespersonCommissionPerTon || 0);
+
+                                  setLoad(prev => ({
+                                    ...prev,
+                                    clientBranchId: branchId,
+                                    clientCnpj: foundBranch?.cnpj || '',
+                                    ...(branchSalesperson ? {
+                                      salespersonName: branchSalesperson,
+                                      salespersonCommissionPerTon: branchCommission
+                                    } : {})
+                                  }));
+
+                                  if (branchSalesperson) {
+                                    setShowSalesperson(true);
+                                  }
+                                } else {
+                                  setLoad(prev => ({
+                                    ...prev,
+                                    clientBranchId: '',
+                                    clientCnpj: val || selectedClient?.cnpj || ''
+                                  }));
+                                }
+                              }}
+                              className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 focus:border-transparent transition-all shadow-xs font-medium"
                             >
-                                <PlusIcon className="h-4 w-4" />
-                            </button>
-                        </div>
-                        {(load.destinations || []).map((dest, idx) => (
-                            <div key={dest.id} className="p-4 border rounded dark:border-gray-600 bg-gray-50 dark:bg-gray-900/30 relative">
-                                {idx > 0 && (
-                                    <button type="button" onClick={() => handleRemoveDestination(idx)} className="absolute top-2 right-2 text-red-500 hover:text-red-700">
-                                        <XIcon className="h-4 w-4" />
-                                    </button>
-                                )}
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                                    <input value={dest.city} onChange={(e) => handleDestinationChange(idx, 'city', e.target.value)} onBlur={(e) => handleDestinationBlur(idx, 'city', e.target.value)} placeholder="Cidade de Destino" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" required list="cities-list" />
-                                    <input value={dest.location ?? ''} onChange={(e) => handleDestinationChange(idx, 'location', e.target.value)} placeholder="Nome do Local (Ex: Porto...)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
-                                    <input value={dest.mapLink ?? ''} onChange={(e) => handleDestinationChange(idx, 'mapLink', e.target.value)} placeholder="Link do Google Maps" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
-                                    <input type="number" step="0.1" value={dest.targetTonnage ?? ''} onChange={(e) => handleDestinationChange(idx, 'targetTonnage', e.target.value)} placeholder="Saldo Entrega (ton)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
-                                </div>
-                            </div>
-                        ))}
+                              {selectedClient && (
+                                <option value={selectedClient.cnpj}>
+                                  Matriz — CNPJ: {selectedClient.cnpj} {selectedClient.city ? `(${selectedClient.city}/${selectedClient.state})` : ''}
+                                </option>
+                              )}
+                              {branches.map(b => (
+                                <option key={b.id} value={`branch_${b.id}`}>
+                                  {b.nomeFantasia || b.razaoSocial || 'Filial'} — CNPJ: {b.cnpj} {b.city ? `(${b.city}/${b.state})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          );
+                        })()}
                     </div>
-
-                    <datalist id="cities-list">
-                        {BRAZILIAN_CITIES.map(city => <option key={city} value={city} />)}
-                    </datalist>
                 </div>
 
-                {renderSuggestionBanner()}
+                {/* Origem e Destino Side-by-Side Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    {/* Origem (Cidade e Local) */}
+                    <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/60 dark:bg-gray-800/40 space-y-2">
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Origem (Cidade e Local)</label>
+                        <div className="space-y-2">
+                            <input 
+                              name="origin" 
+                              value={load.origin} 
+                              onChange={handleChange} 
+                              placeholder="Cidade de Origem (Ex: São Paulo, SP)" 
+                              className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
+                              required 
+                              list="cities-list" 
+                            />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <input 
+                                  name="originLocation" 
+                                  value={load.originLocation ?? ''} 
+                                  onChange={handleChange} 
+                                  placeholder="Local / Fazenda / Galpão" 
+                                  className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
+                                />
+                                <input 
+                                  name="originMapLink" 
+                                  value={load.originMapLink ?? ''} 
+                                  onChange={handleChange} 
+                                  placeholder="Link Google Maps (Opcional)" 
+                                  className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
+                                />
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* Destino (Cidade e Local) */}
+                    <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/60 dark:bg-gray-800/40 space-y-2">
+                        <div className="flex items-center justify-between">
+                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Destino (Cidade e Local)</label>
+                            <button 
+                              type="button" 
+                              onClick={() => setHasMultiLeg(prev => !prev)}
+                              className="px-2 py-0.5 rounded-md bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 transition-colors text-xs font-medium flex items-center gap-1"
+                              title="Adicionar mais destinos/pernas"
+                            >
+                                <PlusIcon className="w-3 h-3" />
+                                <span>Perna Extra</span>
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-2">
+                            <input 
+                              name="destination" 
+                              value={load.destination} 
+                              onChange={handleChange} 
+                              placeholder="Cidade de Destino" 
+                              className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
+                              required 
+                              list="cities-list" 
+                            />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <input 
+                                  name="destinationLocation" 
+                                  value={load.destinationLocation ?? ''} 
+                                  onChange={handleChange} 
+                                  placeholder="Local / Porto / Galpão" 
+                                  className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
+                                />
+                                <input 
+                                  name="destinationMapLink" 
+                                  value={load.destinationMapLink ?? ''} 
+                                  onChange={handleChange} 
+                                  placeholder="Link Google Maps (Opcional)" 
+                                  className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-                <div className="border-t dark:border-gray-600 pt-4 space-y-4">
+                {/* Banner de Sugestão Inteligente de Rota */}
+                {loadingSuggestion && (
+                    <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 rounded-xl flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        <span>Buscando histórico de cargas e cotações na região (raio de 150km)...</span>
+                    </div>
+                )}
+
+                {routeSuggestion && (
+                    <div className="p-3.5 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/90 via-teal-50/60 to-blue-50/40 dark:from-emerald-950/40 dark:via-gray-800 dark:to-teal-950/30 dark:border-emerald-800/60 shadow-xs space-y-2.5">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                                <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                <span>
+                                    {routeSuggestion.source === 'cargo'
+                                        ? 'Última Carga Realizada na Região'
+                                        : 'Última Cotação Salva na Região'}
+                                </span>
+                            </div>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300">
+                                {routeSuggestion.originDistanceKm === 0 && routeSuggestion.destinationDistanceKm === 0
+                                    ? 'Rota Exata'
+                                    : `Raio até ${Math.max(routeSuggestion.originDistanceKm, routeSuggestion.destinationDistanceKm)}km`}
+                            </span>
+                        </div>
+
+                        <div className="text-xs text-gray-700 dark:text-gray-300">
+                            <div className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400 mb-1.5">
+                                <History className="w-3.5 h-3.5" />
+                                <span>
+                                    {routeSuggestion.matchedOrigin} → {routeSuggestion.matchedDestination} • {new Date(routeSuggestion.date).toLocaleDateString('pt-BR')}
+                                    {routeSuggestion.clientName ? ` • ${routeSuggestion.clientName}` : ''}
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-emerald-100 dark:border-gray-700">
+                                    <div className="text-[10px] text-gray-500 uppercase font-semibold">Frete Empresa</div>
+                                    <div className="text-sm font-black text-gray-900 dark:text-white">
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(routeSuggestion.companyFreightRate)}
+                                        <span className="text-[10px] font-normal text-gray-400">/ton</span>
+                                    </div>
+                                </div>
+                                <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-emerald-100 dark:border-gray-700">
+                                    <div className="text-[10px] text-gray-500 uppercase font-semibold">Frete Motorista</div>
+                                    <div className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(routeSuggestion.driverFreightRate)}
+                                        <span className="text-[10px] font-normal text-gray-400">/ton</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => handleApplyLoadSuggestion(routeSuggestion)}
+                            className={`w-full py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs ${
+                                appliedSuggestion
+                                    ? 'bg-emerald-700 text-white'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            }`}
+                        >
+                            {appliedSuggestion ? (
+                                <>
+                                    <Check className="w-3.5 h-3.5" /> Valores Aplicados na Perna 1!
+                                </>
+                            ) : (
+                                <>
+                                    <Zap className="w-3.5 h-3.5" /> Aplicar Valores Desta {routeSuggestion.source === 'cargo' ? 'Carga' : 'Cotação'}
+                                </>
+                            )}
+                        </button>
+                    </div>
+                )}
+
+                <datalist id="cities-list">
+                    {BRAZILIAN_CITIES.map(city => <option key={city} value={city} />)}
+                </datalist>
+
+                {/* Volume Total & Prazo */}
+                <div className="border-t dark:border-gray-700 pt-4">
+                    <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2.5">Detalhes do Volume, Prazo e Lote</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Volume Total (ton)</label>
+                            <input 
+                              name="totalVolume" 
+                              value={load.totalVolume || ''} 
+                              onChange={handleChange} 
+                              type="number" 
+                              placeholder="Ex: 5000" 
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
+                              step="0.01"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Prazo de Carregamento</label>
+                            <input 
+                              name="loadingDeadline" 
+                              value={load.loadingDeadline || ''} 
+                              onChange={handleChange} 
+                              type="date" 
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Lote TMS (Opcional)</label>
+                            <input 
+                              name="tmsLoteNumber" 
+                              value={load.tmsLoteNumber || ''} 
+                              onChange={handleChange} 
+                              type="text" 
+                              placeholder="Número do Lote TMS"
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Observações e Anexos */}
+                <div className="border-t dark:border-gray-700 pt-4 space-y-3">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Observações</label>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Observações</label>
                         <textarea
                             name="observations"
                             value={load.observations || ''}
                             onChange={handleChange}
                             placeholder="Adicione qualquer observação relevante sobre a carga..."
-                            className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600"
-                            rows={3}
+                            className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"
+                            rows={2}
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Anexos</label>
-                        <div className="mt-1">
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Anexos</label>
+                        <div>
                             <input
                                 type="file"
                                 multiple
@@ -913,575 +1080,1013 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({ isOpen, onClose, onSave, 
                             <button
                                 type="button"
                                 onClick={handleAttachmentClick}
-                                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600"
+                                className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-xs hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600 transition-all"
                             >
-                                <PaperclipIcon className="w-4 h-4" />
+                                <PaperclipIcon className="w-3.5 h-3.5" />
                                 Anexar Arquivos
                             </button>
                         </div>
                         {(load.attachments && load.attachments.length > 0) && (
-                            <ul className="mt-2 space-y-1.5">
-                                {load.attachments.map((fileName, index) => {
-                                    const isImage = fileName.startsWith('data:image/') || /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(fileName);
-                                    return (
-                                        <li key={index} className="flex items-center justify-between text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700/50 p-2 rounded-lg border border-gray-200 dark:border-gray-600">
-                                            <div className="flex items-center gap-2 truncate">
-                                                {isImage ? (
-                                                    <>
-                                                        <img src={fileName} alt="Anexo" className="w-8 h-8 object-cover rounded border bg-white flex-shrink-0" />
-                                                        <span className="font-medium text-xs truncate">📸 Imagem Anexa #{index + 1}</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <PaperclipIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                                                        <span className="text-xs truncate">{fileName.length > 40 ? `${fileName.slice(0, 37)}...` : fileName}</span>
-                                                    </>
-                                                )}
-                                            </div>
-                                            <button type="button" onClick={() => handleRemoveAttachment(fileName)} className="p-1 text-red-500 hover:text-red-700 dark:hover:text-red-400 flex-shrink-0 ml-2" title="Remover anexo">
-                                                <XIcon className="w-4 h-4" />
-                                            </button>
-                                        </li>
-                                    );
-                                })}
+                            <ul className="mt-2.5 space-y-1">
+                                {load.attachments.map((fileName, index) => (
+                                    <li key={index} className="flex items-center justify-between text-xs text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-900/50 px-2.5 py-1.5 rounded-lg">
+                                        <span>{fileName}</span>
+                                        <button type="button" onClick={() => handleRemoveAttachment(fileName)} className="p-1 text-red-500 hover:text-red-700">
+                                            <XIcon className="w-3.5 h-3.5" />
+                                        </button>
+                                    </li>
+                                ))}
                             </ul>
                         )}
                     </div>
                 </div>
-
-                 <div className="border-t dark:border-gray-600 pt-4">
-                    <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Detalhes do Volume e Prazo</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Volume Total (ton)</label>
-                            <input name="totalVolume" value={load.totalVolume || ''} onChange={handleChange} type="number" placeholder="Ex: 5000" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Volume total contratado para a carga.</p>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Data de Início do Carregamento</label>
-                            <input name="loadingStartDate" value={load.loadingStartDate || ''} onChange={handleChange} type="date" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600"/>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Prazo de Carregamento</label>
-                            <input name="loadingDeadline" value={load.loadingDeadline || ''} onChange={handleChange} type="date" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600"/>
-                          </div>
-                        </div>
-                    </div>
-                    <div className="col-span-1 md:col-span-2 flex items-center space-x-6 pt-4">
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          name="requiresScheduling" 
-                          checked={load.requiresScheduling || false} 
-                          onChange={handleChange} 
-                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" 
-                        />
-                        <span className="text-sm text-gray-700 dark:text-gray-300">Exige Agendamento</span>
-                      </label>
-                      
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          name="requiresTracker" 
-                          checked={load.requiresTracker || false} 
-                          onChange={handleChange} 
-                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" 
-                        />
-                        <span className="text-sm text-gray-700 dark:text-gray-300">Precisa de Rastreador</span>
-                      </label>
-                    </div>
-                 </div>
             </div>
           )}
+
+          {/* STEP 2: Programação Diária */}
           {step === 2 && (
-             <div className="space-y-6">
-                 <div>
-                    <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Adicionar Nova Programação</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 items-end">
-                       <div className="flex flex-col">
-                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Datas</label>
-                         <DatePicker
-                           multiple
-                           value={newScheduleDates}
-                           onChange={setNewScheduleDates}
-                           format="DD/MM/YYYY"
-                           placeholder="Selecione as datas..."
-                           containerClassName="w-full mt-1"
-                           inputClass="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                         />
+             <div className="space-y-4">
+                 {/* Timeline Addition Card */}
+                 <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900/40 shadow-xs space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                       <div>
+                         <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Datas</label>
+                         <div className="grid grid-cols-2 gap-2">
+                            <input 
+                              type="date" 
+                              value={newScheduleStartDate} 
+                              onChange={(e) => setNewScheduleStartDate(e.target.value)} 
+                              className="py-2 px-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs text-gray-900 dark:text-white"
+                            />
+                            <input 
+                              type="date" 
+                              value={newScheduleEndDate} 
+                              min={newScheduleStartDate} 
+                              onChange={(e) => setNewScheduleEndDate(e.target.value)} 
+                              className="py-2 px-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs text-gray-900 dark:text-white"
+                            />
+                         </div>
                        </div>
                        <div>
-                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de Demanda</label>
-                         <select value={newScheduleType} onChange={(e) => setNewScheduleType(e.target.value as DailyScheduleType)} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600">
+                         <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Tipo de Demanda</label>
+                         <select 
+                           value={newScheduleType} 
+                           onChange={(e) => setNewScheduleType(e.target.value as DailyScheduleType)} 
+                           className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
+                         >
                            {Object.values(DailyScheduleType).map(type => <option key={type} value={type}>{type}</option>)}
                          </select>
                        </div>
                        <div>
-                            <input type="number" value={newScheduleTonnage || ''} onChange={(e) => setNewScheduleTonnage(parseFloat(e.target.value) || undefined)} placeholder="Toneladas" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                       </div>
-                       <div className="md:col-span-3">
-                         <button type="button" onClick={handleAddSchedule} className="w-full py-2 bg-primary text-white rounded-lg hover:bg-primary-dark">Adicionar à Timeline</button>
+                         <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Toneladas</label>
+                         <input 
+                           type="number" 
+                           value={newScheduleTonnage || ''} 
+                           onChange={(e) => setNewScheduleTonnage(parseFloat(e.target.value) || undefined)} 
+                           placeholder="Toneladas" 
+                           className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white" 
+                           step="0.01" 
+                           min="0.01"
+                         />
                        </div>
                     </div>
-                 </div>
-                 
-                 <div className="border-t dark:border-gray-600 pt-4 mt-4">
-                     <label className="flex items-center space-x-2 cursor-pointer w-fit">
-                         <input type="checkbox" name="requiresScheduling" checked={load.requiresScheduling} onChange={handleChange} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
-                         <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Exige Agendamento</span>
-                     </label>
-                     {load.requiresScheduling && (
-                         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                             <div>
-                                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Link do Sistema Externo</label>
-                                 <input
-                                     value={load.externalOrder?.link || ''}
-                                     onChange={(e) => setLoad(prev => ({ ...prev, externalOrder: { ...prev.externalOrder!, link: e.target.value } }))}
-                                     className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
-                                     placeholder="https://..."
-                                 />
-                             </div>
-                             <div>
-                                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Usuário</label>
-                                 <input
-                                     value={load.externalOrder?.user || ''}
-                                     onChange={(e) => setLoad(prev => ({ ...prev, externalOrder: { ...prev.externalOrder!, user: e.target.value } }))}
-                                     className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
-                                     placeholder="Login do sistema"
-                                 />
-                             </div>
-                             <div>
-                                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Senha</label>
-                                 <input
-                                     value={load.externalOrder?.password || ''}
-                                     onChange={(e) => setLoad(prev => ({ ...prev, externalOrder: { ...prev.externalOrder!, password: e.target.value } }))}
-                                     className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
-                                     placeholder="Senha"
-                                 />
-                             </div>
-                         </div>
-                     )}
+
+                    <button 
+                      type="button" 
+                      onClick={handleAddSchedule} 
+                      className="w-full py-2.5 bg-[#0F5132] hover:bg-[#0B3C21] text-white font-bold rounded-lg shadow-sm transition-all text-sm tracking-wide"
+                    >
+                      Adicionar à Timeline
+                    </button>
                  </div>
 
-                 <div className="border-t dark:border-gray-600 pt-4 mt-4">
-                    <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Timeline de Programação</h3>
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                 {/* Checkbox Exige Agendamento */}
+                 <div className="space-y-3 pt-1">
+                    <label className="flex items-center space-x-2.5 cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        name="requiresScheduling" 
+                        checked={load.requiresScheduling} 
+                        onChange={handleChange} 
+                        className="h-4 w-4 rounded border-gray-300 text-emerald-700 focus:ring-emerald-600" 
+                      />
+                      <span className="text-sm font-bold text-gray-800 dark:text-gray-200">Exige Agendamento</span>
+                    </label>
+
+                    {load.requiresScheduling && (
+                      <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900/40 shadow-xs space-y-2.5">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Link do Sistema Externo</label>
+                            <input 
+                              name="schedulingSystemUrl" 
+                              value={load.schedulingSystemUrl || ''} 
+                              onChange={handleChange} 
+                              placeholder="https://..." 
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Usuário</label>
+                            <input 
+                              name="schedulingUser" 
+                              value={load.schedulingUser || ''} 
+                              onChange={handleChange} 
+                              placeholder="Login do sistema" 
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Senha</label>
+                            <input 
+                              name="schedulingPassword" 
+                              type="password"
+                              value={load.schedulingPassword || ''} 
+                              onChange={handleChange} 
+                              placeholder="Senha" 
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                 </div>
+
+                 {/* Timeline List */}
+                 <div>
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Timeline de Programação</h3>
+                        {(load.dailySchedule || []).length > 0 && (
+                            <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/50 px-2.5 py-0.5 rounded-full">
+                                {(load.dailySchedule || []).length} dia(s) — {((load.dailySchedule || []).reduce((s, e) => s + (e.tonnage || 0), 0)).toLocaleString('pt-BR')} ton total
+                            </span>
+                        )}
+                    </div>
+                    <div className="space-y-1.5 max-h-52 overflow-y-auto pr-2">
                         {(load.dailySchedule || []).length > 0 ? (
                             (load.dailySchedule || []).map(entry => (
-                                <div key={entry.date} className="flex justify-between items-center p-2 border rounded-md dark:border-gray-600">
-                                    <div>
-                                        <p className="font-semibold text-gray-800 dark:text-gray-200">{new Date(entry.date + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400">{entry.type} ({entry.tonnage} ton)</p>
+                                <div key={entry.date} className="flex justify-between items-center p-2.5 border border-gray-200 rounded-lg dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xs">
+                                    <div className="flex items-center gap-3">
+                                        <p className="font-bold text-gray-800 dark:text-gray-200 text-xs w-24">{new Date(entry.date + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+                                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">{entry.type}</span>
+                                        <span className="text-xs font-bold text-gray-900 dark:text-white">{(entry.tonnage || 0).toLocaleString('pt-BR')} ton</span>
                                     </div>
-                                    <button type="button" onClick={() => handleRemoveSchedule(entry.date)} className="p-1 text-red-500 hover:text-red-700 dark:hover:text-red-400"><XIcon className="w-5 h-5"/></button>
+                                    <button type="button" onClick={() => handleRemoveSchedule(entry.date)} className="p-1 text-red-500 hover:text-red-700"><XIcon className="w-3.5 h-3.5"/></button>
                                 </div>
                             ))
                         ) : (
-                            <p className="text-center text-sm text-gray-500 dark:text-gray-400 py-4">Nenhuma programação diária definida.</p>
+                            <p className="text-center text-xs text-gray-400 dark:text-gray-500 py-4">Nenhuma programação diária definida.</p>
+                        )}
+                    </div>
+                 </div>
+
+                 {/* Visibilidade da Carga por Usuário - LIST VIEW */}
+                 <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900/40 shadow-xs space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 dark:border-gray-800 pb-2.5">
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <Users className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
+                                <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">
+                                    Visibilidade da Carga (Usuários Permitidos)
+                                </h3>
+                            </div>
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                Marque os usuários internos que têm permissão para visualizar e gerenciar esta carga.
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2 self-start sm:self-auto">
+                            <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-900 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-700 shadow-2xs">
+                                {(load.allowedUserIds || []).length} / {internalUsers.length} com acesso
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Barra de Busca e Ações em Massa */}
+                    <div className="flex flex-col sm:flex-row items-center gap-2">
+                        <div className="relative flex-1 w-full">
+                            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                                type="text"
+                                value={userSearchTerm}
+                                onChange={(e) => setUserSearchTerm(e.target.value)}
+                                placeholder="Buscar por nome ou perfil..."
+                                className="w-full pl-8 pr-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 outline-none"
+                            />
+                        </div>
+                        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                            <button
+                                type="button"
+                                onClick={handleSelectAllUsers}
+                                className="px-2.5 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors border border-emerald-200 dark:border-emerald-800"
+                            >
+                                Marcar Todos
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleDeselectAllUsers}
+                                className="px-2.5 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors border border-gray-200 dark:border-gray-700"
+                            >
+                                Limpar
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Tabela / Lista em Linhas */}
+                    <div className="max-h-52 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl divide-y divide-gray-100 dark:divide-gray-800 bg-gray-50/50 dark:bg-gray-900/30">
+                        {filteredInternalUsers.length > 0 ? (
+                            filteredInternalUsers.map((u) => {
+                                const isAllowed = (load.allowedUserIds || []).includes(u.id);
+                                return (
+                                    <div
+                                        key={u.id}
+                                        onClick={() => toggleUserAccess(u.id)}
+                                        className={`flex items-center justify-between p-2.5 cursor-pointer select-none transition-colors ${
+                                            isAllowed 
+                                                ? 'bg-emerald-50/40 dark:bg-emerald-950/20 hover:bg-emerald-50 dark:hover:bg-emerald-950/40' 
+                                                : 'hover:bg-gray-100 dark:hover:bg-gray-800/60'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3 min-w-0 pr-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={isAllowed}
+                                                onChange={() => {}} 
+                                                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 accent-emerald-600 cursor-pointer flex-shrink-0"
+                                            />
+                                            <span className={`text-xs font-bold truncate ${isAllowed ? 'text-emerald-950 dark:text-emerald-100' : 'text-gray-600 dark:text-gray-400'}`}>
+                                                {u.name}
+                                            </span>
+                                        </div>
+                                        <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full flex-shrink-0 border ${
+                                            isAllowed 
+                                                ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700' 
+                                                : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 border-gray-200 dark:border-gray-700'
+                                        }`}>
+                                            {u.profile}
+                                        </span>
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <p className="text-center text-xs text-gray-400 dark:text-gray-500 py-4">
+                                Nenhum usuário encontrado para a busca "{userSearchTerm}".
+                            </p>
                         )}
                     </div>
                  </div>
              </div>
           )}
+
+          {/* STEP 3: Valores e Regras */}
           {step === 3 && (
-            <div className="space-y-6">
-                <div className="border-t dark:border-gray-600 pt-4">
-                    <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">Valores de Frete (por Tonelada)</h3>
-                        <button type="button" onClick={() => setHasMultiLeg(prev => !prev)} className="flex items-center gap-1 text-sm font-medium text-primary hover:text-primary-dark dark:text-blue-400 dark:hover:text-blue-300">
-                            {hasMultiLeg ? (<><XIcon className="h-4 w-4" /><span>Remover Perna</span></>) : (<><PlusIcon className="h-4 w-4" /><span>Adicionar Perna</span></>)}
+            <div className="space-y-4">
+                
+                {/* Banner de Sugestão Inteligente de Rota */}
+                {loadingSuggestion && (
+                    <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 rounded-xl flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        <span>Consultando histórico de cargas e cotações na região (raio de 150km)...</span>
+                    </div>
+                )}
+
+                {routeSuggestion && (
+                    <div className="p-3.5 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/90 via-teal-50/60 to-blue-50/40 dark:from-emerald-950/40 dark:via-gray-800 dark:to-teal-950/30 dark:border-emerald-800/60 shadow-xs space-y-2.5">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                                <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                <span>
+                                    Sugestão: {routeSuggestion.source === 'cargo' ? 'Última Carga na Região' : 'Última Cotação na Região'}
+                                </span>
+                            </div>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300">
+                                {routeSuggestion.originDistanceKm === 0 && routeSuggestion.destinationDistanceKm === 0
+                                    ? 'Rota Exata'
+                                    : `Raio até ${Math.max(routeSuggestion.originDistanceKm, routeSuggestion.destinationDistanceKm)}km`}
+                            </span>
+                        </div>
+
+                        <div className="text-xs text-gray-700 dark:text-gray-300">
+                            <div className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400 mb-1.5">
+                                <History className="w-3.5 h-3.5" />
+                                <span>
+                                    {routeSuggestion.matchedOrigin} → {routeSuggestion.matchedDestination} • {new Date(routeSuggestion.date).toLocaleDateString('pt-BR')}
+                                    {routeSuggestion.clientName ? ` • ${routeSuggestion.clientName}` : ''}
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-emerald-100 dark:border-gray-700">
+                                    <div className="text-[10px] text-gray-500 uppercase font-semibold">Frete Empresa</div>
+                                    <div className="text-sm font-black text-gray-900 dark:text-white">
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(routeSuggestion.companyFreightRate)}
+                                        <span className="text-[10px] font-normal text-gray-400">/ton</span>
+                                    </div>
+                                </div>
+                                <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-emerald-100 dark:border-gray-700">
+                                    <div className="text-[10px] text-gray-500 uppercase font-semibold">Frete Motorista</div>
+                                    <div className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(routeSuggestion.driverFreightRate)}
+                                        <span className="text-[10px] font-normal text-gray-400">/ton</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => handleApplyLoadSuggestion(routeSuggestion)}
+                            className={`w-full py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs ${
+                                appliedSuggestion
+                                    ? 'bg-emerald-700 text-white'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            }`}
+                        >
+                            {appliedSuggestion ? (
+                                <>
+                                    <Check className="w-3.5 h-3.5" /> Valores Aplicados na Perna 1!
+                                </>
+                            ) : (
+                                <>
+                                    <Zap className="w-3.5 h-3.5" /> Preencher Automaticamente com Estes Valores
+                                </>
+                            )}
                         </button>
                     </div>
-                    {renderSuggestionBanner()}
-                    {/* Loop through destinations */}
-                    {(load.destinations || []).map((dest, destIdx) => {
-                        const leg1 = dest.freightLegs?.[0] || { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightHasTollPJ: false, driverFreightValuePerTonPF: 0, driverFreightHasTollPF: false, hasIcms: false, icmsPercentage: 0 };
-                        const leg2 = dest.freightLegs?.[1] || { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightValuePerTonPJ: 0, driverFreightHasTollPJ: false, driverFreightValuePerTonPF: 0, driverFreightHasTollPF: false, hasIcms: false, icmsPercentage: 0 };
-                        const totals = calculateDestinationTotals(dest);
-                        return (
-                            <div key={dest.id} className="mt-6 border-t dark:border-gray-700 pt-4">
-                                <h4 className="font-bold text-gray-800 dark:text-gray-200 mb-2">Destino: {dest.city || `Destino ${destIdx + 1}`}</h4>
-                                {/* Leg 1 */}
-                                <div className="p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-                                    <div className="flex justify-between items-center mb-3">
-                                        <h4 className="font-semibold text-gray-600 dark:text-gray-300">Perna 1</h4>
-                                        <label className="flex items-center space-x-2 cursor-pointer">
-                                            <input type="checkbox" checked={leg1.hasIcms} onChange={(e) => handleLegChange(destIdx, 0, 'hasIcms', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
-                                            <span className="text-sm text-gray-700 dark:text-gray-300">Incide ICMS</span>
-                                        </label>
-                                    </div>
-                                    <div className="space-y-3">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <div className="flex justify-between items-center mb-1">
-                                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Frete Empresa (R$/ton)</label>
-                                                    <label className="flex items-center space-x-1 cursor-pointer">
-                                                        <input 
-                                                            type="checkbox" 
-                                                            checked={!!leg1.companyFreightHasToll} 
-                                                            onChange={(e) => handleLegChange(destIdx, 0, 'companyFreightHasToll', e.target.checked)} 
-                                                            className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
-                                                        />
-                                                        <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">+ Pedágio</span>
-                                                    </label>
-                                                </div>
-                                                <input value={leg1.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(destIdx, 0, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                                            </div>
-                                            {leg1.hasIcms && (
-                                                <div>
-                                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ICMS (%)</label>
-                                                    <input value={leg1.icmsPercentage || ''} onChange={(e) => handleLegChange(destIdx, 0, 'icmsPercentage', e.target.value)} type="number" placeholder="%" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                             <div>
-                                                 <div className="flex justify-between items-center mb-1">
-                                                     <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400">Frete Motorista PJ (R$/ton)</label>
-                                                     <label className="flex items-center space-x-1 cursor-pointer">
-                                                         <input 
-                                                             type="checkbox" 
-                                                             checked={!!leg1.driverFreightHasTollPJ} 
-                                                             onChange={(e) => handleLegChange(destIdx, 0, 'driverFreightHasTollPJ', e.target.checked)} 
-                                                             className="h-3.5 w-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" 
-                                                         />
-                                                         <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">+ Pedágio</span>
-                                                     </label>
-                                                 </div>
-                                                 <input value={(leg1.driverFreightValuePerTonPJ !== undefined ? leg1.driverFreightValuePerTonPJ : '') || ''} onChange={(e) => handleLegChange(destIdx, 0, 'driverFreightValuePerTonPJ', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-emerald-200 dark:border-emerald-800 rounded dark:bg-gray-700" step="0.01"/>
-                                             </div>
-                                             <div>
-                                                 <div className="flex justify-between items-center mb-1">
-                                                     <label className={`block text-xs font-medium ${leg1.disableDriverFreightPF ? 'text-gray-400 line-through' : 'text-orange-600 dark:text-orange-400'}`}>
-                                                         Frete Motorista PF (R$/ton)
-                                                     </label>
-                                                     <div className="flex items-center space-x-2">
-                                                         <label className="flex items-center space-x-1 cursor-pointer">
-                                                             <input 
-                                                                 type="checkbox" 
-                                                                 disabled={!!leg1.disableDriverFreightPF}
-                                                                 checked={!!leg1.driverFreightHasTollPF} 
-                                                                 onChange={(e) => handleLegChange(destIdx, 0, 'driverFreightHasTollPF', e.target.checked)} 
-                                                                 className="h-3.5 w-3.5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
-                                                             />
-                                                             <span className="text-[10px] text-orange-600 dark:text-orange-400 font-medium">+ Pedágio</span>
-                                                         </label>
-                                                         <label className="flex items-center space-x-1 cursor-pointer">
-                                                             <input 
-                                                                 type="checkbox" 
-                                                                 checked={!!leg1.disableDriverFreightPF} 
-                                                                 onChange={(e) => {
-                                                                     handleLegChange(destIdx, 0, 'disableDriverFreightPF', e.target.checked);
-                                                                     if (e.target.checked) {
-                                                                         handleLegChange(destIdx, 0, 'driverFreightValuePerTonPF', 0);
-                                                                     }
-                                                                 }} 
-                                                                 className="h-3.5 w-3.5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
-                                                             />
-                                                             <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Desabilitar</span>
-                                                         </label>
-                                                     </div>
-                                                 </div>
-                                                 <input 
-                                                     value={leg1.disableDriverFreightPF ? 'N/A' : (leg1.driverFreightValuePerTonPF !== undefined ? leg1.driverFreightValuePerTonPF : '') || ''} 
-                                                     onChange={(e) => handleLegChange(destIdx, 0, 'driverFreightValuePerTonPF', e.target.value)} 
-                                                     type={leg1.disableDriverFreightPF ? 'text' : 'number'} 
-                                                     disabled={!!leg1.disableDriverFreightPF}
-                                                     placeholder="0,00" 
-                                                     className={`p-2 w-full border rounded dark:bg-gray-700 ${leg1.disableDriverFreightPF ? 'bg-gray-100 border-gray-200 text-gray-400 dark:bg-gray-800 dark:border-gray-700 cursor-not-allowed' : 'border-orange-200 dark:border-orange-800'}`} 
-                                                     step="0.01"
-                                                 />
-                                             </div>
-                                         </div>
-                                     </div>
-                                 </div>
-                                 {/* Leg 2 */}
-                                 {hasMultiLeg && (
-                                     <div className="mt-4 p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-                                         <div className="flex justify-between items-center mb-3"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Perna 2</h4>
-                                             <label className="flex items-center space-x-2 cursor-pointer">
-                                                 <input type="checkbox" checked={leg2.hasIcms} onChange={(e) => handleLegChange(destIdx, 1, 'hasIcms', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
-                                                 <span className="text-sm text-gray-700 dark:text-gray-300">Incide ICMS</span>
-                                             </label>
-                                         </div>
-                                         <div className="space-y-3">
-                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                 <div>
-                                                     <div className="flex justify-between items-center mb-1">
-                                                         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Frete Empresa (R$/ton)</label>
-                                                         <label className="flex items-center space-x-1 cursor-pointer">
-                                                             <input 
-                                                                 type="checkbox" 
-                                                                 checked={!!leg2.companyFreightHasToll} 
-                                                                 onChange={(e) => handleLegChange(destIdx, 1, 'companyFreightHasToll', e.target.checked)} 
-                                                                 className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
-                                                             />
-                                                             <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">+ Pedágio</span>
-                                                         </label>
-                                                     </div>
-                                                     <input value={leg2.companyFreightValuePerTon || ''} onChange={(e) => handleLegChange(destIdx, 1, 'companyFreightValuePerTon', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                                                 </div>
-                                                 {leg2.hasIcms && (
-                                                     <div>
-                                                         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ICMS (%)</label>
-                                                         <input value={leg2.icmsPercentage || ''} onChange={(e) => handleLegChange(destIdx, 1, 'icmsPercentage', e.target.value)} type="number" placeholder="%" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01"/>
-                                                     </div>
-                                                 )}
-                                             </div>
-                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                 <div>
-                                                     <div className="flex justify-between items-center mb-1">
-                                                         <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400">Frete Motorista PJ (R$/ton)</label>
-                                                         <label className="flex items-center space-x-1 cursor-pointer">
-                                                             <input 
-                                                                 type="checkbox" 
-                                                                 checked={!!leg2.driverFreightHasTollPJ} 
-                                                                 onChange={(e) => handleLegChange(destIdx, 1, 'driverFreightHasTollPJ', e.target.checked)} 
-                                                                 className="h-3.5 w-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" 
-                                                             />
-                                                             <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">+ Pedágio</span>
-                                                         </label>
-                                                     </div>
-                                                     <input value={(leg2.driverFreightValuePerTonPJ !== undefined ? leg2.driverFreightValuePerTonPJ : '') || ''} onChange={(e) => handleLegChange(destIdx, 1, 'driverFreightValuePerTonPJ', e.target.value)} type="number" placeholder="0,00" className="p-2 w-full border border-emerald-200 dark:border-emerald-800 rounded dark:bg-gray-700" step="0.01"/>
-                                                 </div>
-                                                 <div>
-                                                     <div className="flex justify-between items-center mb-1">
-                                                         <label className={`block text-xs font-medium ${leg2.disableDriverFreightPF ? 'text-gray-400 line-through' : 'text-orange-600 dark:text-orange-400'}`}>
-                                                             Frete Motorista PF (R$/ton)
-                                                         </label>
-                                                         <div className="flex items-center space-x-2">
-                                                             <label className="flex items-center space-x-1 cursor-pointer">
-                                                                 <input 
-                                                                     type="checkbox" 
-                                                                     disabled={!!leg2.disableDriverFreightPF}
-                                                                     checked={!!leg2.driverFreightHasTollPF} 
-                                                                     onChange={(e) => handleLegChange(destIdx, 1, 'driverFreightHasTollPF', e.target.checked)} 
-                                                                     className="h-3.5 w-3.5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
-                                                                 />
-                                                                 <span className="text-[10px] text-orange-600 dark:text-orange-400 font-medium">+ Pedágio</span>
-                                                             </label>
-                                                             <label className="flex items-center space-x-1 cursor-pointer">
-                                                                 <input 
-                                                                     type="checkbox" 
-                                                                     checked={!!leg2.disableDriverFreightPF} 
-                                                                     onChange={(e) => {
-                                                                         handleLegChange(destIdx, 1, 'disableDriverFreightPF', e.target.checked);
-                                                                         if (e.target.checked) {
-                                                                             handleLegChange(destIdx, 1, 'driverFreightValuePerTonPF', 0);
-                                                                         }
-                                                                     }} 
-                                                                     className="h-3.5 w-3.5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
-                                                                 />
-                                                                 <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Desabilitar</span>
-                                                             </label>
-                                                         </div>
-                                                     </div>
-                                                     <input 
-                                                         value={leg2.disableDriverFreightPF ? 'N/A' : (leg2.driverFreightValuePerTonPF !== undefined ? leg2.driverFreightValuePerTonPF : '') || ''} 
-                                                         onChange={(e) => handleLegChange(destIdx, 1, 'driverFreightValuePerTonPF', e.target.value)} 
-                                                         type={leg2.disableDriverFreightPF ? 'text' : 'number'} 
-                                                         disabled={!!leg2.disableDriverFreightPF}
-                                                         placeholder="0,00" 
-                                                         className={`p-2 w-full border rounded dark:bg-gray-700 ${leg2.disableDriverFreightPF ? 'bg-gray-100 border-gray-200 text-gray-400 dark:bg-gray-800 dark:border-gray-700 cursor-not-allowed' : 'border-orange-200 dark:border-orange-800'}`} 
-                                                         step="0.01"
-                                                     />
-                                                 </div>
-                                             </div>
-                                         </div>
-                                     </div>
-                                 )}
-                        {/* Totals */}
-                        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
-                                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Frete Empresa (Total)</label>
-                                <p className="text-lg font-bold text-gray-800 dark:text-gray-200">
-                                    {totals.totalCompanyFreight.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}
-                                    {totals.hasCompanyToll && <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 ml-1.5">+ Ped</span>}
-                                </p>
-                            </div>
-                            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-md border border-emerald-200 dark:border-emerald-800">
-                                <label className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Frete PJ / Margem PJ</label>
-                                <div className="flex items-center justify-between">
-                                    <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">
-                                        {totals.totalDriverFreightPJ.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}
-                                        {totals.hasDriverTollPJ && <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 ml-1.5">+ Ped</span>}
-                                    </p>
-                                    <span
-                                      className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(totals.marginPJ)}`}
-                                      title={(load.salespersonCommissionPerTon || 0) > 0 ? `Margem já deduz comissão de R$ ${(load.salespersonCommissionPerTon || 0).toFixed(2)}/ton` : 'Margem PJ'}
-                                    >{totals.netMarginPercentagePJ}</span>
-                                </div>
-                            </div>
-                            {!(dest.freightLegs?.some((leg: any) => leg.disableDriverFreightPF)) ? (
-                                <div className="p-3 bg-orange-50 dark:bg-orange-900/30 rounded-md border border-orange-200 dark:border-orange-800">
-                                    <label className="text-xs font-medium text-orange-600 dark:text-orange-400">Frete PF / Margem PF</label>
-                                    <div className="flex items-center justify-between">
-                                        <p className="text-lg font-bold text-orange-700 dark:text-orange-300">
-                                            {totals.totalDriverFreightPF.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}
-                                            {totals.hasDriverTollPF && <span className="text-xs font-semibold text-orange-600 dark:text-orange-400 ml-1.5">+ Ped</span>}
-                                        </p>
-                                        <span
-                                          className={`text-xs font-bold px-2 py-1 rounded ${getMarginColorClass(totals.marginPF)}`}
-                                          title={(load.salespersonCommissionPerTon || 0) > 0 ? `Margem já deduz comissão de R$ ${(load.salespersonCommissionPerTon || 0).toFixed(2)}/ton` : 'Margem PF'}
-                                        >{totals.netMarginPercentagePF}</span>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 opacity-60 flex flex-col justify-between">
-                                    <label className="text-xs font-medium text-gray-500">Frete PF / Margem PF</label>
-                                    <div className="flex items-center justify-between mt-1">
-                                        <p className="text-lg font-bold text-gray-400">Desabilitado</p>
-                                    </div>
-                                </div>
-                            )}
-                            {(load.salespersonCommissionPerTon || 0) > 0 && (
-                                <div className="md:col-span-3 flex items-center gap-2 px-3 py-2 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-md">
-                                    <span className="text-xs font-bold text-purple-600 dark:text-purple-400">Com. Vendedor Externo:</span>
-                                    <span className="text-xs font-bold text-purple-700 dark:text-purple-300">- {(load.salespersonCommissionPerTon || 0).toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}/ton</span>
-                                    <span className="text-[10px] text-purple-500 dark:text-purple-400 ml-1">(deduzida das margens acima)</span>
-                                </div>
-                            )}
+                )}
+
+                {/* Campo Obrigatório: Carga de Exportação */}
+                <div className={`p-3.5 rounded-xl border transition-all ${
+                    load.isExport === undefined 
+                        ? 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 shadow-sm' 
+                        : load.isExport 
+                            ? 'bg-blue-50/70 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800' 
+                            : 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
+                }`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-0.5">
+                            <label className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                                <Globe2 className={`h-4 w-4 ${load.isExport ? 'text-blue-600' : 'text-emerald-600'}`} />
+                                <span>Operação: A carga é destinada à exportação?</span>
+                                <span className="text-red-500 font-bold">*</span>
+                            </label>
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                {load.isExport === undefined ? (
+                                    <span className="text-amber-700 dark:text-amber-400 font-semibold">⚠️ Seleção obrigatória: informe se a carga é Exportação ou Mercado Interno.</span>
+                                ) : load.isExport ? (
+                                    <span className="text-blue-700 dark:text-blue-300 font-medium">✓ Carga classificada como <strong>Exportação</strong>.</span>
+                                ) : (
+                                    <span className="text-emerald-700 dark:text-emerald-300 font-medium">✓ Carga classificada como <strong>Mercado Interno (Nacional)</strong>.</span>
+                                )}
+                            </p>
                         </div>
-                            </div>
-                        );
-                    })}
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setLoad(prev => ({ ...prev, isExport: false }))}
+                                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border shadow-2xs ${
+                                    load.isExport === false
+                                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/20 ring-2 ring-emerald-400/40'
+                                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                }`}
+                            >
+                                <Check className={`w-3.5 h-3.5 ${load.isExport === false ? 'opacity-100' : 'opacity-0'}`} />
+                                <span>Não (Mercado Interno)</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setLoad(prev => ({ ...prev, isExport: true }))}
+                                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border shadow-2xs ${
+                                    load.isExport === true
+                                        ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20 ring-2 ring-blue-400/40'
+                                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                }`}
+                            >
+                                <Check className={`w-3.5 h-3.5 ${load.isExport === true ? 'opacity-100' : 'opacity-0'}`} />
+                                <span>Sim (Exportação)</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
-                {/* Vendedor Externo Section */}
-                <div className="border-t dark:border-gray-600 pt-4">
+                {/* Tipo de Cálculo de Frete */}
+                <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border border-gray-200 dark:border-gray-700">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                                Tipo de Valor de Frete
+                            </label>
+                            <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                                {load.freightCalculationType === FreightCalculationType.Fixed 
+                                    ? 'Valor total fixo por viagem (independente do peso)' 
+                                    : load.freightCalculationType === FreightCalculationType.PerTonPlusIcms 
+                                        ? 'Frete Empresa = (R$/ton × Peso) + ICMS (R$) | Motorista = R$/ton' 
+                                        : 'Frete calculado por tonelada carregada (R$/ton)'}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-gray-200/70 dark:bg-gray-800 p-1 rounded-lg self-start sm:self-auto">
+                            <button
+                                type="button"
+                                onClick={() => setLoad(prev => ({ ...prev, freightCalculationType: FreightCalculationType.PerTon }))}
+                                className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                                    (load.freightCalculationType || FreightCalculationType.PerTon) === FreightCalculationType.PerTon
+                                        ? 'bg-emerald-600 text-white shadow-xs'
+                                        : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                                }`}
+                            >
+                                <Check className={`w-3 h-3 ${(load.freightCalculationType || FreightCalculationType.PerTon) === FreightCalculationType.PerTon ? 'opacity-100' : 'opacity-0'}`} />
+                                <span>Por Tonelada</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setLoad(prev => ({ ...prev, freightCalculationType: FreightCalculationType.Fixed }))}
+                                className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                                    load.freightCalculationType === FreightCalculationType.Fixed
+                                        ? 'bg-emerald-600 text-white shadow-xs'
+                                        : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                                }`}
+                            >
+                                <Check className={`w-3 h-3 ${load.freightCalculationType === FreightCalculationType.Fixed ? 'opacity-100' : 'opacity-0'}`} />
+                                <span>Frete Fechado</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setLoad(prev => ({ ...prev, freightCalculationType: FreightCalculationType.PerTonPlusIcms }))}
+                                className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                                    load.freightCalculationType === FreightCalculationType.PerTonPlusIcms
+                                        ? 'bg-emerald-600 text-white shadow-xs'
+                                        : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                                }`}
+                            >
+                                <Check className={`w-3 h-3 ${load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'opacity-100' : 'opacity-0'}`} />
+                                <span>VLR P/ton + ICMS</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Header & Legs */}
+                <div>
                     <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">Comissão de Vendedor Externo</h3>
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                            {load.freightCalculationType === FreightCalculationType.Fixed ? 'Valores de Frete (Fixo)' : load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'Valores de Frete (P/ton + ICMS)' : 'Valores de Frete (por Tonelada)'}
+                        </h3>
+                        <button 
+                          type="button" 
+                          onClick={() => setHasMultiLeg(prev => !prev)} 
+                          className="flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-400"
+                        >
+                            {hasMultiLeg ? (<><XIcon className="h-3.5 w-3.5" /><span>Remover Perna</span></>) : (<><PlusIcon className="h-3.5 w-3.5" /><span>Adicionar Perna</span></>)}
+                        </button>
+                    </div>
+
+                    <p className="text-xs font-bold text-gray-600 dark:text-gray-300 mb-2">
+                      Destino: {load.destination || 'Cidade de Destino'}
+                    </p>
+
+                    {/* Leg 1 */}
+                    <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900/40 shadow-xs space-y-2.5">
+                        <div className="flex justify-between items-center border-b border-gray-100 dark:border-gray-800 pb-1.5">
+                            <h4 className="font-bold text-xs text-gray-800 dark:text-gray-200 uppercase tracking-wide">Perna 1</h4>
+                            {load.freightCalculationType !== FreightCalculationType.PerTonPlusIcms && (
+                                <label className="flex items-center space-x-1.5 cursor-pointer">
+                                    <input 
+                                      type="checkbox" 
+                                      checked={leg1.hasIcms} 
+                                      onChange={(e) => handleLegChange(0, 'hasIcms', e.target.checked)} 
+                                      className="h-3.5 w-3.5 rounded border-gray-300 text-emerald-700 focus:ring-emerald-600" 
+                                    />
+                                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Incide ICMS (%)</span>
+                                </label>
+                            )}
+                        </div>
+                        
+                        <div className={`grid grid-cols-1 sm:grid-cols-2 ${(leg1.hasIcms || load.freightCalculationType === FreightCalculationType.PerTonPlusIcms) ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-2.5`}>
+                            {/* Frete Empresa */}
+                            <div className="space-y-1">
+                                <div className="flex justify-between items-center">
+                                    <label className="block text-[11px] font-semibold text-gray-600 dark:text-gray-400">
+                                        {load.freightCalculationType === FreightCalculationType.Fixed 
+                                            ? 'Frete Empresa Fixo (R$)' 
+                                            : load.freightCalculationType === FreightCalculationType.PerTonPlusIcms 
+                                                ? 'Frete Empresa (R$/ton)' 
+                                                : 'Frete Empresa (R$/ton)'}
+                                    </label>
+                                    <label className="flex items-center space-x-1 cursor-pointer select-none" title="Indica que além do frete incide pedágio">
+                                        <input 
+                                          type="checkbox" 
+                                          checked={leg1.companyFreightHasToll || false} 
+                                          onChange={(e) => handleLegChange(0, 'companyFreightHasToll', e.target.checked)} 
+                                          className="h-3 w-3 rounded border-gray-300 text-emerald-700 focus:ring-emerald-600" 
+                                        />
+                                        <span className="text-[10px] font-bold text-gray-600 dark:text-gray-300">+ Pedágio</span>
+                                    </label>
+                                </div>
+                                <input 
+                                  value={leg1.companyFreightValuePerTon || ''} 
+                                  onChange={(e) => handleLegChange(0, 'companyFreightValuePerTon', e.target.value)} 
+                                  type="number" 
+                                  placeholder={load.freightCalculationType === FreightCalculationType.Fixed ? "Ex: 4000" : "Ex: 100"} 
+                                  className="py-1.5 px-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-bold text-sm focus:ring-2 focus:ring-emerald-600 shadow-2xs" 
+                                  step="0.01"
+                                />
+                            </div>
+
+                            {/* ICMS (%) */}
+                            {(load.freightCalculationType === FreightCalculationType.PerTonPlusIcms || leg1.hasIcms) && (
+                                <div className="space-y-1">
+                                    <div className="flex justify-between items-center">
+                                        <label className={`block text-[11px] font-semibold ${load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wide' : 'text-gray-600 dark:text-gray-400'}`}>
+                                            ICMS (%)
+                                        </label>
+                                        {load.freightCalculationType === FreightCalculationType.PerTonPlusIcms && (leg1.companyFreightValuePerTon || 0) > 0 && (leg1.icmsPercentage || 0) > 0 ? (
+                                            <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                                                +{((leg1.companyFreightValuePerTon || 0) * ((leg1.icmsPercentage || 0) / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/t
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                    <input 
+                                      value={leg1.icmsPercentage || ''} 
+                                      onChange={(e) => handleLegChange(0, 'icmsPercentage', e.target.value)} 
+                                      type="number" 
+                                      placeholder="Ex: 12" 
+                                      className={`py-1.5 px-2.5 w-full border ${load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'border-2 border-blue-400 dark:border-blue-500 font-bold' : 'border-gray-300 dark:border-gray-600'} rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white shadow-2xs`} 
+                                      step="0.01"
+                                    />
+                                </div>
+                            )}
+
+                            {/* Frete Motorista PJ */}
+                            <div className="space-y-1">
+                                <div className="flex justify-between items-center">
+                                    <label className="block text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
+                                        {load.freightCalculationType === FreightCalculationType.Fixed 
+                                            ? 'Frete Motorista PJ Fixo (R$)' 
+                                            : 'Frete Motorista PJ (R$/ton)'}
+                                    </label>
+                                    <label className="flex items-center space-x-1 cursor-pointer select-none" title="Indica que além do frete incide pedágio">
+                                        <input 
+                                          type="checkbox" 
+                                          checked={leg1.driverFreightHasToll || false} 
+                                          onChange={(e) => handleLegChange(0, 'driverFreightHasToll', e.target.checked)} 
+                                          className="h-3 w-3 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" 
+                                        />
+                                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">+ Pedágio</span>
+                                    </label>
+                                </div>
+                                <input 
+                                  value={leg1.driverFreightValuePerTon || ''} 
+                                  onChange={(e) => handleLegChange(0, 'driverFreightValuePerTon', e.target.value)} 
+                                  type="number" 
+                                  placeholder={load.freightCalculationType === FreightCalculationType.Fixed ? "Ex: 3200" : "Ex: 80"} 
+                                  className="py-1.5 px-2.5 w-full border-2 border-emerald-400 dark:border-emerald-500 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-bold text-sm focus:ring-2 focus:ring-emerald-500 shadow-2xs" 
+                                  step="0.01"
+                                />
+                            </div>
+
+                            {/* Frete Motorista PF */}
+                            <div className="space-y-1">
+                                <div className="flex justify-between items-center">
+                                    <label className="block text-[11px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wide">
+                                        {load.freightCalculationType === FreightCalculationType.Fixed 
+                                            ? 'Frete Motorista PF Fixo (R$)' 
+                                            : 'Frete Motorista PF (R$/ton)'}
+                                    </label>
+                                    <div className="flex items-center space-x-1.5">
+                                        <label className="flex items-center space-x-1 cursor-pointer select-none" title="Indica que além do frete incide pedágio">
+                                            <input 
+                                              type="checkbox" 
+                                              disabled={leg1.disablePfFreight} 
+                                              checked={leg1.driverFreightPfHasToll || false} 
+                                              onChange={(e) => handleLegChange(0, 'driverFreightPfHasToll', e.target.checked)} 
+                                              className="h-3 w-3 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
+                                            />
+                                            <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400">+ Ped</span>
+                                        </label>
+                                        <label className="flex items-center space-x-1 cursor-pointer select-none">
+                                            <input 
+                                              type="checkbox" 
+                                              checked={leg1.disablePfFreight || false} 
+                                              onChange={(e) => handleLegChange(0, 'disablePfFreight', e.target.checked)} 
+                                              className="h-3 w-3 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
+                                            />
+                                            <span className="text-[10px] text-gray-500 dark:text-gray-400">Off</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <input 
+                                  value={leg1.disablePfFreight ? '' : (leg1.driverFreightValuePerTonPf ?? (leg1.driverFreightValuePerTon || ''))} 
+                                  onChange={(e) => handleLegChange(0, 'driverFreightValuePerTonPf', e.target.value)} 
+                                  type="number" 
+                                  disabled={leg1.disablePfFreight} 
+                                  placeholder={load.freightCalculationType === FreightCalculationType.Fixed ? "Ex: 3200" : "Ex: 80"} 
+                                  className={`py-1.5 px-2.5 w-full border-2 border-orange-300 dark:border-orange-500/70 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-bold text-sm focus:ring-2 focus:ring-orange-500 shadow-2xs ${leg1.disablePfFreight ? 'bg-gray-100 dark:bg-gray-900 opacity-50 cursor-not-allowed' : ''}`} 
+                                  step="0.01"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Leg 2 if active */}
+                    {hasMultiLeg && (
+                        <div className="mt-2.5 p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900/40 shadow-xs space-y-2.5">
+                            <div className="flex justify-between items-center border-b border-gray-100 dark:border-gray-800 pb-1.5">
+                                <h4 className="font-bold text-xs text-gray-800 dark:text-gray-200 uppercase tracking-wide">Perna 2</h4>
+                                {load.freightCalculationType !== FreightCalculationType.PerTonPlusIcms && (
+                                    <label className="flex items-center space-x-1.5 cursor-pointer">
+                                        <input 
+                                          type="checkbox" 
+                                          checked={leg2.hasIcms} 
+                                          onChange={(e) => handleLegChange(1, 'hasIcms', e.target.checked)} 
+                                          className="h-3.5 w-3.5 rounded border-gray-300 text-emerald-700 focus:ring-emerald-600" 
+                                        />
+                                        <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Incide ICMS (%)</span>
+                                    </label>
+                                )}
+                            </div>
+                            
+                            <div className={`grid grid-cols-1 sm:grid-cols-2 ${(leg2.hasIcms || load.freightCalculationType === FreightCalculationType.PerTonPlusIcms) ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-2.5`}>
+                                <div className="space-y-1">
+                                    <div className="flex justify-between items-center">
+                                        <label className="block text-[11px] font-semibold text-gray-600 dark:text-gray-400">
+                                            {load.freightCalculationType === FreightCalculationType.Fixed 
+                                                ? 'Frete Empresa Fixo (R$)' 
+                                                : 'Frete Empresa (R$/ton)'}
+                                        </label>
+                                        <label className="flex items-center space-x-1 cursor-pointer select-none" title="Indica que além do frete incide pedágio">
+                                            <input 
+                                              type="checkbox" 
+                                              checked={leg2.companyFreightHasToll || false} 
+                                              onChange={(e) => handleLegChange(1, 'companyFreightHasToll', e.target.checked)} 
+                                              className="h-3 w-3 rounded border-gray-300 text-emerald-700 focus:ring-emerald-600" 
+                                            />
+                                            <span className="text-[10px] font-bold text-gray-600 dark:text-gray-300">+ Pedágio</span>
+                                        </label>
+                                    </div>
+                                    <input 
+                                      value={leg2.companyFreightValuePerTon || ''} 
+                                      onChange={(e) => handleLegChange(1, 'companyFreightValuePerTon', e.target.value)} 
+                                      type="number" 
+                                      placeholder={load.freightCalculationType === FreightCalculationType.Fixed ? "Ex: 4000" : "0"} 
+                                      className="py-1.5 px-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-bold text-sm shadow-2xs" 
+                                      step="0.01"
+                                    />
+                                </div>
+
+                                {(load.freightCalculationType === FreightCalculationType.PerTonPlusIcms || leg2.hasIcms) && (
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between items-center">
+                                            <label className={`block text-[11px] font-semibold ${load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wide' : 'text-gray-600 dark:text-gray-400'}`}>
+                                                ICMS (%)
+                                            </label>
+                                            {load.freightCalculationType === FreightCalculationType.PerTonPlusIcms && (leg2.companyFreightValuePerTon || 0) > 0 && (leg2.icmsPercentage || 0) > 0 ? (
+                                                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                                                    +{((leg2.companyFreightValuePerTon || 0) * ((leg2.icmsPercentage || 0) / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/t
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                        <input 
+                                          value={leg2.icmsPercentage || ''} 
+                                          onChange={(e) => handleLegChange(1, 'icmsPercentage', e.target.value)} 
+                                          type="number" 
+                                          placeholder="Ex: 12" 
+                                          className={`py-1.5 px-2.5 w-full border ${load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'border-2 border-blue-400 dark:border-blue-500 font-bold' : 'border-gray-300 dark:border-gray-600'} rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white shadow-2xs`} 
+                                          step="0.01"
+                                        />
+                                    </div>
+                                )}
+
+                                <div className="space-y-1">
+                                    <div className="flex justify-between items-center">
+                                        <label className="block text-[11px] font-bold text-emerald-600 uppercase tracking-wide">
+                                            {load.freightCalculationType === FreightCalculationType.Fixed 
+                                                ? 'Frete PJ Fixo (R$)' 
+                                                : 'Frete PJ (R$/ton)'}
+                                        </label>
+                                        <label className="flex items-center space-x-1 cursor-pointer select-none" title="Indica que além do frete incide pedágio">
+                                            <input 
+                                              type="checkbox" 
+                                              checked={leg2.driverFreightHasToll || false} 
+                                              onChange={(e) => handleLegChange(1, 'driverFreightHasToll', e.target.checked)} 
+                                              className="h-3 w-3 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" 
+                                            />
+                                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">+ Pedágio</span>
+                                        </label>
+                                    </div>
+                                    <input 
+                                      value={leg2.driverFreightValuePerTon || ''} 
+                                      onChange={(e) => handleLegChange(1, 'driverFreightValuePerTon', e.target.value)} 
+                                      type="number" 
+                                      placeholder={load.freightCalculationType === FreightCalculationType.Fixed ? "Ex: 3200" : "0"} 
+                                      className="py-1.5 px-2.5 w-full border-2 border-emerald-400 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-bold text-sm shadow-2xs" 
+                                      step="0.01"
+                                    />
+                                </div>
+
+                                <div className="space-y-1">
+                                    <div className="flex justify-between items-center">
+                                        <label className="block text-[11px] font-bold text-orange-600 uppercase tracking-wide">
+                                            {load.freightCalculationType === FreightCalculationType.Fixed 
+                                                ? 'Frete PF Fixo (R$)' 
+                                                : 'Frete PF (R$/ton)'}
+                                        </label>
+                                        <label className="flex items-center space-x-1 cursor-pointer select-none" title="Indica que além do frete incide pedágio">
+                                            <input 
+                                              type="checkbox" 
+                                              checked={leg2.driverFreightPfHasToll || false} 
+                                              onChange={(e) => handleLegChange(1, 'driverFreightPfHasToll', e.target.checked)} 
+                                              className="h-3 w-3 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
+                                            />
+                                            <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400">+ Ped</span>
+                                        </label>
+                                    </div>
+                                    <input 
+                                      value={leg2.driverFreightValuePerTonPf || ''} 
+                                      onChange={(e) => handleLegChange(1, 'driverFreightValuePerTonPf', e.target.value)} 
+                                      type="number" 
+                                      placeholder={load.freightCalculationType === FreightCalculationType.Fixed ? "Ex: 3200" : "0"} 
+                                      className="py-1.5 px-2.5 w-full border-2 border-orange-300 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-bold text-sm shadow-2xs" 
+                                      step="0.01"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Summary Cards Row (Margins) */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                    {/* Card 1: Frete Empresa */}
+                    <div className="p-2.5 bg-gray-100 dark:bg-gray-900/60 rounded-xl border border-gray-200 dark:border-gray-800 flex items-center justify-between">
+                        <div>
+                            <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                                {load.freightCalculationType === FreightCalculationType.Fixed 
+                                    ? 'Frete Empresa (Fixo Total)' 
+                                    : load.freightCalculationType === FreightCalculationType.PerTonPlusIcms 
+                                        ? 'Frete Empresa (Total Est.)' 
+                                        : 'Frete Empresa (Total R$/ton)'}
+                            </span>
+                            <p className="text-base font-black text-gray-900 dark:text-white">
+                              {displayCompanyFreightTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              {hasCompanyToll && <span className="ml-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
+                            </p>
+                            {load.freightCalculationType === FreightCalculationType.PerTonPlusIcms && (
+                                <span className="text-[10px] text-gray-500 dark:text-gray-400 block">
+                                    Base: {totalCompanyFreight.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/t + {leg1.icmsPercentage || 0}% ICMS (+{((totalCompanyFreight * ((leg1.icmsPercentage || 0) / 100))).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/t)
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Card 2: Frete PJ / Margem PJ */}
+                    <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-center justify-between">
+                        <div>
+                            <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider block">
+                                {load.freightCalculationType === FreightCalculationType.Fixed ? 'Frete PJ (Fixo) / Margem' : 'Frete PJ / Margem PJ'}
+                            </span>
+                            <p className="text-base font-black text-emerald-900 dark:text-emerald-300">
+                              {displayDriverFreightPjTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              {hasDriverPjToll && <span className="ml-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
+                            </p>
+                        </div>
+                        <span className="bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200 text-xs font-extrabold px-2 py-0.5 rounded-md">
+                          {marginPjPercentage}
+                        </span>
+                    </div>
+
+                    {/* Card 3: Frete PF / Margem PF */}
+                    <div className="p-2.5 bg-orange-50 dark:bg-orange-950/30 rounded-xl border border-orange-200 dark:border-orange-800 flex items-center justify-between">
+                        <div>
+                            <span className="text-[10px] font-bold text-orange-700 dark:text-orange-400 uppercase tracking-wider block">
+                                {load.freightCalculationType === FreightCalculationType.Fixed ? 'Frete PF (Fixo) / Margem' : 'Frete PF / Margem PF'}
+                            </span>
+                            <p className="text-base font-black text-orange-900 dark:text-orange-300">
+                              {displayDriverFreightPfTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              {hasDriverPfToll && <span className="ml-1 text-xs font-bold text-orange-600 dark:text-orange-400">+ Ped</span>}
+                            </p>
+                        </div>
+                        <span className="bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200 text-xs font-extrabold px-2 py-0.5 rounded-md">
+                          {marginPfPercentage}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Comissão de Vendedor Externo */}
+                <div className="border-t dark:border-gray-700 pt-4">
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Comissão de Vendedor Externo</h3>
                         {!showSalesperson && (
                             <button 
                                 type="button" 
                                 onClick={() => setShowSalesperson(true)}
-                                className="flex items-center gap-1 text-sm font-medium text-primary hover:text-primary-dark dark:text-blue-400"
+                                className="flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-400"
                             >
-                                <UserPlusIcon className="h-4 w-4" />
+                                <UserPlusIcon className="h-3.5 w-3.5" />
                                 <span>Adicionar Vendedor</span>
                             </button>
                         )}
                     </div>
 
                     {showSalesperson && (
-                        <div className="p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-                            <div className="flex justify-between items-center mb-3">
-                                <h4 className="font-semibold text-gray-600 dark:text-gray-300">Dados do Vendedor</h4>
+                        <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900/40 shadow-xs space-y-2.5">
+                            <div className="flex justify-between items-center">
+                                <h4 className="font-bold text-xs text-gray-500 uppercase tracking-wider">Dados do Vendedor</h4>
                                 <button 
                                     type="button" 
                                     onClick={() => {
                                         setShowSalesperson(false);
                                         setLoad(prev => ({ ...prev, salespersonName: '', salespersonCommissionPerTon: 0 }));
                                     }}
-                                    className="text-xs text-red-500 hover:text-red-700"
+                                    className="text-xs font-bold text-red-500 hover:text-red-700"
                                 >
                                     Remover
                                 </button>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Nome do Vendedor</label>
+                                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Nome do Vendedor</label>
                                     <input 
                                         name="salespersonName" 
                                         value={load.salespersonName || ''} 
                                         onChange={handleChange} 
                                         placeholder="Ex: João da Silva" 
-                                        className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600"
+                                        className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Comissão (R$/Ton)</label>
+                                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Comissão (R$/Ton)</label>
                                     <input 
                                         name="salespersonCommissionPerTon" 
                                         value={load.salespersonCommissionPerTon || ''} 
                                         onChange={handleChange} 
                                         type="number" 
                                         placeholder="Ex: 2,00" 
-                                        className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" 
+                                        className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white" 
                                         step="0.01"
                                     />
                                 </div>
                             </div>
-                            <p className="mt-2 text-xs text-purple-600 dark:text-purple-400 font-medium italic bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800 rounded px-2 py-1">
-                                ⚠️ A comissão é deduzida diretamente das margens de lucro (PJ e PF) e tratada como custo do frete.
-                            </p>
                         </div>
                     )}
                 </div>
-                 <div className="border-t dark:border-gray-600 pt-4">
-                    <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Tipos de Veículos Permitidos</h3>
-                    {/* New UI for allowed vehicle types */}
-                    <div className="p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+
+                {/* Tipos de Veículos Permitidos */}
+                <div className="border-t dark:border-gray-700 pt-4 space-y-3">
+                    <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Tipos de Veículos Permitidos</h3>
+                    
+                    <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900/40 shadow-xs space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de Conjunto</label>
-                                <select value={currentSetType} onChange={(e) => setCurrentSetType(e.target.value as VehicleSetType)} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600">
+                                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Tipo de Conjunto</label>
+                                <select 
+                                  value={currentSetType} 
+                                  onChange={(e) => setCurrentSetType(e.target.value as VehicleSetType)} 
+                                  className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
+                                >
                                     {Object.values(VehicleSetType).map(st => <option key={st} value={st}>{st}</option>)}
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Carrocerias</label>
-                                <div className="flex gap-4 mt-2">
+                                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Carrocerias</label>
+                                <div className="flex flex-wrap gap-3">
                                     {Object.values(VehicleBodyType).map(bt => (
-                                        <label key={bt} className="flex items-center space-x-2 cursor-pointer">
-                                            <input type="checkbox" checked={currentBodyTypes.includes(bt)} onChange={() => handleToggleBodyType(bt)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"/>
-                                            <span className="text-sm text-gray-700 dark:text-gray-300">{bt}</span>
+                                        <label key={bt} className="flex items-center space-x-1.5 cursor-pointer select-none">
+                                            <input 
+                                              type="checkbox" 
+                                              checked={currentBodyTypes.includes(bt)} 
+                                              onChange={() => handleToggleBodyType(bt)} 
+                                              className="h-3.5 w-3.5 rounded border-gray-300 text-emerald-700 focus:ring-emerald-600"
+                                            />
+                                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{bt}</span>
                                         </label>
                                     ))}
                                 </div>
                             </div>
                         </div>
-                        <button type="button" onClick={handleAddAllowedType} className="w-full py-2 bg-primary-dark text-white rounded-lg hover:bg-primary">Adicionar Regra</button>
+                        <button 
+                          type="button" 
+                          onClick={handleAddAllowedType} 
+                          className="w-full py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold rounded-lg transition-all text-xs"
+                        >
+                          Adicionar Regra
+                        </button>
                     </div>
-                    {/* Display added types */}
+
+                    {/* Display Added Rules Pills */}
                     {(load.allowedVehicleTypes && load.allowedVehicleTypes.length > 0) && (
-                        <div className="mt-4 space-y-2">
+                        <div className="space-y-1.5">
                             {load.allowedVehicleTypes.map(avt => (
-                                <div key={avt.setType} className="flex justify-between items-center p-2 bg-blue-100/50 dark:bg-blue-900/20 rounded-md">
-                                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                                        <span className="font-bold">{avt.setType}:</span> {avt.bodyTypes?.join(', ') || ''}
+                                <div 
+                                  key={avt.setType} 
+                                  className="flex justify-between items-center p-2.5 bg-blue-50/80 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800/50 rounded-lg shadow-2xs"
+                                >
+                                    <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">
+                                        <span className="font-bold">{avt.setType}:</span> {avt.bodyTypes.join(', ')}
                                     </p>
-                                    <button type="button" onClick={() => handleRemoveAllowedType(avt.setType)} className="p-1 text-red-500 hover:text-red-700 dark:hover:text-red-400"><XIcon className="w-4 h-4"/></button>
+                                    <button 
+                                      type="button" 
+                                      onClick={() => handleRemoveAllowedType(avt.setType)} 
+                                      className="p-1 text-red-500 hover:text-red-700"
+                                    >
+                                      <XIcon className="w-3.5 h-3.5"/>
+                                    </button>
                                 </div>
                             ))}
                         </div>
                     )}
                 </div>
 
-                {currentUser.profile === UserProfile.Admin && (
-                    <div className="border-t dark:border-gray-600 pt-4">
-                        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Administração</h3>
+                {/* Administração */}
+                <div className="border-t dark:border-gray-700 pt-4 space-y-3">
+                    <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Administração</h3>
+                    
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Comercial Responsável</label>
+                        <select 
+                          name="createdById" 
+                          value={load.createdById || currentUser.id} 
+                          onChange={handleChange} 
+                          className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
+                        >
+                            {commercialUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                        </select>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Comercial Responsável</label>
-                            <select name="createdById" value={load.createdById} onChange={handleChange} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600">{commercialUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Produto</label>
+                            <select 
+                              name="productId" 
+                              value={load.productId} 
+                              onChange={handleChange} 
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white" 
+                              required
+                            >
+                                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Status da Carga</label>
+                            <select 
+                              name="status" 
+                              value={load.status} 
+                              onChange={handleChange} 
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
+                            >
+                                {Object.values(CargoStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
                         </div>
                     </div>
-                )}
-                <div className="border-t dark:border-gray-600 pt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Produto</label>
-                        <select name="productId" value={load.productId} onChange={handleChange} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status da Carga</label>
-                        <select name="status" value={load.status} onChange={handleChange} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600">{Object.values(CargoStatus).map(s => <option key={s} value={s}>{s}</option>)}</select>
-                    </div>
                 </div>
+
             </div>
           )}
+          </div>
+
+          {/* Footer Navigation */}
+          <div className="mt-6 flex justify-between items-center border-t dark:border-gray-700 pt-4">
+              <div>
+                  {step > 1 && (
+                    <button 
+                      type="button" 
+                      onClick={prevStep} 
+                      className="py-2.5 px-5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold rounded-xl transition-all"
+                    >
+                      Anterior
+                    </button>
+                  )}
+              </div>
+              <div className="flex items-center space-x-3">
+                  <button 
+                    type="button" 
+                    onClick={onClose} 
+                    className="py-2.5 px-4 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white font-semibold transition-all"
+                  >
+                    Cancelar
+                  </button>
+
+                  {step < STEPS.length && (
+                    <button 
+                      type="button" 
+                      onClick={nextStep} 
+                      className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] text-white font-bold rounded-xl shadow-md transition-all active:scale-95"
+                    >
+                      Próximo
+                    </button>
+                  )}
+
+                  {step === STEPS.length && (
+                    <button 
+                      type="submit" 
+                      disabled={isSubmitting}
+                      className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] text-white font-bold rounded-xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      {isSubmitting ? 'Salvando...' : 'Salvar Carga'}
+                    </button>
+                  )}
+              </div>
+          </div>
         </form>
 
-        <div className="mt-8 flex justify-between items-center border-t dark:border-gray-700 pt-4">
-            <div>
-                {step > 1 && <button type="button" onClick={prevStep} className="py-2 px-4 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">Anterior</button>}
-            </div>
-            <div className="flex items-center space-x-4">
-                <button type="button" onClick={onClose} className="py-2 px-4 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">Cancelar</button>
-                {step < STEPS.length && <button type="button" onClick={nextStep} className="py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary-dark">Próximo</button>}
-                {step === STEPS.length && <button type="submit" onClick={handleSubmit} className="py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary-dark">Salvar Alterações</button>}
-            </div>
-        </div>
       </div>
     </div>
   );

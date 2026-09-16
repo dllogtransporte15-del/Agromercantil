@@ -1,8 +1,8 @@
 
 import React from 'react';
-import { formatCpfCnpj } from '../utils/formatters';
 
 export interface ClientFilters {
+  id: string;
   nomeFantasia: string;
   cnpj: string;
   cityState: string;
@@ -17,15 +17,12 @@ interface ClientFilterProps {
 const ClientFilter: React.FC<ClientFilterProps> = ({ filters, onFilterChange }) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    let formattedValue = value;
-    if (name === 'cnpj') {
-      formattedValue = formatCpfCnpj(value);
-    }
-    onFilterChange({ ...filters, [name]: formattedValue });
+    onFilterChange({ ...filters, [name]: value });
   };
 
   const clearFilters = () => {
     onFilterChange({
+      id: '',
       nomeFantasia: '',
       cnpj: '',
       cityState: '',
@@ -35,8 +32,19 @@ const ClientFilter: React.FC<ClientFilterProps> = ({ filters, onFilterChange }) 
 
   return (
     <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md mb-6 border dark:border-gray-700">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Text Filters */}
+        <div>
+          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">ID de Registro</label>
+          <input 
+            type="text" 
+            name="id" 
+            value={filters.id} 
+            onChange={handleInputChange} 
+            placeholder="Ex: CLI-100..." 
+            className="mt-1 p-2 w-full border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+          />
+        </div>
         <div>
           <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Nome Fantasia</label>
           <input 
@@ -44,7 +52,7 @@ const ClientFilter: React.FC<ClientFilterProps> = ({ filters, onFilterChange }) 
             name="nomeFantasia" 
             value={filters.nomeFantasia} 
             onChange={handleInputChange} 
-            placeholder="Filtrar por nome fantasia..." 
+            placeholder="Filtrar por nome..." 
             className="mt-1 p-2 w-full border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
           />
         </div>
@@ -66,7 +74,7 @@ const ClientFilter: React.FC<ClientFilterProps> = ({ filters, onFilterChange }) 
             name="cityState" 
             value={filters.cityState} 
             onChange={handleInputChange} 
-            placeholder="Filtrar por cidade ou UF..." 
+            placeholder="Filtrar por cidade/UF..." 
             className="mt-1 p-2 w-full border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
           />
         </div>
@@ -82,10 +90,10 @@ const ClientFilter: React.FC<ClientFilterProps> = ({ filters, onFilterChange }) 
           />
         </div>
 
-        <div className="flex items-end lg:col-start-4">
+        <div className="flex items-end lg:col-span-5 justify-end">
             <button 
               onClick={clearFilters} 
-              className="w-full py-2 px-4 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500 transition-colors"
+              className="py-2 px-4 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500 transition-colors"
             >
                 Limpar Filtros
             </button>

@@ -1,6 +1,6 @@
 
 import React, { useMemo } from 'react';
-import type { Shipment, Cargo } from '../../types';
+import type { Shipment, Cargo, Client } from '../../types';
 import { ShipmentStatus } from '../../types';
 import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { PackageIcon } from '../icons/PackageIcon';
@@ -9,6 +9,7 @@ import { UsersIcon } from '../icons/UsersIcon';
 interface ExternalSalespersonReportProps {
   shipments: Shipment[];
   cargos: Cargo[];
+  clients?: Client[];
 }
 
 interface ExternalSalespersonStats {
@@ -25,22 +26,23 @@ const StatCard: React.FC<{ title: string, value: string | number, icon: React.Re
         : value;
 
     return (
-        <div className="flex items-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg shadow-sm border border-gray-100 dark:border-gray-600">
-            <div className="p-2 bg-white dark:bg-gray-800 rounded-full shadow-inner">
+        <div className="flex items-center p-4 bg-gray-50 dark:bg-gray-700/60 rounded-xl shadow-xs border border-gray-100 dark:border-gray-600/50">
+            <div className="p-2 bg-white dark:bg-gray-800 rounded-xl shadow-xs border border-gray-100 dark:border-gray-700/50 flex-shrink-0">
                 {icon}
             </div>
-            <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">{displayValue}</p>
+            <div className="ml-3 min-w-0 flex-1">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-300 truncate">{title}</p>
+                <p className="text-lg font-black text-gray-900 dark:text-white truncate">{displayValue}</p>
             </div>
         </div>
     );
 };
 
-const ExternalSalespersonReport: React.FC<ExternalSalespersonReportProps> = ({ shipments, cargos }) => {
+const ExternalSalespersonReport: React.FC<ExternalSalespersonReportProps> = ({ shipments, cargos, clients = [] }) => {
   
   const statsList = useMemo<ExternalSalespersonStats[]>(() => {
     const cargoMap: Map<string, Cargo> = new Map(cargos.map(c => [c.id, c]));
+    const clientMap: Map<string, Client> = new Map(clients.map(cl => [cl.id, cl]));
     const loadedStatuses = [
         ShipmentStatus.AguardandoNota,
         ShipmentStatus.AguardandoAdiantamento,
@@ -56,10 +58,17 @@ const ExternalSalespersonReport: React.FC<ExternalSalespersonReportProps> = ({ s
         if (!loadedStatuses.includes(shipment.status)) return;
         
         const cargo = cargoMap.get(shipment.cargoId);
-        if (!cargo || !cargo.salespersonName || !cargo.salespersonCommissionPerTon) return;
+        if (!cargo) return;
 
-        const name = cargo.salespersonName;
-        const commission = shipment.shipmentTonnage * cargo.salespersonCommissionPerTon;
+        const parentClient = clientMap.get(cargo.clientId);
+        const name = cargo.salespersonName || parentClient?.salespersonName;
+        const rate = (cargo.salespersonCommissionPerTon !== undefined && cargo.salespersonCommissionPerTon > 0)
+          ? cargo.salespersonCommissionPerTon
+          : (parentClient?.salespersonCommissionPerTon || 0);
+
+        if (!name || !rate || rate <= 0) return;
+
+        const commission = shipment.shipmentTonnage * rate;
 
         const current = statsMap.get(name) || {
             name,
@@ -73,7 +82,9 @@ const ExternalSalespersonReport: React.FC<ExternalSalespersonReportProps> = ({ s
             shipments
                 .filter(s => {
                     const c = cargoMap.get(s.cargoId);
-                    return c?.salespersonName === name;
+                    const cl = c ? clientMap.get(c.clientId) : undefined;
+                    const cName = c?.salespersonName || cl?.salespersonName;
+                    return cName === name;
                 })
                 .map(s => s.cargoId)
         );
@@ -88,7 +99,7 @@ const ExternalSalespersonReport: React.FC<ExternalSalespersonReportProps> = ({ s
     });
 
     return Array.from(statsMap.values()).sort((a, b) => b.totalCommission - a.totalCommission);
-  }, [shipments, cargos]);
+  }, [shipments, cargos, clients]);
 
   const totals = useMemo(() => {
       return statsList.reduce((acc, curr) => ({

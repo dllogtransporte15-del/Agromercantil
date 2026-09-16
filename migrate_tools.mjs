@@ -6,10 +6,10 @@
  * diretamente no Supabase SQL Editor.
  * 
  * Se este script falhar por permissão, cole o SQL abaixo direto no SQL Editor do Supabase:
- * https://supabase.com/dashboard/project/gyvnhvnuidrfmqzielmv/sql/new
+ * https://supabase.com/dashboard/project/smolfvbunrgqsgaazbpx/sql/new
  */
 
-const SUPABASE_URL = 'https://gyvnhvnuidrfmqzielmv.supabase.co';
+const SUPABASE_URL = 'https://smolfvbunrgqsgaazbpx.supabase.co';
 
 // Para DDL precisamos de service_role key - por favor adicione no .env.local como SUPABASE_SERVICE_ROLE_KEY
 // ou cole o SQL abaixo no SQL Editor do Supabase Dashboard
@@ -86,6 +86,6 @@ CREATE POLICY "tool_quotes_user_policy" ON tool_quotes
 `;
 
 console.log('=== SQL para executar no Supabase SQL Editor ===');
-console.log('URL: https://supabase.com/dashboard/project/gyvnhvnuidrfmqzielmv/sql/new');
+console.log('URL: https://supabase.com/dashboard/project/smolfvbunrgqsgaazbpx/sql/new');
 console.log('');
 console.log(SQL);

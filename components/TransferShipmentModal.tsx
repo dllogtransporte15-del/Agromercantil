@@ -17,7 +17,9 @@ const TransferShipmentModal: React.FC<TransferShipmentModalProps> = ({ isOpen, o
   const [selectedEmbarcadorId, setSelectedEmbarcadorId] = useState('');
 
   const embarcadores = useMemo(() => {
-    return users.filter(u => u.profile === UserProfile.Embarcador);
+    return users
+      .filter(u => u.active !== false && u.profile !== UserProfile.Motorista && u.profile !== UserProfile.Cliente)
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   }, [users]);
 
   useEffect(() => {

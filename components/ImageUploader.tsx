@@ -2,6 +2,7 @@
 import React, { useRef, useState } from 'react';
 import { UploadIcon } from './icons/UploadIcon';
 import { XIcon } from './icons/XIcon';
+import { compressImage } from '../utils/imageCompressor';
 
 interface ImageUploaderProps {
   title: string;
@@ -12,20 +13,21 @@ interface ImageUploaderProps {
   maxSizeMB?: number;
 }
 
-const ImageUploader: React.FC<ImageUploaderProps> = ({ title, description, currentImage, onSave, onRemove, maxSizeMB = 2 }) => {
+const ImageUploader: React.FC<ImageUploaderProps> = ({ title, description, currentImage, onSave, onRemove, maxSizeMB = 10 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleButtonClick = () => {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!['image/jpeg', 'image/png', 'image/svg+xml', 'image/gif'].includes(file.type)) {
-      setError(`Tipo de arquivo inválido. Use JPG, PNG, GIF ou SVG.`);
+    if (!['image/jpeg', 'image/png', 'image/svg+xml', 'image/gif', 'image/webp'].includes(file.type)) {
+      setError(`Tipo de arquivo inválido. Use JPG, PNG, WEBP, GIF ou SVG.`);
       return;
     }
     if (file.size > maxSizeMB * 1024 * 1024) {
@@ -33,13 +35,24 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ title, description, curre
       return;
     }
     setError('');
+    setIsProcessing(true);
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      onSave(reader.result as string);
-    };
-    reader.readAsDataURL(file);
-    event.target.value = ''; // Reset file input
+    try {
+      const isLogo = title.toLowerCase().includes('logo');
+      const compressed = await compressImage(
+        file,
+        isLogo ? 600 : 1920,
+        isLogo ? 600 : 1080,
+        0.82
+      );
+      onSave(compressed);
+    } catch (err) {
+      console.error('Erro ao processar imagem:', err);
+      setError('Falha ao otimizar a imagem. Tente outro arquivo.');
+    } finally {
+      setIsProcessing(false);
+      event.target.value = ''; // Reset file input
+    }
   };
 
   return (
@@ -55,7 +68,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ title, description, curre
               <span className="text-xs mt-1 block">Sem Imagem</span>
             </div>
           )}
-          {currentImage && onRemove && (
+          {currentImage && onRemove && !isProcessing && (
             <button
               onClick={onRemove}
               className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
@@ -63,6 +76,11 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ title, description, curre
             >
               <XIcon className="w-4 h-4" />
             </button>
+          )}
+          {isProcessing && (
+            <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-xs font-medium">
+              Otimizando...
+            </div>
           )}
         </div>
         <div className="flex-1">
@@ -74,14 +92,26 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ title, description, curre
             ref={fileInputRef}
             onChange={handleFileChange}
             className="hidden"
-            accept="image/png, image/jpeg, image/gif, image/svg+xml"
+            accept="image/png, image/jpeg, image/gif, image/svg+xml, image/webp"
           />
-          <button
-            onClick={handleButtonClick}
-            className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark"
-          >
-            {currentImage ? 'Alterar Imagem' : 'Carregar Imagem'}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleButtonClick}
+              disabled={isProcessing}
+              className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50"
+            >
+              {isProcessing ? 'Processando...' : currentImage ? 'Alterar Imagem' : 'Carregar Imagem'}
+            </button>
+            {currentImage && onRemove && (
+              <button
+                onClick={onRemove}
+                disabled={isProcessing}
+                className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                Remover Imagem
+              </button>
+            )}
+          </div>
           {error && <p className="text-red-500 text-xs mt-2 font-medium">{error}</p>}
         </div>
       </div>

@@ -135,7 +135,7 @@ const EditPriceModal: React.FC<EditPriceModalProps> = ({ isOpen, onClose, onSave
 
             <div className="bg-gray-50 dark:bg-gray-900/40 p-3 rounded-md border border-gray-100 dark:border-gray-700">
                 <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">
-                    <span className="text-primary dark:text-blue-400">INFO:</span> Alterar um valor recalculará o outro automaticamente com base na tonelagem carregada ({shipment.shipmentTonnage.toLocaleString('pt-BR')} ton).
+                    <span className="text-primary dark:text-blue-400">INFO:</span> Alterar um valor recalculará o outro automaticamente com base na tonelagem carregada ({(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton).
                 </p>
             </div>
 

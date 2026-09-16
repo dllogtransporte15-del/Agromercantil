@@ -2,7 +2,7 @@
 import type { User, Page, ProfilePermissions, CrudPermissions } from './types';
 import { UserProfile } from './types';
 
-const allPages: Page[] = ['dashboard', 'clients', 'owners', 'embarcadores', 'drivers', 'vehicles', 'loads', 'shipments', 'financial', 'reports', 'operational-loads', 'operational-map', 'users-register', 'commissions', 'appearance', 'shipment-history', 'load-history', 'layover-calculator', 'freight-quote', 'ai-assistant', 'tools-history', 'branches', 'system-monitor'];
+const allPages: Page[] = ['dashboard', 'clients', 'owners', 'embarcadores', 'drivers', 'vehicles', 'loads', 'products', 'shipments', 'financial', 'reports', 'operational-loads', 'operational-map', 'users-register', 'commissions', 'appearance', 'shipment-history', 'load-history', 'layover-calculator', 'freight-quote', 'ai-assistant', 'tools-history', 'branches', 'system-monitor', 'freight-offers-history', 'risk-management', 'risk-query-types'];
 
 const createPermissions = (pages: Page[], readOnly = false): { [key in Page]?: CrudPermissions } => {
   const permissions: { [key in Page]?: CrudPermissions } = {};
@@ -18,47 +18,55 @@ const createPermissions = (pages: Page[], readOnly = false): { [key in Page]?: C
   return permissions;
 };
 
-const diretorPages = allPages.filter(p => p !== 'appearance');
-const coordenadorPages = diretorPages.filter(p => p !== 'users-register');
+const supervisorAndDiretorPages = allPages.filter(p => p !== 'appearance');
 export const INITIAL_PERMISSIONS: ProfilePermissions = {
-  [UserProfile.Comercial]: createPermissions(['dashboard', 'clients', 'owners', 'drivers', 'vehicles', 'loads', 'shipments', 'reports', 'operational-loads', 'financial', 'operational-map', 'commissions', 'shipment-history', 'load-history', 'layover-calculator', 'freight-quote', 'tools-history']),
-  [UserProfile.Fiscal]: createPermissions(['dashboard', 'shipments', 'reports', 'shipment-history', 'load-history'], true),
-  [UserProfile.Financeiro]: createPermissions(['dashboard', 'shipments', 'reports', 'financial', 'commissions', 'shipment-history', 'load-history'], true),
-  [UserProfile.Embarcador]: createPermissions(['dashboard', 'reports', 'operational-loads', 'shipments', 'operational-map', 'shipment-history', 'load-history', 'layover-calculator'], true),
-  [UserProfile.Cliente]: createPermissions(['dashboard', 'loads', 'shipments', 'shipment-history', 'load-history'], true),
-  [UserProfile.Coordenador]: createPermissions(coordenadorPages),
-  [UserProfile.Diretor]: createPermissions(diretorPages), // Full permissions
+  [UserProfile.Comercial]: createPermissions(['dashboard', 'clients', 'owners', 'drivers', 'vehicles', 'loads', 'shipments', 'reports', 'operational-loads', 'financial', 'operational-map', 'commissions', 'shipment-history', 'load-history', 'layover-calculator', 'freight-quote', 'freight-offers-history', 'risk-management', 'risk-query-types']),
+  [UserProfile.Fiscal]: createPermissions(['dashboard', 'shipments', 'shipment-history', 'load-history', 'risk-management', 'risk-query-types'], true),
+  [UserProfile.Financeiro]: createPermissions(['dashboard', 'shipments', 'reports', 'financial', 'commissions', 'shipment-history', 'load-history', 'risk-management', 'risk-query-types'], true),
+  [UserProfile.Embarcador]: createPermissions(['dashboard', 'reports', 'operational-loads', 'shipments', 'operational-map', 'shipment-history', 'load-history', 'layover-calculator', 'risk-management'], true),
+  [UserProfile.Agenciador]: createPermissions(['dashboard', 'reports', 'operational-loads', 'shipments', 'operational-map', 'shipment-history', 'load-history', 'layover-calculator', 'risk-management', 'clients', 'loads', 'products', 'vehicles', 'drivers', 'embarcadores', 'freight-quote']),
+  [UserProfile.Cliente]: createPermissions(['dashboard', 'loads', 'shipments', 'shipment-history', 'load-history', 'operational-loads', 'freight-offers-history', 'reports'], true),
+  [UserProfile.Supervisor]: createPermissions(supervisorAndDiretorPages),
+  [UserProfile.Diretor]: createPermissions(supervisorAndDiretorPages, true),
+  [UserProfile.Motorista]: createPermissions(['operational-loads', 'shipment-history'], true),
+  [UserProfile.GerenciadoraDeRisco]: createPermissions(['dashboard', 'shipments', 'shipment-history', 'load-history', 'operational-loads', 'operational-map', 'reports', 'drivers', 'vehicles', 'loads', 'clients', 'products', 'owners', 'embarcadores', 'risk-management', 'risk-query-types']),
+  [UserProfile.Demonstracao]: createPermissions(allPages, true),
 };
 
 if (INITIAL_PERMISSIONS[UserProfile.Fiscal] && INITIAL_PERMISSIONS[UserProfile.Fiscal]!['shipments']) {
     INITIAL_PERMISSIONS[UserProfile.Fiscal]!['shipments']!.delete = true;
 }
 
-// Specifically grant 'create' and 'update' permission for 'shipments' to 'Embarcador' profile
+// Specifically grant 'create' permission for 'shipments' to 'Embarcador' profile
 if (INITIAL_PERMISSIONS[UserProfile.Embarcador] && INITIAL_PERMISSIONS[UserProfile.Embarcador]!['shipments']) {
     INITIAL_PERMISSIONS[UserProfile.Embarcador]!['shipments']!.create = true;
-    INITIAL_PERMISSIONS[UserProfile.Embarcador]!['shipments']!.update = true;
 }
 
-// Diretor e Coordenador can do everything EXCEPT delete cargas (loads) and embarques (shipments)
-if (INITIAL_PERMISSIONS[UserProfile.Diretor]) {
-    if (INITIAL_PERMISSIONS[UserProfile.Diretor]!['loads']) {
-        INITIAL_PERMISSIONS[UserProfile.Diretor]!['loads']!.delete = false;
+// Specifically ensure 'update' and 'create' permissions for 'GerenciadoraDeRisco' profile
+if (INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]) {
+    if (INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-management']) {
+        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-management']!.update = true;
+        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-management']!.create = true;
     }
-    if (INITIAL_PERMISSIONS[UserProfile.Diretor]!['shipments']) {
-        INITIAL_PERMISSIONS[UserProfile.Diretor]!['shipments']!.delete = false;
+    if (INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-query-types']) {
+        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-query-types']!.update = true;
+        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-query-types']!.create = true;
     }
-}
-
-if (INITIAL_PERMISSIONS[UserProfile.Coordenador]) {
-    if (INITIAL_PERMISSIONS[UserProfile.Coordenador]!['loads']) {
-        INITIAL_PERMISSIONS[UserProfile.Coordenador]!['loads']!.delete = false;
-    }
-    if (INITIAL_PERMISSIONS[UserProfile.Coordenador]!['shipments']) {
-        INITIAL_PERMISSIONS[UserProfile.Coordenador]!['shipments']!.delete = false;
+    if (INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['shipments']) {
+        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['shipments']!.update = true;
     }
 }
 
+
+export const isDemoUser = (user: User | null | undefined): boolean => {
+  if (!user) return false;
+  return (
+    user.profile === UserProfile.Demonstracao ||
+    (user.profile as string) === 'Demo' ||
+    (user.profile as string) === 'Demonstração' ||
+    Boolean(user.name && user.name.toUpperCase().includes('DEMONSTRA'))
+  );
+};
 
 export const can = (
   action: keyof CrudPermissions,
@@ -68,23 +76,26 @@ export const can = (
 ): boolean => {
   if (!user) return false;
   
+  // Demonstracao / Demo user can ONLY read (all pages), never create, update or delete
+  if (isDemoUser(user)) {
+    return action === 'read';
+  }
+
   // Admin can do everything, always.
   if (user.profile === UserProfile.Admin) return true;
 
-  // HARDCODED OVERRIDES
-  if (user.profile === UserProfile.Coordenador) {
-     if (page === 'users-register') return false; // Never access Gerenciar Usuarios
-     if (page === 'branches') return true; // Always access Filiais
-  }
-  if (user.profile === UserProfile.Diretor) {
-     if (page === 'branches') return true; // Diretor also needs Filiais
+  // Explicitly block 'reports' for 'Fiscal' profile as requested, overriding DB
+  if (user.profile === UserProfile.Fiscal && page === 'reports') return false;
+
+  // Check User-specific custom permissions first
+  if (user.customPermissions && user.customPermissions[page]) {
+    return user.customPermissions[page]![action];
   }
 
   const userProfilePermissions = permissions[user.profile];
-  if (!userProfilePermissions) return false;
-
-  const pagePermissions = userProfilePermissions[page];
+  const pagePermissions = userProfilePermissions?.[page] ?? INITIAL_PERMISSIONS[user.profile]?.[page];
   if (!pagePermissions) return false;
 
   return pagePermissions[action];
 };
+

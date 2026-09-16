@@ -40,10 +40,10 @@ const BranchesPage: React.FC<BranchesPageProps> = ({
         <div>
           <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight flex items-center gap-3">
             <Building2 className="w-8 h-8 text-primary" />
-            Unidades Operacionais & Filiais
+            Gestão de Filiais
           </h1>
           <p className="mt-1 text-gray-500 dark:text-gray-400">
-            Cadastre e gerencie as unidades operacionais da empresa para controle e apuração de resultados.
+            Cadastre e gerencie as unidades da empresa para controle de resultados.
           </p>
         </div>
         {canManage && (
@@ -52,7 +52,7 @@ const BranchesPage: React.FC<BranchesPageProps> = ({
             className="flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold shadow-lg shadow-primary/20 transition-all active:scale-95 group"
           >
             <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
-            Cadastrar Unidade
+            Nova Filial
           </button>
         )}
       </div>

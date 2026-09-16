@@ -1,25 +1,25 @@
-
 import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
-import { Activity, CheckCircle2, AlertCircle, RefreshCw, Code, Database, Globe, Zap, Sliders } from 'lucide-react';
+import { Activity, CheckCircle2, AlertCircle, RefreshCw, Code, Database, Globe } from 'lucide-react';
 import { supabase } from '../supabase';
+import { UserProfile } from '../types';
+
+import type { User, ProfilePermissions } from '../types';
 
 interface ServiceStatus {
   name: string;
-  status: 'ok' | 'warning' | 'error' | 'loading' | string;
+  status: 'ok' | 'warning' | 'error' | 'loading';
   message: string;
   latency?: number;
 }
 
 interface SystemMonitorPageProps {
-  isSimplifiedWorkflowEnabled?: boolean;
-  onToggleSimplifiedWorkflow?: (enabled: boolean) => void;
+  currentUser?: User;
+  profilePermissions?: ProfilePermissions;
+  onSavePermissions?: (permissions: ProfilePermissions) => void;
 }
 
-const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({
-  isSimplifiedWorkflowEnabled = false,
-  onToggleSimplifiedWorkflow,
-}) => {
+const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({ currentUser, profilePermissions, onSavePermissions }) => {
   const [statuses, setStatuses] = useState<Record<string, ServiceStatus>>({
     github: { name: 'GitHub Infrastructure', status: 'loading', message: 'Verificando...' },
     supabase: { name: 'Supabase Database', status: 'loading', message: 'Verificando...' },
@@ -27,22 +27,6 @@ const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({
   });
   const [lastCheck, setLastCheck] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const [localSimplified, setLocalSimplified] = useState<boolean>(() => {
-    return isSimplifiedWorkflowEnabled || localStorage.getItem('isSimplifiedWorkflowEnabled') === 'true';
-  });
-
-  useEffect(() => {
-    setLocalSimplified(isSimplifiedWorkflowEnabled);
-  }, [isSimplifiedWorkflowEnabled]);
-
-  const handleToggle = (newValue: boolean) => {
-    setLocalSimplified(newValue);
-    localStorage.setItem('isSimplifiedWorkflowEnabled', String(newValue));
-    if (onToggleSimplifiedWorkflow) {
-      onToggleSimplifiedWorkflow(newValue);
-    }
-  };
 
   const checkStatus = async () => {
     setIsRefreshing(true);
@@ -131,80 +115,13 @@ const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Header title="Saúde do Sistema & Auditoria" />
+      <Header title="Monitoramento do Sistema" />
       
-      <div className="p-6 max-w-4xl mx-auto space-y-8">
-
-        {/* Global Operational Settings Card: Modo de Embarque Simplificado */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border-2 border-blue-100 dark:border-blue-900/50 shadow-md p-6 overflow-hidden transition-all">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div className="space-y-2 max-w-2xl">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2.5 bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-xl border border-blue-200 dark:border-blue-800">
-                  <Zap className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                      Modo de Embarque Simplificado
-                    </h3>
-                    <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
-                      localSimplified
-                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                    }`}>
-                      {localSimplified ? 'Ativado ⚡' : 'Desativado'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5">
-                    Controle global do fluxo de solicitações e esteira operacional
-                  </p>
-                </div>
-              </div>
-
-              <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed pl-0 md:pl-12">
-                {localSimplified ? (
-                  <span className="text-blue-700 dark:text-blue-300 font-medium">
-                    ⚡ <strong>Função Ativa:</strong> As solicitações de embarque serão sempre simplificadas (sem campos de proprietário/carretas/dados bancários/tag) e a tela <strong>Operacional &gt; Embarques</strong> exibirá exclusivamente os status do fluxo simplificado (<em>Ag. Seguradora → Ag. Carregamento → Ag. Nota → Ag. Descarga → Finalizado</em>), com anexos opcionais.
-                  </span>
-                ) : (
-                  <span>
-                    Fluxo normal ativo. As solicitações de embarque exigem todos os dados cadastrais completos e a tela <strong>Operacional &gt; Embarques</strong> exibe todas as abas e regras de validação completas.
-                  </span>
-                )}
-              </p>
-            </div>
-
-            {/* Toggle Button */}
-            <div className="flex flex-col items-center md:items-end gap-2 flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => handleToggle(!localSimplified)}
-                className={`relative inline-flex h-8 w-16 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                  localSimplified ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
-                }`}
-                role="switch"
-                aria-checked={localSimplified}
-              >
-                <span
-                  aria-hidden="true"
-                  className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                    localSimplified ? 'translate-x-8' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-              <span className="text-xs font-bold text-gray-600 dark:text-gray-400">
-                {localSimplified ? 'Clique para Desligar' : 'Clique para Ligar'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between mb-6">
+      <div className="p-6 max-w-4xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
             <div>
-              <h2 className="text-xl font-bold text-gray-800 dark:text-white">Estado dos Serviços</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Verificação em tempo real da infraestrutura do sistema</p>
+                <h2 className="text-xl font-bold text-gray-800 dark:text-white">Estado dos Serviços</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Verificação em tempo real da infraestrutura do sistema</p>
             </div>
             <button 
                 onClick={checkStatus} 
@@ -214,9 +131,9 @@ const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({
                 <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 <span className="text-sm font-medium">Atualizar</span>
             </button>
-          </div>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             {Object.entries(statuses).map(([key, service]) => (
                 <div key={key} className={`p-6 rounded-xl border-2 transition-all ${getStatusColor(service.status)}`}>
                     <div className="flex items-center justify-between mb-4">
@@ -237,7 +154,6 @@ const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({
                     )}
                 </div>
             ))}
-          </div>
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6">
@@ -267,8 +183,71 @@ const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({
             </div>
         </div>
 
+        {currentUser?.profile === UserProfile.Admin && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 mt-6">
+                <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                    <Globe className="w-5 h-5 text-indigo-500" />
+                    Controles do Sistema (Suporte)
+                </h3>
+                
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between p-4 border rounded-lg dark:border-gray-700">
+                        <div>
+                            <h4 className="font-bold text-gray-800 dark:text-white">Portal do Motorista</h4>
+                            <p className="text-sm text-gray-500">Habilita ou desabilita o acesso dos motoristas ao sistema.</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                                type="checkbox" 
+                                className="sr-only peer"
+                                checked={profilePermissions?.system_settings?.driver_portal_enabled !== false}
+                                onChange={(e) => {
+                                    if (profilePermissions && onSavePermissions) {
+                                        onSavePermissions({
+                                            ...profilePermissions,
+                                            system_settings: {
+                                                ...profilePermissions.system_settings,
+                                                driver_portal_enabled: e.target.checked
+                                            }
+                                        });
+                                    }
+                                }}
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                        </label>
+                    </div>
+                    
+                    <div className="flex items-center justify-between p-4 border rounded-lg dark:border-gray-700">
+                        <div>
+                            <h4 className="font-bold text-gray-800 dark:text-white">Sistema Instalável (PWA)</h4>
+                            <p className="text-sm text-gray-500">Permite que o sistema seja instalado como aplicativo nos dispositivos.</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                                type="checkbox" 
+                                className="sr-only peer"
+                                checked={profilePermissions?.system_settings?.pwa_enabled !== false}
+                                onChange={(e) => {
+                                    if (profilePermissions && onSavePermissions) {
+                                        onSavePermissions({
+                                            ...profilePermissions,
+                                            system_settings: {
+                                                ...profilePermissions.system_settings,
+                                                pwa_enabled: e.target.checked
+                                            }
+                                        });
+                                    }
+                                }}
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        )}
+
         <p className="mt-8 text-center text-xs text-gray-400 uppercase tracking-widest">
-            Agromarcantil Logística - Painel de Controle de Infraestrutura
+            Agromercantil Logística - Painel de Controle de Infraestrutura
         </p>
       </div>
     </div>

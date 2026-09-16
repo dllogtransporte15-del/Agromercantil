@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import type { Embarcador } from '../types';
+import { autoFormatInput } from '../utils/formatters';
 
 interface ArmadorFormModalProps {
   isOpen: boolean;
@@ -26,7 +27,8 @@ const ArmadorFormModal: React.FC<ArmadorFormModalProps> = ({ isOpen, onClose, on
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setArmador(prev => ({ ...prev, [name]: value }));
+    const formattedValue = autoFormatInput(name, value);
+    setArmador(prev => ({ ...prev, [name]: formattedValue }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {

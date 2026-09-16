@@ -4,6 +4,7 @@ import type { Owner } from '../types';
 import { VehicleSetType, VehicleBodyType, DriverClassification } from '../types';
 
 export interface VehicleFilters {
+  id: string;
   plate: string;
   setType: string;
   bodyType: string;
@@ -25,6 +26,7 @@ const VehicleFilter: React.FC<VehicleFilterProps> = ({ owners, filters, onFilter
 
   const clearFilters = () => {
     onFilterChange({
+      id: '',
       plate: '',
       setType: '',
       bodyType: '',
@@ -35,8 +37,19 @@ const VehicleFilter: React.FC<VehicleFilterProps> = ({ owners, filters, onFilter
 
   return (
     <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md mb-6 border dark:border-gray-700">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         {/* Text Filter */}
+        <div>
+          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">ID de Registro</label>
+          <input 
+            type="text" 
+            name="id" 
+            value={filters.id} 
+            onChange={handleInputChange} 
+            placeholder="Ex: VEH-100..." 
+            className="mt-1 p-2 w-full border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+          />
+        </div>
         <div>
           <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Placa</label>
           <input 

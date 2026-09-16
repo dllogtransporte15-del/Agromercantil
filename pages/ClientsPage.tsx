@@ -1,26 +1,38 @@
-
 import React, { useState, useRef, useMemo } from 'react';
 import Header from '../components/Header';
 import ClientTable from '../components/ClientTable';
 import ClientFormModal from '../components/ClientFormModal';
+import MergeClientsModal from '../components/MergeClientsModal';
 import ClientFilter, { ClientFilters } from '../components/ClientFilter';
 import type { Client, User, ProfilePermissions } from '../types';
 import { PaymentMethod } from '../types';
-import Pagination from '../components/Pagination';
 import { can } from '../auth';
+import { Merge, Plus, Upload, Download } from 'lucide-react';
 
 interface ClientsPageProps {
   clients: Client[];
   setClients: React.Dispatch<React.SetStateAction<Client[]>>;
   onSaveClient: (clientData: Client | Omit<Client, 'id'>) => void;
+  onDeleteClient: (clientId: string) => void;
+  onMergeClients?: (targetClientId: string, sourceClientIds: string[]) => Promise<void>;
   currentUser: User;
   profilePermissions: ProfilePermissions;
 }
 
-const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveClient, currentUser, profilePermissions }) => {
+const ClientsPage: React.FC<ClientsPageProps> = ({
+  clients,
+  setClients,
+  onSaveClient,
+  onDeleteClient,
+  onMergeClients,
+  currentUser,
+  profilePermissions,
+}) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [clientToEdit, setClientToEdit] = useState<Client | null>(null);
   const [filters, setFilters] = useState<ClientFilters>({
+    id: '',
     nomeFantasia: '',
     cnpj: '',
     cityState: '',
@@ -28,42 +40,34 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 50;
-
   const canCreate = can('create', currentUser, 'clients', profilePermissions);
   const canUpdate = can('update', currentUser, 'clients', profilePermissions);
   const canDelete = can('delete', currentUser, 'clients', profilePermissions);
 
   const filteredClients = useMemo(() => {
     return clients.filter(client => {
+      const idMatch = !filters.id || (client.id && client.id.toLowerCase().includes(filters.id.toLowerCase()));
       const nomeFantasiaMatch = !filters.nomeFantasia || client.nomeFantasia.toLowerCase().includes(filters.nomeFantasia.toLowerCase());
-      const cnpjMatch = !filters.cnpj || client.cnpj.includes(filters.cnpj);
+      
+      // Also match in secondary CNPJs
+      const allCnpjs = [client.cnpj, ...(client.secondaryCnpjs || []).map(b => b.cnpj)].filter(Boolean);
+      const cnpjMatch = !filters.cnpj || allCnpjs.some(c => c.includes(filters.cnpj));
       
       const cityStateLower = filters.cityState.toLowerCase();
-      const cityStateMatch = !filters.cityState || 
-        client.city.toLowerCase().includes(cityStateLower) || 
-        client.state.toLowerCase().includes(cityStateLower);
+      const allCities = [
+        `${client.city} ${client.state}`,
+        ...(client.secondaryCnpjs || []).map(b => `${b.city} ${b.state}`)
+      ].filter(Boolean);
+      const cityStateMatch = !filters.cityState || allCities.some(cs => cs.toLowerCase().includes(cityStateLower));
         
       const contactLower = filters.contact.toLowerCase();
       const contactMatch = !filters.contact || 
         client.phone.toLowerCase().includes(contactLower) || 
         client.email.toLowerCase().includes(contactLower);
 
-      return nomeFantasiaMatch && cnpjMatch && cityStateMatch && contactMatch;
+      return idMatch && nomeFantasiaMatch && cnpjMatch && cityStateMatch && contactMatch;
     });
   }, [clients, filters]);
-
-  // Reset page when filters change
-  React.useEffect(() => {
-    setCurrentPage(1);
-  }, [filters]);
-
-  const totalPages = Math.ceil(filteredClients.length / itemsPerPage);
-  const paginatedClients = filteredClients.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
 
   const handleOpenModal = () => {
     setClientToEdit(null);
@@ -81,7 +85,7 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
   
   const handleDeleteClient = (clientId: string) => {
     if (window.confirm('Tem certeza que deseja excluir este cliente?')) {
-        setClients(prevClients => prevClients.filter(c => c.id !== clientId));
+      onDeleteClient(clientId);
     }
   };
 
@@ -160,41 +164,53 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
       } catch (error) {
         alert(`Erro ao importar o arquivo: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
-        // Reset file input
-        if(event.target) event.target.value = '';
+        if (event.target) event.target.value = '';
       }
     };
     reader.onerror = () => {
-        alert('Erro ao ler o arquivo.');
-        if(event.target) event.target.value = '';
+      alert('Erro ao ler o arquivo.');
+      if (event.target) event.target.value = '';
     };
     reader.readAsText(file);
   };
 
   return (
     <>
-      <Header title="Clientes & Tomadores">
+      <Header title="Cadastro de Clientes">
         {canCreate && (
-          <>
+          <div className="flex flex-wrap items-center gap-2">
+            {onMergeClients && (
+              <button
+                onClick={() => setIsMergeModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+                title="Unir múltiplos cadastros de clientes em um só com filiais"
+              >
+                <Merge className="w-4 h-4" />
+                Unir Cadastros
+              </button>
+            )}
             <button
               onClick={handleImportClick}
-              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-xl text-xs font-bold transition-colors"
             >
+              <Upload className="w-3.5 h-3.5" />
               Importar
             </button>
             <button
               onClick={handleExport}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-xl text-xs font-bold transition-colors"
             >
+              <Download className="w-3.5 h-3.5" />
               Exportar
             </button>
             <button
               onClick={handleOpenModal}
-              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary font-medium"
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
             >
-              Cadastrar Cliente
+              <Plus className="w-4 h-4" />
+              Novo Cliente
             </button>
-          </>
+          </div>
         )}
       </Header>
       
@@ -212,20 +228,10 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
       />
 
       <ClientTable 
-        clients={paginatedClients} 
+        clients={filteredClients} 
         onEdit={canUpdate ? handleEditClient : undefined} 
         onDelete={canDelete ? handleDeleteClient : undefined} 
       />
-
-      {totalPages > 1 && (
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={setCurrentPage}
-          totalItems={filteredClients.length}
-          itemsPerPage={itemsPerPage}
-        />
-      )}
 
       <ClientFormModal
         isOpen={isModalOpen}
@@ -233,6 +239,15 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
         onSave={handleSaveClient}
         clientToEdit={clientToEdit}
       />
+
+      {onMergeClients && (
+        <MergeClientsModal
+          isOpen={isMergeModalOpen}
+          onClose={() => setIsMergeModalOpen(false)}
+          clients={clients}
+          onMerge={onMergeClients}
+        />
+      )}
     </>
   );
 };

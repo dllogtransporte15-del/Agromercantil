@@ -1,107 +1,114 @@
-/**
- * Formata um CPF no padrão: 000.000.000-00
- */
 export const formatCPF = (value: string): string => {
-  if (!value) return '';
-  const cleaned = value.replace(/\D/g, '').slice(0, 11);
-  let formatted = cleaned;
-  if (cleaned.length > 9) {
-    formatted = cleaned.replace(/^(\d{3})(\d{3})(\d{3})(\d{1,2}).*/, '$1.$2.$3-$4');
-  } else if (cleaned.length > 6) {
-    formatted = cleaned.replace(/^(\d{3})(\d{3})(\d{1,3}).*/, '$1.$2.$3');
-  } else if (cleaned.length > 3) {
-    formatted = cleaned.replace(/^(\d{3})(\d{1,3}).*/, '$1.$2');
-  }
-  return formatted;
+  const numeric = value.replace(/\D/g, '').slice(0, 11);
+  return numeric.replace(/(\d{3})(\d{3})?(\d{3})?(\d{2})?/, (_, p1, p2, p3, p4) => {
+    let res = p1;
+    if (p2) res += `.${p2}`;
+    if (p3) res += `.${p3}`;
+    if (p4) res += `-${p4}`;
+    return res;
+  });
 };
 
-/**
- * Formata um CNPJ no padrão: 00.000.000/0000-00
- */
-export const formatCNPJ = (value: string): string => {
-  if (!value) return '';
-  const cleaned = value.replace(/\D/g, '').slice(0, 14);
-  let formatted = cleaned;
-  if (cleaned.length > 12) {
-    formatted = cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{1,2}).*/, '$1.$2.$3/$4-$5');
-  } else if (cleaned.length > 8) {
-    formatted = cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{1,4}).*/, '$1.$2.$3/$4');
-  } else if (cleaned.length > 5) {
-    formatted = cleaned.replace(/^(\d{2})(\d{3})(\d{1,3}).*/, '$1.$2.$3');
-  } else if (cleaned.length > 2) {
-    formatted = cleaned.replace(/^(\d{2})(\d{1,3}).*/, '$1.$2');
-  }
-  return formatted;
-};
-
-/**
- * Aplica máscara de CPF ou CNPJ de acordo com o tamanho do valor digitado
- */
-export const formatCpfCnpj = (value: string): string => {
-  if (!value) return '';
-  const cleaned = value.replace(/\D/g, '');
-  if (cleaned.length <= 11) {
-    return formatCPF(cleaned);
-  }
-  return formatCNPJ(cleaned);
-};
-
-/**
- * Formata telefone no padrão (XX) XXXXX-XXXX ou (XX) XXXX-XXXX
- */
 export const formatPhone = (value: string): string => {
-  if (!value) return '';
-  const cleaned = value.replace(/\D/g, '').slice(0, 11);
-  let formatted = cleaned;
-  
-  if (cleaned.length > 10) {
-    // 11 dígitos: (XX) XXXXX-XXXX
-    formatted = cleaned.replace(/^(\d{2})(\d{5})(\d{4}).*/, '($1) $2-$3');
-  } else if (cleaned.length > 6) {
-    // 10 dígitos: (XX) XXXX-XXXX (also applies partially when typing >6 digits)
-    formatted = cleaned.replace(/^(\d{2})(\d{4})(\d{1,4}).*/, '($1) $2-$3');
-  } else if (cleaned.length > 2) {
-    // Parte do número: (XX) XXXX
-    formatted = cleaned.replace(/^(\d{2})(\d{1,5}).*/, '($1) $2');
-  } else if (cleaned.length > 0) {
-    // Apenas DDD: (XX
-    formatted = cleaned.replace(/^(\d{1,2})/, '($1');
-  }
-  
-  return formatted;
+  const numeric = value.replace(/\D/g, '').slice(0, 11);
+  if (numeric.length === 0) return '';
+  if (numeric.length <= 2) return `(${numeric}`;
+  if (numeric.length <= 6) return `(${numeric.slice(0, 2)}) ${numeric.slice(2)}`;
+  if (numeric.length <= 10) return `(${numeric.slice(0, 2)}) ${numeric.slice(2, 6)}-${numeric.slice(6)}`;
+  return `(${numeric.slice(0, 2)}) ${numeric.slice(2, 7)}-${numeric.slice(7)}`;
 };
 
-/**
- * Formata cidade e estado, ex: "cumari go" -> "Cumari, GO"
- */
+export const formatName = (value: string): string => {
+  const prepositions = ['da', 'de', 'do', 'dos', 'das', 'e'];
+  return value
+    .split(' ')
+    .map((word, index) => {
+      if (word.length === 0) return '';
+      const lower = word.toLowerCase();
+      if (index > 0 && prepositions.includes(lower)) {
+        return lower;
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+};
+
 export const formatCityState = (value: string): string => {
-  if (!value) return '';
-  
-  let cleanValue = value.trim().replace(/\s+/g, ' ');
-  
-  // Extract state code at the end (2 letters)
-  const stateMatch = cleanValue.match(/(.+?)(?:,|\s-|\s)+([a-zA-Z]{2})$/);
-  
-  let cityPart = cleanValue;
-  let statePart = '';
-  
-  if (stateMatch) {
-    cityPart = stateMatch[1].trim();
-    statePart = stateMatch[2].toUpperCase();
+  // Try to parse "Cidade, UF"
+  const commaIndex = value.indexOf(',');
+  if (commaIndex !== -1) {
+    const city = formatName(value.slice(0, commaIndex).trim());
+    const statePart = value.slice(commaIndex + 1).replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase();
+    return statePart ? `${city}, ${statePart}` : `${city}, `;
   }
 
-  const exceptions = ['de', 'da', 'do', 'das', 'dos'];
-  const formattedCity = cityPart.split(' ').map((word, index) => {
-    const lowerWord = word.toLowerCase();
-    if (index > 0 && exceptions.includes(lowerWord)) {
-      return lowerWord;
-    }
-    return lowerWord.charAt(0).toUpperCase() + lowerWord.slice(1);
-  }).join(' ');
-
-  if (statePart) {
-    return `${formattedCity}, ${statePart}`;
-  }
-  
-  return formattedCity;
+  return formatName(value);
 };
+
+export const formatCpfCnpj = (value: string): string => {
+  const numeric = value.replace(/\D/g, '').slice(0, 14);
+  if (numeric.length <= 11) {
+    return formatCPF(numeric);
+  }
+  return numeric.replace(/(\d{2})(\d{3})?(\d{3})?(\d{4})?(\d{2})?/, (_, p1, p2, p3, p4, p5) => {
+    let res = p1;
+    if (p2) res += `.${p2}`;
+    if (p3) res += `.${p3}`;
+    if (p4) res += `/${p4}`;
+    if (p5) res += `-${p5}`;
+    return res;
+  });
+};
+
+export const autoFormatInput = (name: string, value: string): string => {
+  if (!value) return value;
+  
+  const lowerName = name.toLowerCase();
+  
+  if (lowerName.includes('location') || lowerName.includes('maplink')) {
+    return value;
+  }
+
+  if (lowerName === 'cpf' || lowerName === 'drivercpf' || lowerName === 'ownercpf') {
+    return formatCPF(value);
+  }
+  if (lowerName.includes('cpfcnpj') || lowerName.includes('cnpj')) {
+    return formatCpfCnpj(value);
+  }
+  if (lowerName.includes('phone') || lowerName.includes('telefone')) {
+    return formatPhone(value);
+  }
+  if (lowerName.includes('origem') || lowerName.includes('destino') || lowerName.includes('origin') || lowerName.includes('destination') || lowerName === 'city') {
+    return formatCityState(value);
+  }
+  return value;
+};
+
+export const FRETEBRAS_VEHICLE_MAP: Record<string, string | null> = {
+  'LS Simples': null,
+  'Cavalo 4e': null,
+  'Bitrem 8e': null,
+  'Rodotrem (3x3)': 'Bitrem 9 eixos',
+  'Carreta 4e': 'Carreta 4º eixo',
+  'Bitrem 7e': 'Bitrem 7 eixos',
+  'LS Trucada': 'Carreta LS',
+  'Vanderleia': 'Vanderléia',
+  'Caminhão Truck': 'Truck',
+};
+
+export const formatFretebrasVehicleTypes = (allowed?: { setType: string }[]): string => {
+  if (!allowed || allowed.length === 0) return '';
+  const mapped = allowed
+    .map(t => {
+      const typeStr = t.setType;
+      if (Object.prototype.hasOwnProperty.call(FRETEBRAS_VEHICLE_MAP, typeStr)) {
+        return FRETEBRAS_VEHICLE_MAP[typeStr];
+      }
+      return typeStr;
+    })
+    .filter((t): t is string => t !== null && t !== undefined && t !== '');
+
+  return [...new Set(mapped)].join(', ');
+};
+
+

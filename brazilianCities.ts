@@ -363,6 +363,7 @@ export const BRAZILIAN_CITIES = [
   "Rondonópolis, MT",
   "Rurópolis, PA",
   "Sabinópolis, MG",
+  "Sacramento, MG",
   "Salinópolis, PA",
   "Salto, SP",
   "Salvador, BA",

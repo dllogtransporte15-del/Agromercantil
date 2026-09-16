@@ -8,7 +8,6 @@ import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
 import type { Vehicle, Owner, User, ProfilePermissions, Shipment, Cargo } from '../types';
 import { VehicleSetType, VehicleBodyType, DriverClassification } from '../types';
 import { can } from '../auth';
-import Pagination from '../components/Pagination';
 
 interface VehiclesPageProps {
   vehicles: Vehicle[];
@@ -37,6 +36,7 @@ const VehiclesPage: React.FC<VehiclesPageProps> = ({
   const [selectedVehicleForHistory, setSelectedVehicleForHistory] = useState<Vehicle | null>(null);
   
   const [filters, setFilters] = useState<VehicleFilters>({
+    id: '',
     plate: '',
     setType: '',
     bodyType: '',
@@ -45,34 +45,22 @@ const VehiclesPage: React.FC<VehiclesPageProps> = ({
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 50;
-
   const canCreate = can('create', currentUser, 'vehicles', profilePermissions);
   const canUpdate = can('update', currentUser, 'vehicles', profilePermissions);
   const canDelete = can('delete', currentUser, 'vehicles', profilePermissions);
 
   const filteredVehicles = useMemo(() => {
     return vehicles.filter(vehicle => {
+      const idMatch = !filters.id || (vehicle.id && vehicle.id.toLowerCase().includes(filters.id.toLowerCase()));
       const plateMatch = !filters.plate || vehicle.plate.toLowerCase().includes(filters.plate.toLowerCase());
       const setTypeMatch = !filters.setType || vehicle.setType === filters.setType;
       const bodyTypeMatch = !filters.bodyType || vehicle.bodyType === filters.bodyType;
       const classificationMatch = !filters.classification || vehicle.classification === filters.classification;
       const ownerMatch = !filters.ownerId || vehicle.ownerId === filters.ownerId;
 
-      return plateMatch && setTypeMatch && bodyTypeMatch && classificationMatch && ownerMatch;
+      return idMatch && plateMatch && setTypeMatch && bodyTypeMatch && classificationMatch && ownerMatch;
     });
   }, [vehicles, filters]);
-
-  React.useEffect(() => {
-    setCurrentPage(1);
-  }, [filters]);
-
-  const totalPages = Math.ceil(filteredVehicles.length / itemsPerPage);
-  const paginatedVehicles = filteredVehicles.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
 
   const handleOpenModal = () => {
     setVehicleToEdit(null);
@@ -172,19 +160,19 @@ const VehiclesPage: React.FC<VehiclesPageProps> = ({
 
   return (
     <>
-      <Header title="Frotas & Veículos">
+      <Header title="Cadastro de Veículos">
         {canCreate && (
           <>
             <button onClick={handleImportClick} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">Importar</button>
             <button onClick={handleExport} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">Exportar</button>
-            <button onClick={handleOpenModal} className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark font-medium">Cadastrar Veículo</button>
+            <button onClick={handleOpenModal} className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark">Adicionar Veículo</button>
           </>
         )}
       </Header>
       
       <input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden" accept=".csv"/>
 
-      <div style={{ zoom: 0.8 }}>
+      <div>
         <VehicleFilter 
           owners={owners} 
           filters={filters} 
@@ -192,22 +180,12 @@ const VehiclesPage: React.FC<VehiclesPageProps> = ({
         />
 
         <VehicleTable 
-          vehicles={paginatedVehicles} 
+          vehicles={filteredVehicles} 
           owners={owners} 
           onEdit={canUpdate ? handleEditVehicle : undefined} 
           onDelete={canDelete ? handleDeleteVehicle : undefined} 
           onShowHistory={handleShowHistory}
         />
-
-        {totalPages > 1 && (
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            totalItems={filteredVehicles.length}
-            itemsPerPage={itemsPerPage}
-          />
-        )}
       </div>
 
       <VehicleFormModal 

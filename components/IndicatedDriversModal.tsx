@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
 import { X, MapPin, Phone, User as UserIcon } from 'lucide-react';
 import type { Cargo, Driver, Shipment } from '../types';
-import { getCoordsSync, calculateDistance, getDDDsForCity } from '../utils/geocoding';
+import { getCoordsSync } from '../utils/geocoding';
+import { getDistanceKm } from '../utils/distance';
+import { getDDDsFromCity } from '../utils/ddd';
 
 interface IndicatedDriversModalProps {
   isOpen: boolean;
@@ -29,19 +31,15 @@ const IndicatedDriversModal: React.FC<IndicatedDriversModalProps> = ({
   const indicatedDrivers = useMemo(() => {
     if (!cargo) return [];
 
-    const originDDDs = getDDDsForCity(cargo.origin);
-    const destDDDs = cargo.destinations && cargo.destinations.length > 0 
-        ? cargo.destinations.flatMap(d => getDDDsForCity(d.city))
-        : getDDDsForCity(cargo.destination);
+    const originDDDs = getDDDsFromCity(cargo.origin);
+    const destDDDs = getDDDsFromCity(cargo.destination);
         
     const validDDDs = new Set([...originDDDs, ...destDDDs]);
 
     const originCoords = getCoordsSync(cargo.origin);
-    const destCoords = cargo.destinations && cargo.destinations.length > 0
-        ? cargo.destinations.map(d => getCoordsSync(d.city)).filter(Boolean)
-        : [getCoordsSync(cargo.destination)].filter(Boolean);
+    const destCoords = getCoordsSync(cargo.destination);
         
-    const allCurrentCoords = [originCoords, ...destCoords].filter(Boolean) as {lat: number, lng: number}[];
+    const allCurrentCoords = [originCoords, destCoords].filter(Boolean) as {lat: number, lng: number}[];
 
     const activeDrivers = drivers.filter(d => d.active);
     const indicated: IndicatedDriver[] = [];
@@ -69,15 +67,13 @@ const IndicatedDriversModal: React.FC<IndicatedDriversModalProps> = ({
          if (!pastCargo) continue;
          
          const pastOriginCoords = getCoordsSync(pastCargo.origin);
-         const pastDestCoords = pastCargo.destinations && pastCargo.destinations.length > 0
-            ? pastCargo.destinations.map(d => getCoordsSync(d.city)).filter(Boolean)
-            : [getCoordsSync(pastCargo.destination)].filter(Boolean);
+         const pastDestCoords = getCoordsSync(pastCargo.destination);
             
-         const allPastCoords = [pastOriginCoords, ...pastDestCoords].filter(Boolean) as {lat: number, lng: number}[];
+         const allPastCoords = [pastOriginCoords, pastDestCoords].filter(Boolean) as {lat: number, lng: number}[];
          
          for (const pC of allPastCoords) {
             for (const cC of allCurrentCoords) {
-               const dist = calculateDistance(pC.lat, pC.lng, cC.lat, cC.lng);
+               const dist = getDistanceKm(pC.lat, pC.lng, cC.lat, cC.lng);
                if (dist <= 200) {
                  hasHistoryRadius = true;
                  break;
@@ -113,7 +109,7 @@ const IndicatedDriversModal: React.FC<IndicatedDriversModalProps> = ({
               Motoristas Indicados
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Carga #{cargo.sequenceId} | {cargo.origin} → {(cargo.destinations && cargo.destinations.length > 0) ? `${cargo.destinations[0].city} (+${cargo.destinations.length - 1})` : cargo.destination}
+              Carga #{cargo.sequenceId} | {cargo.origin} → {cargo.destination}
             </p>
           </div>
           <button

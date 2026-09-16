@@ -7,12 +7,16 @@ import HistoryModal from '../components/HistoryModal';
 import AttachmentModal from '../components/AttachmentModal';
 import CargoDetailsModal from '../components/CargoDetailsModal';
 import CancellationReasonChart from '../components/CancellationReasonChart';
-import type { Shipment, Cargo, User, Product, Client, Vehicle, ProfilePermissions } from '../types';
+import type { Shipment, Cargo, User, Product, Client, Vehicle, Driver, RiskQueryOption } from '../types';
 import { ShipmentStatus } from '../types';
+import { isCteApplicableForStatus, getShipmentCte, isStayForShipment } from '../utils';
+import { StayRecord } from '../utils/toolStorage';
+import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
 
 interface ShipmentHistoryPageProps {
   shipments: Shipment[];
   cargos: Cargo[];
+  drivers: Driver[];
   users: User[];
   currentUser: User;
   clients: Client[];
@@ -22,10 +26,13 @@ interface ShipmentHistoryPageProps {
   onRevertStatus?: (shipmentId: string) => void;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
-  profilePermissions?: ProfilePermissions;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
+  stays?: StayRecord[];
+  riskQueryOptions?: RiskQueryOption[];
 }
 
-const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice, profilePermissions }) => {
+const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, drivers, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice, onUpdateShipmentData, onUpdateAttachment, stays = [], riskQueryOptions }) => {
   const [activeStatus, setActiveStatus] = useState<ShipmentStatus>(ShipmentStatus.Finalizado);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
@@ -35,20 +42,24 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
   const [endDate, setEndDate] = useState<string>('');
   const [marginOperator, setMarginOperator] = useState<'>' | '<' | ''>('');
   const [marginValue, setMarginValue] = useState<string>('');
+  const [filterCte, setFilterCte] = useState('');
+  const [filterNfe, setFilterNfe] = useState('');
+  const [filterMdfe, setFilterMdfe] = useState('');
+  const [filterId, setFilterId] = useState('');
+  const [filterSolicitante, setFilterSolicitante] = useState('');
 
   const cargoMap = useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
 
   const calculateMargin = (s: Shipment) => {
     const cargo = cargoMap.get(s.cargoId);
     if (!cargo) return 0;
-    const grossRate = s.companyFreightRateSnapshot || cargo.companyFreightValuePerTon || 0;
-    const driverRate = s.driverFreightRateSnapshot || (s.driverFreightValue / (s.shipmentTonnage || 1));
+    const expenses = calculateShipmentExpenses(s, cargo);
     
-    // Deduct ICMS if applicable
-    const icmsDeduction = cargo.hasIcms ? (grossRate * (cargo.icmsPercentage / 100)) : 0;
-    const effectiveGrossRate = grossRate - icmsDeduction;
-    
-    return (effectiveGrossRate - driverRate) * s.shipmentTonnage;
+    const demurrageProfit = stays
+        .filter(stay => isStayForShipment(stay, s))
+        .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
+        
+    return expenses.netProfit + demurrageProfit;
   };
 
   // Sync selected shipment with latest data from props
@@ -80,10 +91,39 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
             if (marginOperator === '>') matchesMargin = margin > val;
             else if (marginOperator === '<') matchesMargin = margin < val;
         }
+
+        let matchesId = true;
+        if (filterId.trim()) {
+          const q = filterId.trim().toLowerCase();
+          const idMatch = shipment.id.toLowerCase().includes(q);
+          const cargo = cargoMap.get(shipment.cargoId);
+          const cargoSeqMatch = cargo?.sequenceId ? String(cargo.sequenceId).toLowerCase().includes(q) : false;
+          matchesId = idMatch || cargoSeqMatch;
+        }
+
+        let matchesSolicitante = true;
+        if (filterSolicitante.trim()) {
+          const embarcadorUser = users.find(u => u.id === shipment.embarcadorId);
+          const embarcadorName = embarcadorUser?.name || '';
+          matchesSolicitante = shipment.embarcadorId === filterSolicitante || embarcadorName.toLowerCase().includes(filterSolicitante.trim().toLowerCase());
+        }
+
+        let matchesCte = true;
+        if (filterCte.trim()) {
+          const cteVal = getShipmentCte(shipment);
+          matchesCte = isCteApplicableForStatus(shipment.status) && (
+            (cteVal !== '-' && cteVal.toLowerCase().includes(filterCte.trim().toLowerCase())) ||
+            !!(shipment.cteNumber?.toLowerCase().includes(filterCte.trim().toLowerCase()))
+          );
+        }
+        let matchesNfe = true;
+        if (filterNfe.trim()) matchesNfe = !!(shipment.nfeNumber?.toLowerCase().includes(filterNfe.trim().toLowerCase()));
+        let matchesMdfe = true;
+        if (filterMdfe.trim()) matchesMdfe = !!(shipment.mdfeNumber?.toLowerCase().includes(filterMdfe.trim().toLowerCase()));
         
-        return matchesStatus && matchesDate && matchesMargin;
+        return matchesStatus && matchesDate && matchesMargin && matchesId && matchesSolicitante && matchesCte && matchesNfe && matchesMdfe;
     });
-  }, [shipments, activeStatus, startDate, endDate, marginOperator, marginValue, cargoMap]);
+  }, [shipments, activeStatus, startDate, endDate, marginOperator, marginValue, cargoMap, filterId, filterSolicitante, filterCte, filterNfe, filterMdfe, users]);
 
   const cancellationReasonData = useMemo(() => {
     const cancelledShipments = shipments.filter(s => s.status === ShipmentStatus.Cancelado);
@@ -130,21 +170,13 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
     setAttachmentModalOpen(true);
   };
   
-  const handleDummySave = async (data: { 
-    filesToAttach: { [key: string]: File[] }, 
-    bankDetails?: string, 
-    loadedTonnage?: number, 
-    advancePercentage?: number, 
-    advanceValue?: number,
-    tollValue?: number, 
-    balanceToReceiveValue?: number,
-    discountValue?: number,
-    netBalanceValue?: number,
-    unloadedTonnage?: number,
-    route?: string 
-  }) => {
-    // This is a read-only page, but the modal needs a function
+  const handleSaveAttachment = async (data: any) => {
+    if (!selectedShipment) return;
+    if (onUpdateAttachment) {
+      await onUpdateAttachment(selectedShipment.id, data);
+    }
     setAttachmentModalOpen(false);
+    setSelectedShipment(null);
   };
 
   const handleShowCargoDetails = (cargo: Cargo) => {
@@ -169,10 +201,23 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
         onMarginOperatorChange={setMarginOperator}
         marginValue={marginValue}
         onMarginValueChange={setMarginValue}
+        stays={stays}
+        filterCte={filterCte}
+        onFilterCteChange={setFilterCte}
+        filterNfe={filterNfe}
+        onFilterNfeChange={setFilterNfe}
+        filterMdfe={filterMdfe}
+        onFilterMdfeChange={setFilterMdfe}
+        filterId={filterId}
+        onFilterIdChange={setFilterId}
+        filterSolicitante={filterSolicitante}
+        onFilterSolicitanteChange={setFilterSolicitante}
+        users={users}
       />
       <ShipmentTable 
         shipments={filteredShipments} 
         cargos={cargos}
+        drivers={drivers}
         users={users}
         vehicles={vehicles}
         onShowHistory={handleShowHistory}
@@ -187,7 +232,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
         companyLogo={null} // History doesn't typically need PDF generation but the prop is required
         onDeleteAttachment={onDeleteAttachment}
         onUpdatePrice={onUpdatePrice}
-        activeLocks={[]}
+        onUpdateShipmentData={onUpdateShipmentData}
       />
       {selectedShipment && (
         <HistoryModal
@@ -202,13 +247,23 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
         <AttachmentModal
             isOpen={isAttachmentModalOpen}
             onClose={() => setAttachmentModalOpen(false)}
-            onSave={handleDummySave} // No saving on this page
-            shipment={selectedShipment}
+            onSave={handleSaveAttachment}
+            shipment={shipments.find(s => s.id === selectedShipment.id) || selectedShipment}
             cargo={cargos.find(c => c.id === selectedShipment.cargoId)}
             documentName="Documento"
             currentUser={currentUser}
+            requiresRiskManagement={
+              products.find(p => p.id === cargos.find(c => c.id === selectedShipment.cargoId)?.productId)
+                ?.requiresRiskManagement !== false
+            }
+            products={products}
+            clients={clients}
+            users={users}
+            riskQueryOptions={riskQueryOptions}
+            onUpdateShipmentData={onUpdateShipmentData}
         />
       )}
+
        {detailsModalCargo && (
           <CargoDetailsModal
             isOpen={!!detailsModalCargo}
@@ -216,7 +271,10 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
             cargo={detailsModalCargo}
             client={clients.find(c => c.id === detailsModalCargo.clientId)}
             product={products.find(p => p.id === detailsModalCargo.productId)}
-            commercialUser={users.find(u => u.id === detailsModalCargo.createdById)}
+            commercialUser={users.find(u => u.id === detailsModalCargo?.createdById)}
+            stays={stays}
+            shipments={shipments}
+            currentUser={currentUser}
           />
       )}
     </>
