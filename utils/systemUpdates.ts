@@ -29,8 +29,8 @@ export const SYSTEM_RELEASES: SystemRelease[] = [
     items: [
       {
         category: 'feature',
-        title: 'Navegação e Menus Corporativos',
-        description: 'Atualização do menu superior e lateral para Gestão Operacional, Painel de Cargas Ativas, Ordens de Carga, Cadastros Mestres, Clientes & Tomadores, Frotistas & Proprietários, Motoristas & Condutores, Precificação & Cotações, Administração & Governança e Gestão de Acessos & Usuários.'
+        title: 'Navegação e Menus Otimizados',
+        description: 'Atualização do menu superior e lateral para títulos corporativos concisos (Gestão Operacional, Cadastros, Relatórios, Módulos & Utilit., Configurações) com espaçamento perfeito em qualquer resolução.'
       },
       {
         category: 'improvement',

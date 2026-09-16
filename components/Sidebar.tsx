@@ -53,7 +53,7 @@ const navItems: NavItem[] = [
   },
   {
     id: 'cadastro',
-    label: 'Cadastros Mestres',
+    label: 'Cadastros',
     icon: FolderIcon,
     children: [
         { id: 'clients', label: 'Clientes & Tomadores', icon: ClientsIcon },
@@ -67,7 +67,7 @@ const navItems: NavItem[] = [
   { id: 'reports', label: 'Relatórios', icon: ChartIcon },
   {
     id: 'ferramentas',
-    label: 'Módulos & Utilitários',
+    label: 'Módulos & Utilit.',
     icon: TruckIcon,
     children: [
       { id: 'layover-calculator', label: 'Cálculo de Estadias', icon: TruckIcon },
@@ -77,7 +77,7 @@ const navItems: NavItem[] = [
   },
   {
     id: 'settings',
-    label: 'Administração & Governança',
+    label: 'Configurações',
     icon: UsersIcon,
     children: [
       { id: 'users-register', label: 'Gestão de Acessos & Usuários', icon: UserPlusIcon },
