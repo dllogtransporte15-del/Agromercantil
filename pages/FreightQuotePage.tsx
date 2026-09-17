@@ -327,8 +327,12 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
       if (!currentUser) throw new Error('Usuário não autenticado');
 
       if (formData.clientName) {
-        await saveToolClient(currentUser.id, formData.clientName);
-        await loadClients();
+        try {
+          await saveToolClient(currentUser.id, formData.clientName);
+          await loadClients();
+        } catch (clientErr) {
+          console.warn('Erro não-bloqueante ao salvar cliente:', clientErr);
+        }
       }
 
       const saved = await saveToolQuote(currentUser.id, {
@@ -361,7 +365,7 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
       }
     } catch (saveErr: any) {
       console.error('Erro ao salvar cotação:', saveErr);
-      alert(`Erro ao salvar cotação: ${saveErr.message || 'Verifique sua conexão.'}`);
+      alert(`Erro ao salvar cotação: ${saveErr?.message || 'Verifique sua conexão e tente novamente.'}`);
     } finally {
       setIsSaving(false);
     }

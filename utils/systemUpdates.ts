@@ -21,6 +21,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_17_v2_7_0',
+    version: 'v2.7.0',
+    date: '17/09/2026',
+    title: 'Estabilização no Salvamento de Cotações no Histórico',
+    summary: 'Aprimoramento completo no mecanismo de gravação e tratamento de erros das cotações de frete, com compatibilidade de formato de identificador (UUID/texto), recuperação automática contra colunas ausentes e fluxo seguro para cadastro de clientes rápidos.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Gravação de Cotações com Tratamento de Erros Resiliente',
+        description: 'Implementado tratamento para compatibilidade de tipos de UUID e fallback automático de persistência, evitando falhas de comunicação com o banco.'
+      },
+      {
+        category: 'improvement',
+        title: 'Isolamento no Cadastro de Clientes da Cotação',
+        description: 'O salvamento de histórico de cotação não é mais interrompido caso ocorra oscilação no cadastro prévio de clientes.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_17_v2_6_9',
     version: 'v2.6.9',
     date: '17/09/2026',

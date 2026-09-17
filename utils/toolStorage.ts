@@ -559,15 +559,36 @@ export async function saveToolQuote(
     carrier_profit_margin: quote.carrierProfitMargin,
   };
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('tool_quotes')
     .insert(payload)
     .select('*')
     .single();
 
+  let retryCount = 0;
+  while (error && error.code === '42703' && retryCount < 5) {
+    const match = error.message.match(/column "(.*?)" of relation/);
+    if (match && match[1]) {
+      delete payload[match[1]];
+      const retry = await supabase.from('tool_quotes').insert(payload).select('*').single();
+      data = retry.data;
+      error = retry.error;
+      retryCount++;
+    } else {
+      break;
+    }
+  }
+
+  if (error && error.code === '22P02') {
+    payload.user_id = userId;
+    const retry = await supabase.from('tool_quotes').insert(payload).select('*').single();
+    data = retry.data;
+    error = retry.error;
+  }
+
   if (error) {
     console.error('Erro ao salvar cotação:', error);
-    return null;
+    throw new Error(error.message || 'Erro ao persistir cotação no banco de dados');
   }
 
   return data

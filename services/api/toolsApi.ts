@@ -584,12 +584,16 @@ export async function saveToolQuote(
     }
   }
 
+  if (error && error.code === '22P02') {
+    payload.user_id = userId;
+    const retry = await supabase.from('tool_quotes').insert(payload).select('*').single();
+    data = retry.data;
+    error = retry.error;
+  }
+
   if (error) {
     console.error('Erro ao salvar cotação:', error);
-    if (typeof window !== 'undefined') {
-      alert(`Erro no banco de dados (Cotação): ${error.message || JSON.stringify(error)}`);
-    }
-    return null;
+    throw new Error(error.message || 'Erro ao persistir cotação no banco de dados');
   }
 
   return data
