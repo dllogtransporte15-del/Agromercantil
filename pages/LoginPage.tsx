@@ -45,6 +45,17 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
   const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
 
   React.useEffect(() => {
+    const originalBodyBg = document.body.style.backgroundColor;
+    const originalHtmlBg = document.documentElement.style.backgroundColor;
+    document.body.style.backgroundColor = '#04150e';
+    document.documentElement.style.backgroundColor = '#04150e';
+    return () => {
+      document.body.style.backgroundColor = originalBodyBg;
+      document.documentElement.style.backgroundColor = originalHtmlBg;
+    };
+  }, []);
+
+  React.useEffect(() => {
     if (profilePermissions?.system_settings?.driver_portal_enabled === false) {
       setLoginType('interno');
       setIsRegisteringDriver(false);
@@ -459,12 +470,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
 
   return (
     <div 
-      className="relative min-h-screen w-full bg-[#04150e] text-slate-100 flex flex-col justify-between overflow-x-hidden font-sans"
-      style={{ zoom: 0.81 }}
+      className="relative min-h-screen w-full bg-[#04150e] text-slate-100 flex flex-col justify-between overflow-x-hidden font-sans selection:bg-emerald-500 selection:text-white"
     >
-      {/* Background Grid Pattern & Ambient Glows */}
+      {/* Background Grid Pattern & Ambient Glows (Fixed to guarantee 100% viewport coverage) */}
       <div 
-        className="absolute inset-0 pointer-events-none z-0"
+        className="fixed inset-0 pointer-events-none z-0"
         style={{
           backgroundImage: `
             linear-gradient(to right, rgba(22, 163, 74, 0.06) 1px, transparent 1px),
@@ -475,12 +485,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
       />
       
       {/* Soft Radial Ambient Lighting */}
-      <div className="absolute top-0 left-1/4 w-[600px] h-[500px] bg-emerald-600/15 rounded-full blur-[140px] pointer-events-none z-0" />
-      <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-[140px] pointer-events-none z-0" />
-      <div className="absolute top-1/2 right-10 w-[350px] h-[350px] bg-emerald-700/10 rounded-full blur-[100px] pointer-events-none z-0" />
+      <div className="fixed top-0 left-1/4 w-[600px] h-[500px] bg-emerald-600/15 rounded-full blur-[140px] pointer-events-none z-0" />
+      <div className="fixed bottom-0 right-1/4 w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-[140px] pointer-events-none z-0" />
+      <div className="fixed top-1/2 right-10 w-[350px] h-[350px] bg-emerald-700/10 rounded-full blur-[100px] pointer-events-none z-0" />
 
       {/* Main Container */}
-      <div className="relative z-10 w-full max-w-7xl mx-auto px-5 sm:px-8 lg:px-12 py-8 lg:py-12 flex-1 flex flex-col justify-center">
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-5 sm:px-8 lg:px-12 py-8 lg:py-12 flex-1 flex flex-col justify-center my-auto">
         
         {/* Top Header Row (Logo + Status Badge) */}
         <div className="flex items-center justify-between pb-8 lg:pb-12">
@@ -1094,14 +1104,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
       </div>
 
       {/* Footer Bottom Bar */}
-      <div className="relative z-10 w-full border-t border-emerald-950/80 bg-[#03130b]/90 py-4 px-6 text-[11px] text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2 max-w-7xl mx-auto">
-        <div>
-          © 2026 AGROMERCANTIL Logística. Todos os direitos reservados.
+      <footer className="relative z-10 w-full border-t border-emerald-950/80 bg-[#03130b]/90 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto py-3.5 px-6 text-[11px] text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2">
+          <div>
+            © 2026 AGROMERCANTIL Logística. Todos os direitos reservados.
+          </div>
+          <div className="font-mono text-emerald-400/80 font-medium">
+            v2.7.1 • Alta Performance
+          </div>
         </div>
-        <div className="font-mono text-emerald-400/80">
-          v2.6.4 • Alta Performance
-        </div>
-      </div>
+      </footer>
     </div>
   );
 };

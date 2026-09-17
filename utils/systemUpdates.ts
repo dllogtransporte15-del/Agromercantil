@@ -21,6 +21,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_17_v2_7_1',
+    version: 'v2.7.1',
+    date: '17/09/2026',
+    title: 'Ajuste de Preenchimento Total da Tela de Login',
+    summary: 'Configuração aprimorada de layout e plano de fundo da tela de login para preencher 100% da tela em qualquer resolução e proporção, eliminando áreas em branco na parte inferior.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Fundo Full-Screen sem Espaços em Branco',
+        description: 'Eliminada a restrição de escala que gerava faixas em branco na base da tela de login; o gradiente verde floresta e a malha quadriculada agora cobrem toda a área visível de forma consistente.'
+      },
+      {
+        category: 'fix',
+        title: 'Estabilização de Cores de Fundo do HTML/Body',
+        description: 'Garantida a persistência da cor temática de fundo nos elementos raiz durante a exibição do portal de acesso.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_17_v2_7_0',
     version: 'v2.7.0',
     date: '17/09/2026',
