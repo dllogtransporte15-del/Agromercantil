@@ -495,7 +495,7 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
                         <label className="text-xs font-bold text-slate-500 dark:text-gray-400 uppercase">Piso Mínimo ANTT (R$)</label>
                         <a href="https://calculadorafrete.antt.gov.br" target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-600 hover:underline">Consultar</a>
                       </div>
-                      <input type="number" step="0.01" name="anttValue" value={formData.anttValue} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 shadow-sm rounded-lg text-sm font-semibold focus:ring-2 focus:ring-indigo-500" />
+                      <input type="number" step="0.01" name="anttValue" value={formData.anttValue} onChange={handleInputChange} className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-slate-300 dark:border-gray-600 shadow-sm rounded-lg text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none" />
                     </div>
 
                     <div className="space-y-1.5">
@@ -503,7 +503,7 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
                         <label className="text-xs font-bold text-slate-500 dark:text-gray-400 uppercase">Valor do Pedágio (R$)</label>
                         <a href="https://rotasbrasil.com.br" target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-600 hover:underline">Consultar</a>
                       </div>
-                      <input type="number" step="0.01" name="tollValue" value={formData.tollValue} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 shadow-sm rounded-lg text-sm font-semibold focus:ring-2 focus:ring-indigo-500" />
+                      <input type="number" step="0.01" name="tollValue" value={formData.tollValue} onChange={handleInputChange} className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-slate-300 dark:border-gray-600 shadow-sm rounded-lg text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none" />
                     </div>
 
                     <div className="pt-2 border-t border-slate-200 dark:border-gray-600 flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 p-2 rounded-lg mt-2">

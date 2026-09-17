@@ -21,6 +21,20 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_17_v2_6_9',
+    version: 'v2.6.9',
+    date: '17/09/2026',
+    title: 'Ajuste de Contraste e Visualização nos Custos Base da Rota',
+    summary: 'Correção nos campos de Piso Mínimo ANTT e Valor do Pedágio na calculadora de frete, garantindo legibilidade perfeita e alto contraste tanto no modo claro quanto no modo escuro.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Contraste e Legibilidade de Campos de Custo',
+        description: 'Ajustadas as cores de fundo e texto dos inputs de Piso Mínimo ANTT e Valor do Pedágio para visualização nítida no tema claro e escuro.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_17_v2_6_8',
     version: 'v2.6.8',
     date: '17/09/2026',
