@@ -21,6 +21,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_17_v2_6_8',
+    version: 'v2.6.8',
+    date: '17/09/2026',
+    title: 'Correção no Salvamento de Cotações e Clientes da Calculadora',
+    summary: 'Correção na persistência de cotações de frete e clientes da calculadora no banco de dados para usuários com identificadores personalizados (USR-xxx).',
+    items: [
+      {
+        category: 'fix',
+        title: 'Persistência de Cotações',
+        description: 'Compatibilização de identificadores de usuários (UUID/alfanumérico) no salvamento e consulta do histórico de cotações.'
+      },
+      {
+        category: 'fix',
+        title: 'Cadastro de Clientes de Cotação',
+        description: 'Tratamento de inserção e busca de clientes vinculados à calculadora sem dependência de constraint exclusiva de conflito.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_16_v2_6_7',
     version: 'v2.6.7',
     date: '16/09/2026',

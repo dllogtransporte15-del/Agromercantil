@@ -333,10 +333,11 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
 
       const saved = await saveToolQuote(currentUser.id, {
         clientName: formData.clientName || 'Não Informado',
+        userName: currentUser.name || undefined,
         origin: formData.origin,
         destination: formData.destination,
         distance: routeInfo.distance,
-        axes: parseInt(formData.axes),
+        axes: parseInt(formData.axes) || 6,
         cargoType: formData.cargoType,
         inputMode: formData.inputMode as any,
         valuePerKm: parseFloat(formData.driverValue) || 0,
@@ -356,8 +357,11 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
-        alert('Erro ao salvar cotação. Verifique sua conexão.');
+        alert('Erro ao salvar cotação. Por favor, tente novamente.');
       }
+    } catch (saveErr: any) {
+      console.error('Erro ao salvar cotação:', saveErr);
+      alert(`Erro ao salvar cotação: ${saveErr.message || 'Verifique sua conexão.'}`);
     } finally {
       setIsSaving(false);
     }

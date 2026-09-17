@@ -40,6 +40,8 @@ export interface StayRecord {
 export interface QuoteRecord {
   id: string;
   clientName?: string;
+  productName?: string;
+  userName?: string;
   date: string;
   origin: string;
   destination: string;
@@ -106,21 +108,53 @@ export async function getAllToolClients(): Promise<ToolClient[]> {
   return uniqueClients;
 }
 
+export function toValidUuid(id: string): string {
+  if (!id) return '00000000-0000-0000-0000-000000000000';
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(id)) return id;
+
+  let hex = '';
+  for (let i = 0; i < id.length; i++) {
+    const code = id.charCodeAt(i).toString(16);
+    hex += code.length < 2 ? '0' + code : code;
+  }
+  const padded = (hex + '00000000000000000000000000000000').slice(0, 32);
+  return `${padded.slice(0, 8)}-${padded.slice(8, 12)}-4${padded.slice(13, 16)}-a${padded.slice(17, 20)}-${padded.slice(20, 32)}`;
+}
+
 export async function saveToolClient(userId: string, name: string): Promise<ToolClient | null> {
   if (!userId || !name.trim()) return null;
+  const trimmedName = name.trim();
 
-  const { data, error } = await supabase
-    .from('tool_clients')
-    .upsert({ user_id: userId, name: name.trim() }, { onConflict: 'user_id,name' })
-    .select('id, name')
-    .single();
+  try {
+    // Verifica se o cliente já existe para este usuário
+    const { data: existing } = await supabase
+      .from('tool_clients')
+      .select('id, name')
+      .eq('user_id', userId)
+      .ilike('name', trimmedName)
+      .maybeSingle();
 
-  if (error) {
-    console.error('Erro ao salvar cliente:', error);
+    if (existing) {
+      return { id: existing.id, name: existing.name };
+    }
+
+    const { data, error } = await supabase
+      .from('tool_clients')
+      .insert({ user_id: userId, name: trimmedName })
+      .select('id, name')
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao salvar cliente:', error);
+      return null;
+    }
+
+    return data ? { id: data.id, name: data.name } : null;
+  } catch (err) {
+    console.error('Erro inesperado ao salvar cliente:', err);
     return null;
   }
-
-  return data ? { id: data.id, name: data.name } : null;
 }
 
 // =============================================
@@ -418,11 +452,12 @@ export async function updateToolStay(
 
 export async function getToolQuotes(userId: string): Promise<QuoteRecord[]> {
   if (!userId) return [];
+  const validUserId = toValidUuid(userId);
 
   const { data, error } = await supabase
     .from('tool_quotes')
     .select('*')
-    .eq('user_id', userId)
+    .eq('user_id', validUserId)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -433,6 +468,8 @@ export async function getToolQuotes(userId: string): Promise<QuoteRecord[]> {
   return (data ?? []).map(row => ({
     id: row.id,
     clientName: row.client_name ?? undefined,
+    productName: row.product_name ?? undefined,
+    userName: row.user_name ?? undefined,
     date: row.created_at,
     origin: row.origin,
     destination: row.destination,
@@ -468,6 +505,8 @@ export async function getAllToolQuotes(): Promise<QuoteRecord[]> {
   return (data ?? []).map(row => ({
     id: row.id,
     clientName: row.client_name ?? undefined,
+    productName: row.product_name ?? undefined,
+    userName: row.user_name ?? undefined,
     date: row.created_at,
     origin: row.origin,
     destination: row.destination,
@@ -494,30 +533,35 @@ export async function saveToolQuote(
   quote: Omit<QuoteRecord, 'id' | 'date'>
 ): Promise<QuoteRecord | null> {
   if (!userId) return null;
+  const validUserId = toValidUuid(userId);
+
+  const payload: any = {
+    user_id: validUserId,
+    client_name: quote.clientName ?? null,
+    product_name: quote.productName ?? null,
+    user_name: quote.userName ?? null,
+    origin: quote.origin,
+    destination: quote.destination,
+    distance: quote.distance,
+    axes: quote.axes,
+    cargo_type: quote.cargoType,
+    input_mode: quote.inputMode,
+    value_per_km: quote.valuePerKm,
+    driver_total_value: quote.driverTotalValue,
+    toll_value: quote.tollValue,
+    antt_value: quote.anttValue,
+    weight: quote.weight,
+    margin: quote.margin,
+    driver_freight_per_ton: quote.driverFreightPerTon,
+    company_freight_per_ton: quote.companyFreightPerTon,
+    company_total_freight: quote.companyTotalFreight,
+    carrier_net_profit: quote.carrierNetProfit,
+    carrier_profit_margin: quote.carrierProfitMargin,
+  };
 
   const { data, error } = await supabase
     .from('tool_quotes')
-    .insert({
-      user_id: userId,
-      client_name: quote.clientName ?? null,
-      origin: quote.origin,
-      destination: quote.destination,
-      distance: quote.distance,
-      axes: quote.axes,
-      cargo_type: quote.cargoType,
-      input_mode: quote.inputMode,
-      value_per_km: quote.valuePerKm,
-      driver_total_value: quote.driverTotalValue,
-      toll_value: quote.tollValue,
-      antt_value: quote.anttValue,
-      weight: quote.weight,
-      margin: quote.margin,
-      driver_freight_per_ton: quote.driverFreightPerTon,
-      company_freight_per_ton: quote.companyFreightPerTon,
-      company_total_freight: quote.companyTotalFreight,
-      carrier_net_profit: quote.carrierNetProfit,
-      carrier_profit_margin: quote.carrierProfitMargin,
-    })
+    .insert(payload)
     .select('*')
     .single();
 
@@ -530,6 +574,8 @@ export async function saveToolQuote(
     ? {
         id: data.id,
         clientName: data.client_name ?? undefined,
+        productName: data.product_name ?? undefined,
+        userName: data.user_name ?? undefined,
         date: data.created_at,
         origin: data.origin,
         destination: data.destination,
