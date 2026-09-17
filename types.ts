@@ -562,7 +562,6 @@ export type ProfilePermissions = {
 } & {
   system_settings?: {
     driver_portal_enabled?: boolean;
-    pwa_enabled?: boolean;
   };
 };
 

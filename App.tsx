@@ -310,35 +310,6 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
-  // Controle de PWA (Instalação)
-  useEffect(() => {
-    const isPwaEnabled = profilePermissions?.system_settings?.pwa_enabled !== false;
-    
-    // Prevent beforeinstallprompt if disabled
-    const handleBeforeInstallPrompt = (e: any) => {
-      if (!isPwaEnabled) {
-        e.preventDefault();
-      }
-    };
-    
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    
-    // Manipulate manifest link
-    let manifestLink = document.querySelector("link[rel='manifest']") as HTMLLinkElement | null;
-    if (!isPwaEnabled) {
-      if (manifestLink) {
-        manifestLink.setAttribute('data-href', manifestLink.href);
-        manifestLink.removeAttribute('href');
-      }
-    } else {
-      if (manifestLink && manifestLink.hasAttribute('data-href')) {
-        manifestLink.href = manifestLink.getAttribute('data-href') as string;
-      }
-    }
-    
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-  }, [profilePermissions?.system_settings?.pwa_enabled]);
-
   // Persistência da sessão (apenas enquanto a janela/navegador estiver aberta)
   useEffect(() => {
     if (currentUser) {

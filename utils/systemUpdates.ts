@@ -21,6 +21,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_16_v2_6_7',
+    version: 'v2.6.7',
+    date: '16/09/2026',
+    title: 'Desativação de PWA e Otimização Web Direta',
+    summary: 'Remoção completa dos componentes e serviços de PWA (Service Worker, manifesto e prompts de instalação), tornando a plataforma 100% web direta, ágil e livre de interferências de cache local.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Arquitetura Web Direta',
+        description: 'Remoção do vite-plugin-pwa, ReloadPrompt e service workers, garantindo carregamento limpo e atualizado em tempo real.'
+      },
+      {
+        category: 'improvement',
+        title: 'Interface de Acesso Simplificada',
+        description: 'Remoção dos botões e avisos de instalação de PWA na tela de login e no painel de controle do sistema.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_16_v2_6_6',
     version: 'v2.6.6',
     date: '16/09/2026',

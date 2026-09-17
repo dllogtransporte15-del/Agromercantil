@@ -10,7 +10,6 @@ if (!rootElement) {
 
 import { ToastProvider } from './hooks/useToast';
 import { ToastContainer } from './components/Toast';
-import { ReloadPrompt } from './components/ReloadPrompt';
 import { BrowserRouter } from 'react-router-dom';
 
 import ErrorBoundary from './components/ErrorBoundary';
@@ -23,7 +22,6 @@ root.render(
         <ToastProvider>
           <App />
           <ToastContainer />
-          <ReloadPrompt />
         </ToastProvider>
       </BrowserRouter>
     </ErrorBoundary>

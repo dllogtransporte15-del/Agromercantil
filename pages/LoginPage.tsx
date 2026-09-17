@@ -6,7 +6,7 @@ import { formatCPF, formatPhone } from '../utils/formatters';
 import { 
   UserPlus, ArrowLeft, Eye, EyeOff, CheckCircle2, 
   ShieldCheck, Activity, Clock, Smartphone, Mail, Lock, 
-  Check, Sparkles, Building2, Truck, HelpCircle, Download
+  Check, Sparkles, Building2, Truck, HelpCircle
 } from 'lucide-react';
 
 interface LoginPageProps {
@@ -25,7 +25,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   // Estado para alternar entre login e cadastro de novo motorista
   const [isRegisteringDriver, setIsRegisteringDriver] = useState(false);
@@ -52,19 +51,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
     }
   }, [profilePermissions]);
 
-  React.useEffect(() => {
-    const isPwaEnabled = profilePermissions?.system_settings?.pwa_enabled !== false;
-    if (!isPwaEnabled) return;
-    
-    const handler = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-    
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, [profilePermissions]);
-
   const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCpf(formatCPF(e.target.value));
   };
@@ -81,20 +67,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
     return val.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 8);
   };
 
-  const handlePwaInstall = (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      deferredPrompt.userChoice.then((choiceResult: any) => {
-        if (choiceResult.outcome === 'accepted') {
-          setDeferredPrompt(null);
-        }
-      });
-    } else {
-      alert("Para instalar o aplicativo no seu dispositivo:\n\n• No Android (Chrome): Toque no menu (3 pontinhos) e selecione 'Adicionar à tela inicial'.\n• No iPhone (Safari): Toque no ícone Compartilhar e selecione 'Adicionar à Tela de Início'.\n• No Computador (Chrome/Edge): Clique no ícone de instalação na barra de endereço.");
-    }
-  };
-
   // Submit de Login (Interno ou Motorista Existente)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,19 +75,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
     if (loginType === 'motorista') {
       if ('geolocation' in navigator) {
         navigator.geolocation.getCurrentPosition(() => {}, () => {});
-      }
-      
-      if (deferredPrompt) {
-        try {
-          deferredPrompt.prompt();
-          deferredPrompt.userChoice.then((choiceResult: any) => {
-            if (choiceResult.outcome === 'accepted') {
-              setDeferredPrompt(null);
-            }
-          });
-        } catch(err) {
-          console.error('Erro ao chamar o prompt de instalação:', err);
-        }
       }
     }
 
@@ -1023,19 +982,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                 <button
                   type="button"
                   onClick={() => alert("Para obter suporte ou recuperar credenciais corporativas, contate a administração pelo ramal interno ou envie um e-mail para suporte@agromercantil.com.br.")}
-                  className="hover:text-slate-200 transition-colors flex items-center gap-1"
+                  className="hover:text-slate-200 transition-colors flex items-center gap-1.5"
                 >
                   <HelpCircle className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Precisa de ajuda?</span>
-                </button>
-                <span className="text-slate-700">•</span>
-                <button
-                  type="button"
-                  onClick={handlePwaInstall}
-                  className="hover:text-emerald-400 transition-colors flex items-center gap-1"
-                >
-                  <Download className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Instalar PWA</span>
+                  <span>Precisa de ajuda com o acesso?</span>
                 </button>
               </div>
 
@@ -1102,14 +1052,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                 </div>
               </div>
 
-              {/* Card 4: App para Motoristas */}
+              {/* Card 4: Portal do Motorista */}
               <div className="p-4 rounded-2xl bg-[#061e13]/80 border border-emerald-900/70 hover:border-emerald-700/80 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-md shadow-emerald-950/40">
                 <div className="w-10 h-10 rounded-xl bg-lime-500/10 border border-lime-500/20 flex items-center justify-center shrink-0 group-hover:bg-lime-500/20 transition-colors">
                   <Smartphone className="w-5 h-5 text-lime-400" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-white mb-0.5">App para Motoristas</h2>
-                  <p className="text-xs text-slate-300 leading-relaxed">Acesso via PWA sem complicação diretamente do celular.</p>
+                  <h2 className="text-sm font-bold text-white mb-0.5">Portal do Motorista</h2>
+                  <p className="text-xs text-slate-300 leading-relaxed">Acesso web 100% responsivo e ágil diretamente do celular.</p>
                 </div>
               </div>
 
