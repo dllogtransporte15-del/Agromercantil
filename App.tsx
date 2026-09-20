@@ -3385,6 +3385,7 @@ const App: React.FC = () => {
 
   const operationalPages: Page[] = ['loads', 'shipments', 'shipment-history', 'load-history', 'operational-loads', 'operational-map', 'risk-management', 'risk-query-types'];
   const isOperationalPage = operationalPages.includes(currentPage);
+  const isWideToolPage = ['freight-quote', 'layover-calculator', 'tools-history', 'freight-offers-history'].includes(currentPage);
 
   return (
     <div 
@@ -3436,7 +3437,7 @@ const App: React.FC = () => {
         onOpenUpdates={() => setIsUpdateModalOpen(true)}
       />
       <main className="relative z-10 flex-1 overflow-y-auto" style={{ zoom: 0.72 }}>
-        <div className={isOperationalPage ? "px-6 py-8" : "container mx-auto px-6 py-8"}>
+        <div className={isOperationalPage ? "px-6 py-8" : (isWideToolPage ? "w-full max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8" : "container mx-auto px-6 py-8")}>
             {renderPage()}
         </div>
       </main>

@@ -21,6 +21,45 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_19_v2_7_2',
+    version: 'v2.7.2',
+    date: '19/09/2026',
+    title: 'Cotações por Tonelada e Painel das Últimas 5 Cotações',
+    summary: 'Aprimoramentos no Simulador de Frete e Histórico Operacional: exibição destacada do valor por tonelada e novo painel com as últimas 5 cotações salvas integrado na coluna lateral de fechamento, com carregamento ágil no simulador.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Cálculo de Incidência de ICMS nas Cotações',
+        description: 'Adicionada opção para declarar incidência de ICMS com alíquota personalizada na cotação de frete, calculando automaticamente a dedução tributária, frete líquido da empresa e margem operacional real.'
+      },
+      {
+        category: 'feature',
+        title: 'Painel das Últimas 5 Cotações Salvas',
+        description: 'Exibição direta das últimas 5 cotações realizadas abaixo do Fechamento no simulador, permitindo recarregar os dados na tela com um único clique ou navegar para o histórico completo.'
+      },
+      {
+        category: 'improvement',
+        title: 'Valor por Tonelada em Destaque Principal',
+        description: 'Os cards de cotações no histórico operacional e no simulador agora apresentam o valor unitário por tonelada no cabeçalho e na performance financeira.'
+      },
+      {
+        category: 'improvement',
+        title: 'Aproveitamento das Margens Laterais e Expansão Horizontal',
+        description: 'Ampliado em 15% o espaçamento útil horizontal das janelas de Parâmetros, Mapa e Fechamento no simulador de cotações, eliminando margens vazias e melhorando a visualização de dados.'
+      },
+      {
+        category: 'fix',
+        title: 'Tratamento Robusto na Formatação Monetária',
+        description: 'Sanitização contra valores nulos e indefinidos, prevenindo a exibição de NaN em campos de custo.'
+      },
+      {
+        category: 'fix',
+        title: 'Resiliência no Salvamento de Cotações com Schema Adaptativo',
+        description: 'Implementado tratamento para compatibilidade com PostgREST e eliminação automática de campos não migrados no banco, garantindo que o salvamento nunca falhe.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_17_v2_7_1',
     version: 'v2.7.1',
     date: '17/09/2026',

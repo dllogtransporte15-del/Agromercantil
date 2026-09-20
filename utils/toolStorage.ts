@@ -60,6 +60,9 @@ export interface QuoteRecord {
   companyTotalFreight: number;
   carrierNetProfit: number;
   carrierProfitMargin: number;
+  hasIcms?: boolean;
+  icmsPercentage?: number;
+  icmsValue?: number;
 }
 
 // =============================================
@@ -488,6 +491,9 @@ export async function getToolQuotes(userId: string): Promise<QuoteRecord[]> {
     companyTotalFreight: Number(row.company_total_freight),
     carrierNetProfit: Number(row.carrier_net_profit),
     carrierProfitMargin: Number(row.carrier_profit_margin),
+    hasIcms: row.has_icms !== undefined ? !!row.has_icms : (Number(row.icms_percentage) > 0 || Number(row.icms_value) > 0),
+    icmsPercentage: row.icms_percentage != null ? Number(row.icms_percentage) : undefined,
+    icmsValue: row.icms_value != null ? Number(row.icms_value) : undefined,
   }));
 }
 
@@ -525,6 +531,9 @@ export async function getAllToolQuotes(): Promise<QuoteRecord[]> {
     companyTotalFreight: Number(row.company_total_freight),
     carrierNetProfit: Number(row.carrier_net_profit),
     carrierProfitMargin: Number(row.carrier_profit_margin),
+    hasIcms: row.has_icms !== undefined ? !!row.has_icms : (Number(row.icms_percentage) > 0 || Number(row.icms_value) > 0),
+    icmsPercentage: row.icms_percentage != null ? Number(row.icms_percentage) : undefined,
+    icmsValue: row.icms_value != null ? Number(row.icms_value) : undefined,
   }));
 }
 
@@ -557,6 +566,9 @@ export async function saveToolQuote(
     company_total_freight: quote.companyTotalFreight,
     carrier_net_profit: quote.carrierNetProfit,
     carrier_profit_margin: quote.carrierProfitMargin,
+    has_icms: quote.hasIcms ?? false,
+    icms_percentage: quote.icmsPercentage ?? 0,
+    icms_value: quote.icmsValue ?? 0,
   };
 
   let { data, error } = await supabase
@@ -566,24 +578,29 @@ export async function saveToolQuote(
     .single();
 
   let retryCount = 0;
-  while (error && error.code === '42703' && retryCount < 5) {
-    const match = error.message.match(/column "(.*?)" of relation/);
-    if (match && match[1]) {
-      delete payload[match[1]];
+  while (error && retryCount < 6) {
+    const msg = error.message || '';
+    const match = msg.match(/Could not find the '([^']+)' column/i) ||
+                  msg.match(/column "?([^"'\s]+)"? of relation/i) ||
+                  msg.match(/column "?([^"'\s]+)"? does not exist/i);
+
+    if (match && match[1] && payload[match[1]] !== undefined) {
+      const missingColumn = match[1];
+      console.warn(`[saveToolQuote fallback] Coluna '${missingColumn}' não encontrada na tabela tool_quotes. Removendo do payload e tentando novamente...`);
+      delete payload[missingColumn];
       const retry = await supabase.from('tool_quotes').insert(payload).select('*').single();
       data = retry.data;
       error = retry.error;
       retryCount++;
+    } else if (error.code === '22P02') {
+      payload.user_id = userId;
+      const retry = await supabase.from('tool_quotes').insert(payload).select('*').single();
+      data = retry.data;
+      error = retry.error;
+      break;
     } else {
       break;
     }
-  }
-
-  if (error && error.code === '22P02') {
-    payload.user_id = userId;
-    const retry = await supabase.from('tool_quotes').insert(payload).select('*').single();
-    data = retry.data;
-    error = retry.error;
   }
 
   if (error) {

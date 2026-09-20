@@ -140,12 +140,14 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     });
   }, [quotes, searchTerm, filterClient, dateStart, dateEnd]);
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  const formatCurrency = (value: number | undefined | null) => {
+    const safeVal = (value != null && Number.isFinite(Number(value))) ? Number(value) : 0;
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(safeVal);
   };
 
-  const formatNumber = (value: number, decimals: number = 2) => {
-    return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value);
+  const formatNumber = (value: number | undefined | null, decimals: number = 2) => {
+    const safeVal = (value != null && Number.isFinite(Number(value))) ? Number(value) : 0;
+    return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(safeVal);
   };
 
   const toggleExpand = (id: string) => {
@@ -456,10 +458,22 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                        </div>
                     </div>
 
-                    <div className="flex items-center justify-between md:flex-col md:items-end gap-2">
+                    <div className="flex items-center justify-between md:flex-col md:items-end gap-1">
                        <div className={`text-xl font-black ${activeView === 'estadias' ? 'text-indigo-600' : 'text-emerald-600'}`}>
-                          {formatCurrency(activeView === 'estadias' ? item.totalValue : item.companyTotalFreight)}
+                          {activeView === 'estadias' ? (
+                            formatCurrency(item.totalValue)
+                          ) : (
+                            <div className="flex items-baseline gap-1">
+                              <span>{formatCurrency(item.companyFreightPerTon || (item.weight ? item.companyTotalFreight / item.weight : 0))}</span>
+                              <span className="text-xs font-semibold text-slate-400 dark:text-gray-400">/ Ton</span>
+                            </div>
+                          )}
                        </div>
+                       {activeView === 'cotacoes' && (
+                          <div className="text-[11px] font-medium text-slate-400 dark:text-gray-400">
+                            Total: {formatCurrency(item.companyTotalFreight)}
+                          </div>
+                       )}
                        <button onClick={(e) => { e.stopPropagation(); toggleExpand(item.id); }} className="p-2 hover:bg-slate-100 dark:hover:bg-gray-700 rounded-full transition-colors">
                           {expandedId === item.id ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
                        </button>
@@ -736,9 +750,15 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center"><Scale className="w-3 h-3 mr-2" /> Performance Financ.</h4>
                             <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-slate-100 dark:border-gray-700">
                                <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Lucro Operacional</div>
-                               <div className="text-lg font-bold text-emerald-600 mb-3">{formatCurrency(item.carrierNetProfit)} ({item.carrierProfitMargin.toFixed(1)}%)</div>
-                               <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Cotação p/ Cliente</div>
-                               <div className="text-2xl font-black text-slate-800 dark:text-white">{formatCurrency(item.companyTotalFreight)}</div>
+                               <div className="text-lg font-bold text-emerald-600 mb-3">{formatCurrency(item.carrierNetProfit)} ({(item.carrierProfitMargin ?? 0).toFixed(1)}%)</div>
+                               <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Cotação p/ Cliente (Valor por Tonelada)</div>
+                               <div className="text-2xl font-black text-slate-800 dark:text-white flex items-baseline gap-1.5">
+                                 <span>{formatCurrency(item.companyFreightPerTon || (item.weight ? item.companyTotalFreight / item.weight : 0))}</span>
+                                 <span className="text-xs font-semibold text-slate-400">/ Ton</span>
+                               </div>
+                               <div className="text-xs text-slate-500 dark:text-gray-400 mt-1 font-medium">
+                                 Frete Total: {formatCurrency(item.companyTotalFreight)}
+                               </div>
                             </div>
                           </div>
                         </>

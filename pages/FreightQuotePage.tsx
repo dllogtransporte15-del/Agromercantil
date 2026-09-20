@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Polyline, useMap, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { 
@@ -13,8 +14,12 @@ import {
   FileCode, Clock, Search, Sparkles, History, Check, Zap
 } from 'lucide-react';
 import Header from '../components/Header';
-import { saveToolQuote, getToolClients, saveToolClient, ToolClient } from '../utils/toolStorage';
+import { 
+  saveToolQuote, getToolClients, saveToolClient, ToolClient, 
+  getToolQuotes, getAllToolQuotes, QuoteRecord 
+} from '../utils/toolStorage';
 import type { User as AppUser, Cargo } from '../types';
+import { UserProfile } from '../types';
 import { isDemoUser } from '../auth';
 import { autoFormatInput } from '../utils/formatters';
 import { findRouteHistorySuggestion, RouteHistorySuggestion } from '../utils/routeHistorySuggester';
@@ -46,6 +51,8 @@ interface QuoteData {
   inputMode: 'PER_KM' | 'PER_TON';
   driverValue: string; // Valor por Tonelada ou Valor por KM
   companyFreightPerTon: string; // Frete Empresa (R$/Ton)
+  hasIcms: boolean; // Incidência de ICMS
+  icmsPercentage: string; // Alíquota de ICMS (%)
   tollValue: string;
   anttValue: string;
   // Campos obsoletos, mantidos apenas por compatibilidade
@@ -94,6 +101,7 @@ function MapUpdater({ origin, dest, routeCoords }: { origin?: Location | null, d
 }
 
 export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQuotePageProps) {
+  const navigate = useNavigate();
   const [clients, setClients] = useState<ToolClient[]>([]);
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -103,10 +111,29 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Histórico das Últimas 5 Cotações
+  const [recentQuotes, setRecentQuotes] = useState<QuoteRecord[]>([]);
+  const [loadingRecentQuotes, setLoadingRecentQuotes] = useState(false);
+
   // Sugestão Inteligente de Rota (Histórico de Cargas ou Cotações em até 150km)
   const [routeSuggestion, setRouteSuggestion] = useState<RouteHistorySuggestion | null>(null);
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [appliedSuggestion, setAppliedSuggestion] = useState(false);
+
+  const loadRecentQuotes = useCallback(async () => {
+    if (!currentUser) return;
+    setLoadingRecentQuotes(true);
+    try {
+      const isDemo = isDemoUser(currentUser);
+      const isAdmin = !isDemo && [UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile as any);
+      const quotes = isAdmin ? await getAllToolQuotes() : await getToolQuotes(currentUser.id);
+      setRecentQuotes((quotes || []).slice(0, 5));
+    } catch (err) {
+      console.error('Erro ao carregar últimas cotações:', err);
+    } finally {
+      setLoadingRecentQuotes(false);
+    }
+  }, [currentUser]);
 
   const loadClients = useCallback(async () => {
     if (!currentUser) return;
@@ -116,7 +143,8 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
 
   useEffect(() => {
     loadClients();
-  }, [loadClients]);
+    loadRecentQuotes();
+  }, [loadClients, loadRecentQuotes]);
 
   const initialData: QuoteData = {
     clientName: '',
@@ -128,6 +156,8 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
     inputMode: 'PER_TON',
     driverValue: '270',
     companyFreightPerTon: '300.00',
+    hasIcms: false,
+    icmsPercentage: '7',
     tollValue: '950',
     anttValue: '7000',
     valuePerKm: '0',
@@ -270,6 +300,58 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
     setAppliedSuggestion(true);
   };
 
+  const liveMarginData = useMemo(() => {
+    const companyFreight = parseFloat(formData.companyFreightPerTon) || 0;
+    if (companyFreight <= 0) {
+      return {
+        marginPercent: 0,
+        grossMarginPercent: 0,
+        icmsRatePercent: 0,
+        icmsPerTon: 0,
+        netCompanyPerTon: 0,
+        driverRatePerTon: 0,
+        netProfitPerTon: 0,
+        grossProfitPerTon: 0
+      };
+    }
+
+    const driverValueInput = parseFloat(formData.driverValue) || 0;
+    const weight = parseFloat(formData.weight) || 32;
+
+    let driverRatePerTon = 0;
+    if (formData.inputMode === 'PER_TON') {
+      driverRatePerTon = driverValueInput;
+    } else if (formData.inputMode === 'PER_KM') {
+      const dist = routeInfo?.distance || 0;
+      driverRatePerTon = (weight > 0 && dist > 0) ? (driverValueInput * dist) / weight : 0;
+    }
+
+    const hasIcms = !!formData.hasIcms;
+    const icmsPercentage = hasIcms ? (parseFloat(formData.icmsPercentage) || 0) : 0;
+    const icmsRate = icmsPercentage / 100;
+    const icmsPerTon = hasIcms ? (companyFreight * icmsRate) : 0;
+    const netCompanyPerTon = Math.max(0, companyFreight - icmsPerTon);
+
+    // Lucro por tonelada considerando o ICMS como custo
+    const netProfitPerTon = netCompanyPerTon - driverRatePerTon;
+    const grossProfitPerTon = companyFreight - driverRatePerTon;
+
+    // Margens percentuais sobre o Frete Empresa
+    const marginPercent = (netProfitPerTon / companyFreight) * 100;
+    const grossMarginPercent = (grossProfitPerTon / companyFreight) * 100;
+
+    return {
+      marginPercent,
+      grossMarginPercent,
+      icmsRatePercent: icmsPercentage,
+      icmsPerTon,
+      netCompanyPerTon,
+      driverRatePerTon,
+      netProfitPerTon,
+      grossProfitPerTon
+    };
+  }, [formData, routeInfo]);
+
   const results = useMemo(() => {
     if (!routeInfo) return null;
 
@@ -293,7 +375,17 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
     }
 
     const companyTotalFreight = companyFreightInput * weight;
-    const marginPercent = companyFreightInput > 0 ? ((companyFreightInput - driverFreightPerTon) / companyFreightInput) * 100 : 0;
+
+    // Regra de ICMS idêntica ao cadastro de cargas da transportadora
+    const hasIcms = !!formData.hasIcms;
+    const icmsPercent = hasIcms ? (parseFloat(formData.icmsPercentage) || 0) : 0;
+    const icmsRate = icmsPercent / 100;
+    const icmsDeduction = hasIcms ? (companyTotalFreight * icmsRate) : 0;
+    const companyNetFreight = Math.max(0, companyTotalFreight - icmsDeduction);
+    const companyNetFreightPerTon = weight > 0 ? (companyNetFreight / weight) : (companyFreightInput * (1 - icmsRate));
+
+    const carrierNetProfit = companyNetFreight - driverTotalValue;
+    const marginPercent = liveMarginData.marginPercent;
     
     const differenceFromBase = driverTotalValue - baseCost;
     const isValid = differenceFromBase >= 0;
@@ -305,15 +397,21 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
       driverFreightPerTon,
       companyTotalFreight,
       companyFreightPerTon: companyFreightInput,
+      hasIcms,
+      icmsPercent,
+      icmsDeduction,
+      companyNetFreight,
+      companyNetFreightPerTon,
       marginPercent,
+      grossMarginPercent: liveMarginData.grossMarginPercent,
       differenceFromBase,
       isValid,
       dieselCost: 0,
       commissionValue: 0,
-      carrierNetProfit: companyTotalFreight - driverTotalValue,
+      carrierNetProfit,
       carrierProfitMargin: marginPercent
     };
-  }, [formData, routeInfo]);
+  }, [formData, routeInfo, liveMarginData]);
 
   const handleSave = async () => {
     if (!results || !routeInfo || isSaving) return;
@@ -353,12 +451,16 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
         driverFreightPerTon: results.driverFreightPerTon,
         companyFreightPerTon: results.companyFreightPerTon,
         companyTotalFreight: results.companyTotalFreight,
+        hasIcms: results.hasIcms,
+        icmsPercentage: results.icmsPercent,
+        icmsValue: results.icmsDeduction,
         carrierNetProfit: results.carrierNetProfit,
         carrierProfitMargin: results.carrierProfitMargin
       });
 
       if (saved) {
         setSaveSuccess(true);
+        loadRecentQuotes();
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
         alert('Erro ao salvar cotação. Por favor, tente novamente.');
@@ -371,8 +473,43 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
     }
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  const formatCurrency = (value: number | undefined | null) => {
+    const safeVal = (value != null && Number.isFinite(Number(value))) ? Number(value) : 0;
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(safeVal);
+  };
+
+  const formatQuoteDate = (dateStr: string) => {
+    try {
+      const d = typeof dateStr === 'string' ? parseISO(dateStr) : new Date(dateStr);
+      return format(d, 'dd/MM/yyyy HH:mm');
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const handleLoadQuote = (quote: QuoteRecord) => {
+    setFormData(prev => ({
+      ...prev,
+      clientName: quote.clientName || '',
+      origin: quote.origin,
+      destination: quote.destination,
+      weight: String(quote.weight || 32),
+      cargoType: quote.cargoType || 'Granel Sólido',
+      axes: String(quote.axes || 6),
+      inputMode: quote.inputMode || 'PER_TON',
+      driverValue: String(quote.inputMode === 'PER_TON' ? (quote.driverFreightPerTon || 0) : (quote.valuePerKm || 0)),
+      companyFreightPerTon: String(quote.companyFreightPerTon || (quote.weight ? (quote.companyTotalFreight / quote.weight).toFixed(2) : '300.00')),
+      hasIcms: !!quote.hasIcms,
+      icmsPercentage: String(quote.icmsPercentage || '7'),
+      tollValue: String(quote.tollValue || 0),
+      anttValue: String(quote.anttValue || 0),
+    }));
+    setRouteInfo({
+      distance: quote.distance,
+      duration: (quote.distance / 70) * 60,
+      coordinates: []
+    });
+    setSaveSuccess(false);
   };
 
   const formatDate = (dateStr: string) => {
@@ -399,7 +536,13 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
         ['Cliente', formData.clientName || 'Não Informado'],
         ['Origem', formData.origin],
         ['Destino', formData.destination],
-        ['Valor do Frete Empresa', `${formatCurrency(results.companyFreightPerTon)} / Tonelada`]
+        ['Distância / Peso', `${results.distance.toFixed(0)} km / ${formData.weight} Toneladas`],
+        ['Valor do Frete Empresa', `${formatCurrency(results.companyFreightPerTon)} / Tonelada`],
+        ['Frete Empresa Bruto', formatCurrency(results.companyTotalFreight)],
+        ['Incidência de ICMS', results.hasIcms ? `Sim (${results.icmsPercent}%) - ${formatCurrency(results.icmsDeduction)}` : 'Não (Isento)'],
+        ...(results.hasIcms ? [['Frete Empresa Líquido (s/ ICMS)', formatCurrency(results.companyNetFreight)]] : []),
+        ['Frete Motorista', formatCurrency(results.driverTotalValue)],
+        ['Lucro Operacional Líquido', `${formatCurrency(results.carrierNetProfit)} (${results.carrierProfitMargin.toFixed(1)}%)`]
       ],
       theme: 'grid',
       headStyles: { fillColor: [79, 70, 229] },
@@ -412,7 +555,7 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
   return (
     <>
       <Header title="Precificação & Cotações" />
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 font-sans">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 font-sans">
         {/* Painel de Configurações */}
         <div className="xl:col-span-4 space-y-6">
           {/* Sessão Rota */}
@@ -663,6 +806,46 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
                     <input type="number" step="0.01" name="driverValue" value={formData.driverValue} onChange={handleInputChange} className="w-full pl-10 pr-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm font-semibold focus:ring-2 focus:ring-indigo-500" />
                   </div>
                 </div>
+
+                {/* Incidência de ICMS */}
+                <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-gray-700/60">
+                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Incidência de ICMS</label>
+                  <div className="flex gap-2">
+                    <select
+                      name="hasIcms"
+                      value={formData.hasIcms ? 'true' : 'false'}
+                      onChange={(e) => {
+                        const val = e.target.value === 'true';
+                        setFormData(prev => ({
+                          ...prev,
+                          hasIcms: val,
+                          icmsPercentage: val ? (prev.icmsPercentage || '7') : '0'
+                        }));
+                        setSaveSuccess(false);
+                      }}
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm font-semibold focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="false">Não (Isento / Sem ICMS)</option>
+                      <option value="true">Sim (Com ICMS)</option>
+                    </select>
+                    {formData.hasIcms && (
+                      <div className="relative w-32 shrink-0">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          name="icmsPercentage"
+                          value={formData.icmsPercentage}
+                          onChange={handleInputChange}
+                          placeholder="7.00"
+                          className="w-full pr-7 pl-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm font-semibold focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-4">
@@ -673,13 +856,47 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
                     <input type="number" step="0.01" name="companyFreightPerTon" value={formData.companyFreightPerTon} onChange={handleInputChange} className="w-full pl-10 pr-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm font-semibold focus:ring-2 focus:ring-indigo-500" placeholder="0.00" />
                   </div>
                 </div>
+
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Margem de Lucro Prevista (%)</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Margem de Lucro Prevista (%)</label>
+                    {formData.hasIcms && (
+                      <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800/50">
+                        c/ ICMS ({parseFloat(formData.icmsPercentage) || 0}%)
+                      </span>
+                    )}
+                  </div>
                   <div className="relative">
-                    <input type="text" readOnly title="A margem de lucro é calculada automaticamente baseada no Frete Empresa e o frete do motorista." value={results ? results.marginPercent.toFixed(2) : '0.00'} className="w-full pr-8 px-3 py-2 bg-slate-50 border border-slate-200 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg text-sm font-bold text-slate-500 text-right outline-none cursor-not-allowed" />
+                    <input 
+                      type="text" 
+                      readOnly 
+                      title="A margem de lucro é calculada automaticamente considerando o Frete Empresa, o Frete do Motorista e o ICMS como custo (quando incidente)." 
+                      value={`${liveMarginData.marginPercent.toFixed(2)} %`} 
+                      className={`w-full pr-8 px-3 py-2 border rounded-lg text-sm font-bold text-right outline-none cursor-default transition-all ${
+                        liveMarginData.marginPercent > 0 
+                          ? 'text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 bg-emerald-50/30 dark:bg-emerald-950/20' 
+                          : liveMarginData.marginPercent < 0 
+                          ? 'text-red-500 dark:text-red-400 border-red-300 dark:border-red-800 bg-red-50/30 dark:bg-red-950/20'
+                          : 'text-slate-500 border-slate-200 dark:border-gray-600 dark:bg-gray-800 dark:text-white bg-slate-50'
+                      }`} 
+                    />
                     <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   </div>
+
+                  {formData.hasIcms && parseFloat(formData.companyFreightPerTon) > 0 && parseFloat(formData.driverValue) > 0 && (
+                    <div className="flex justify-between items-center text-[10px] text-slate-500 dark:text-gray-400 font-medium px-0.5 pt-0.5">
+                      <span>Margem s/ ICMS: <strong className="text-slate-700 dark:text-gray-200">{liveMarginData.grossMarginPercent.toFixed(2)}%</strong></span>
+                      <span className="text-amber-600 dark:text-amber-400 font-semibold">Custo ICMS: -{(parseFloat(formData.icmsPercentage) || 0).toFixed(2)}%</span>
+                    </div>
+                  )}
                 </div>
+
+                {formData.hasIcms && liveMarginData.icmsPerTon > 0 && (
+                  <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-xl flex items-center justify-between text-xs animate-in fade-in duration-200">
+                    <span className="text-amber-800 dark:text-amber-300 font-medium">Dedução ICMS ({liveMarginData.icmsRatePercent}%):</span>
+                    <span className="font-bold text-amber-900 dark:text-amber-200">-{formatCurrency(liveMarginData.icmsPerTon)}/ton</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -701,48 +918,65 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
 
         {/* Painel Lateral Direito: Resultados */}
         <div className="xl:col-span-3 space-y-6">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 overflow-hidden flex flex-col h-full ring-1 ring-slate-100 dark:ring-gray-700">
-            <div className="p-6 border-b border-slate-100 dark:border-gray-700 bg-slate-50/50 dark:bg-gray-900/50">
-              <h2 className="text-lg font-medium flex items-center text-slate-800 dark:text-white">
-                <Calculator className="w-5 h-5 mr-2 text-indigo-500" /> Fechamento
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 overflow-hidden ring-1 ring-slate-100 dark:ring-gray-700">
+            <div className="p-4 md:p-5 border-b border-slate-100 dark:border-gray-700 bg-slate-50/50 dark:bg-gray-900/50">
+              <h2 className="text-base font-bold flex items-center text-slate-800 dark:text-white">
+                <Calculator className="w-4 h-4 mr-2 text-indigo-500" /> Fechamento
               </h2>
             </div>
             
-            <div className="p-6 flex-1 flex flex-col">
+            <div className="p-4 md:p-5">
               {results ? (
-                <div className="space-y-6 flex-1 flex flex-col">
+                <div className="space-y-4">
                   {/* Bloco Destaque */}
-                  <div className="bg-slate-900 rounded-2xl p-5 text-white shadow-inner">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Cotação p/ Cliente</div>
-                    <div className="text-3xl font-bold tracking-tight text-white mb-1">
-                      {formatCurrency(results.companyTotalFreight)}
+                  <div className="bg-slate-900 rounded-2xl p-4 text-white shadow-inner">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Cotação p/ Cliente (Valor por Tonelada)</div>
+                    <div className="text-2xl font-bold tracking-tight text-white mb-1 flex items-baseline gap-2">
+                      <span>{formatCurrency(results.companyFreightPerTon)}</span>
+                      <span className="text-xs font-semibold text-slate-400">/ Ton</span>
                     </div>
-                    <div className="flex items-center text-[10px] text-slate-400 font-medium">
-                      <Truck className="w-3 h-3 mr-1" /> {formatCurrency(results.companyFreightPerTon)} / Tonelada
+                    <div className="flex items-center text-xs text-slate-400 font-medium">
+                      <Truck className="w-3.5 h-3.5 mr-1 text-slate-400" /> Frete Total: {formatCurrency(results.companyTotalFreight)}
                     </div>
                   </div>
 
                   {/* Detalhamento de Custos */}
-                  <div className="space-y-3 pt-2">
-                    <div className="flex justify-between items-center text-sm">
+                  <div className="space-y-2.5 pt-1">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-500">Frete Empresa Bruto</span>
+                      <span className="font-semibold text-slate-800 dark:text-white">{formatCurrency(results.companyTotalFreight)}</span>
+                    </div>
+                    {results.hasIcms && results.icmsDeduction > 0 && (
+                      <div className="flex justify-between items-center text-xs text-amber-600 dark:text-amber-400">
+                        <span>Dedução ICMS ({results.icmsPercent}%)</span>
+                        <span className="font-semibold">-{formatCurrency(results.icmsDeduction)}</span>
+                      </div>
+                    )}
+                    {results.hasIcms && (
+                      <div className="flex justify-between items-center text-xs text-slate-600 dark:text-gray-300 font-medium">
+                        <span>Frete Empresa Líquido</span>
+                        <span className="font-bold">{formatCurrency(results.companyNetFreight)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-500">Frete Repassado (Motorista)</span>
                       <span className="font-semibold text-slate-800 dark:text-white">{formatCurrency(results.driverTotalValue)}</span>
                     </div>
-                    <div className="flex justify-between items-center text-sm">
+                    <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-500">Piso Mínimo + Pedágio</span>
                       <span className="font-semibold text-slate-800 dark:text-white">{formatCurrency(results.baseCost)}</span>
                     </div>
-                    <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-100 dark:border-gray-700">
-                      <span className="text-indigo-600 font-bold">Lucro Bruto Previsto</span>
-                      <span className="font-bold text-emerald-600">{formatCurrency(results.carrierNetProfit)}</span>
+                    <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-100 dark:border-gray-700">
+                      <span className="text-indigo-600 dark:text-indigo-400 font-bold">Lucro Operacional Líquido</span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(results.carrierNetProfit)}</span>
                     </div>
                   </div>
 
                   {/* Margem e Performance */}
-                  <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800/30">
+                  <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800/30">
                     <div className="flex justify-between items-center mb-1">
-                      <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase">Margem Real</span>
-                      <span className="text-lg font-bold text-emerald-700 dark:text-emerald-400">{results.carrierProfitMargin.toFixed(1)}%</span>
+                      <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 uppercase">Margem Real</span>
+                      <span className="text-base font-bold text-emerald-700 dark:text-emerald-400">{results.carrierProfitMargin.toFixed(1)}%</span>
                     </div>
                     <div className="w-full bg-emerald-200 dark:bg-emerald-800 rounded-full h-1.5">
                       <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${Math.min(results.carrierProfitMargin * 2, 100)}%` }}></div>
@@ -750,34 +984,112 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
                   </div>
 
                   {/* Botões de Ação */}
-                  <div className="space-y-3 mt-auto pt-6">
+                  <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-gray-700">
                     {saveSuccess && (
-                      <div className="bg-emerald-50 text-emerald-700 p-3 rounded-xl flex items-center text-xs font-medium border border-emerald-100 animate-in fade-in zoom-in duration-300">
-                        <CheckCircle2 className="w-4 h-4 mr-2" /> Cotação salva no histórico!
+                      <div className="bg-emerald-50 text-emerald-700 p-2.5 rounded-xl flex items-center text-xs font-medium border border-emerald-100 animate-in fade-in zoom-in duration-300">
+                        <CheckCircle2 className="w-4 h-4 mr-2 text-emerald-600" /> Cotação salva no histórico!
                       </div>
                     )}
                     {!isDemoUser(currentUser) && (
-                      <button onClick={handleSave} disabled={isSaving} className="w-full flex items-center justify-center px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-bold shadow-md shadow-red-200 dark:shadow-none hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:translate-y-0">
-                        {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                      <button onClick={handleSave} disabled={isSaving} className="w-full flex items-center justify-center px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-bold text-xs shadow-sm hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:translate-y-0">
+                        {isSaving ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-2" />}
                         {isSaving ? 'Salvando...' : 'Salvar no Histórico'}
                       </button>
                     )}
-                    <div className="grid grid-cols-2 gap-3">
-                      <button onClick={exportToPDF} className="flex items-center justify-center px-4 py-2 border border-slate-200 dark:border-gray-600 text-slate-600 dark:text-gray-300 rounded-xl hover:bg-slate-50 dark:hover:bg-gray-700 transition-colors font-medium text-xs">
-                        <Download className="w-4 h-4 mr-2" /> PDF
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={exportToPDF} className="flex items-center justify-center px-3 py-2 border border-slate-200 dark:border-gray-600 text-slate-600 dark:text-gray-300 rounded-xl hover:bg-slate-50 dark:hover:bg-gray-700 transition-colors font-medium text-xs">
+                        <Download className="w-3.5 h-3.5 mr-1.5" /> PDF
                       </button>
-                      <button className="flex items-center justify-center px-4 py-2 border border-slate-200 dark:border-gray-600 text-slate-600 dark:text-gray-300 rounded-xl hover:bg-slate-50 dark:hover:bg-gray-700 transition-colors font-medium text-xs">
-                        <FileCode className="w-4 h-4 mr-2" /> XML
+                      <button className="flex items-center justify-center px-3 py-2 border border-slate-200 dark:border-gray-600 text-slate-600 dark:text-gray-300 rounded-xl hover:bg-slate-50 dark:hover:bg-gray-700 transition-colors font-medium text-xs">
+                        <FileCode className="w-3.5 h-3.5 mr-1.5" /> XML
                       </button>
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-center text-slate-400 space-y-4 py-12">
-                  <div className="w-16 h-16 bg-slate-50 dark:bg-gray-700 rounded-full flex items-center justify-center">
-                    <Calculator className="w-8 h-8 text-slate-200" />
+                <div className="flex flex-col items-center justify-center text-center text-slate-400 space-y-3 py-6">
+                  <div className="w-12 h-12 bg-slate-50 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                    <Calculator className="w-6 h-6 text-slate-300 dark:text-gray-500" />
                   </div>
-                  <p className="text-xs leading-relaxed max-w-[150px]">Preencha a origem e destino para ver os cálculos de frete.</p>
+                  <p className="text-xs leading-relaxed max-w-[170px]">Preencha a origem e destino para ver os cálculos de frete.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Histórico das Últimas 5 Cotações */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 overflow-hidden ring-1 ring-slate-100 dark:ring-gray-700">
+            <div className="p-4 border-b border-slate-100 dark:border-gray-700 bg-slate-50/50 dark:bg-gray-900/50 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <History className="w-4 h-4 text-indigo-500" />
+                <h3 className="text-sm font-bold text-slate-800 dark:text-white">Últimas Cotações</h3>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-full border border-indigo-100 dark:border-indigo-900/50">
+                  {recentQuotes.length}
+                </span>
+              </div>
+              <button
+                onClick={() => navigate('/tools-history')}
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-semibold flex items-center gap-1 transition-colors group"
+                title="Ver histórico completo"
+              >
+                <span>Ver todas</span>
+                <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            </div>
+
+            <div className="divide-y divide-slate-100 dark:divide-gray-700/60 max-h-[460px] overflow-y-auto">
+              {loadingRecentQuotes ? (
+                <div className="p-6 flex items-center justify-center text-slate-400 text-xs gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+                  <span>Carregando cotações...</span>
+                </div>
+              ) : recentQuotes.length > 0 ? (
+                recentQuotes.map((q) => {
+                  const ratePerTon = q.companyFreightPerTon || (q.weight ? q.companyTotalFreight / q.weight : 0);
+                  return (
+                    <div
+                      key={q.id}
+                      onClick={() => handleLoadQuote(q)}
+                      className="p-3.5 hover:bg-slate-50 dark:hover:bg-gray-750 transition-colors cursor-pointer group"
+                      title="Clique para carregar esta cotação no simulador"
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-[11px] font-bold text-slate-700 dark:text-gray-300 truncate max-w-[130px]">
+                          {q.clientName || 'Cliente Particular'}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap">
+                          {formatQuoteDate(q.date)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center text-xs font-semibold text-slate-800 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors mb-1.5">
+                        <span className="truncate">{q.origin.split(',')[0]}</span>
+                        <ArrowRight className="w-3 h-3 mx-1 shrink-0 text-slate-400" />
+                        <span className="truncate">{q.destination.split(',')[0]}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-100/70 dark:border-gray-700/40">
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-gray-400">
+                          <span>{q.distance ? `${q.distance.toFixed(0)} km` : '-'}</span>
+                          <span>•</span>
+                          <span>{q.weight ? `${q.weight}t` : '-'}</span>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-emerald-600 dark:text-emerald-400 text-xs">
+                            {formatCurrency(ratePerTon)} <span className="text-[10px] font-normal text-slate-400">/ Ton</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-normal">
+                            Total: {formatCurrency(q.companyTotalFreight)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="p-6 text-center text-slate-400 dark:text-gray-500 text-xs space-y-1">
+                  <Calculator className="w-6 h-6 mx-auto text-slate-300 dark:text-gray-600 mb-1" />
+                  <p>Nenhuma cotação salva recentemente.</p>
                 </div>
               )}
             </div>
