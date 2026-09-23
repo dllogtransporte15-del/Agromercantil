@@ -7,7 +7,7 @@ import { PaperclipIcon } from './icons/PaperclipIcon';
 import { StayRecord } from '../utils/toolStorage';
 import { DocumentAttachmentCard } from './ImageLightboxModal';
 import FormattedObservations from './FormattedObservations';
-import { Globe2 } from 'lucide-react';
+import { Globe2, Copy } from 'lucide-react';
 
 interface CargoDetailsModalProps {
   isOpen: boolean;
@@ -19,6 +19,7 @@ interface CargoDetailsModalProps {
   stays?: StayRecord[];
   shipments?: Shipment[];
   currentUser?: User;
+  onDuplicate?: (cargo: Cargo) => void;
 }
 
 const DetailItem: React.FC<{ label: string; value?: string | number | null; children?: React.ReactNode }> = ({ label, value, children }) => (
@@ -81,7 +82,7 @@ const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number; hideSensitive
 );
 
 
-const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, cargo, client, product, commercialUser, stays = [], shipments = [], currentUser }) => {
+const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, cargo, client, product, commercialUser, stays = [], shipments = [], currentUser, onDuplicate }) => {
   if (!isOpen || !cargo) return null;
   const isClient = currentUser?.profile === 'Cliente';
 
@@ -370,8 +371,20 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
 
         </div>
         
-        <div className="mt-6 flex justify-end border-t dark:border-gray-700 pt-4">
-          <button type="button" onClick={onClose} className="py-2 px-4 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">
+        <div className="mt-6 flex justify-end items-center gap-3 border-t dark:border-gray-700 pt-4">
+          {onDuplicate && !isClient && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onDuplicate(cargo);
+              }}
+              className="py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors text-sm font-semibold flex items-center gap-1.5 shadow-sm"
+            >
+              <Copy className="h-4 w-4" /> Duplicar Carga
+            </button>
+          )}
+          <button type="button" onClick={onClose} className="py-2 px-4 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500 text-sm font-medium">
             Fechar
           </button>
         </div>

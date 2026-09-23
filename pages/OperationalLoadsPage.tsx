@@ -121,9 +121,20 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   const isDemo = isDemoUser(currentUser);
   const canCreateShipment = !isDemo && can('create', currentUser, 'shipments', profilePermissions);
   const canUpdateLoad = !isDemo && can('update', currentUser, 'loads', profilePermissions);
+  const canCreateLoad = !isDemo && can('create', currentUser, 'loads', profilePermissions);
+
+  const [isDuplicate, setIsDuplicate] = useState(false);
 
   const handleEditLoad = (load: Cargo) => {
     setLoadToEdit(load);
+    setIsDuplicate(false);
+    setInitialModalStep(1);
+    setIsLoadFormModalOpen(true);
+  };
+
+  const handleDuplicateLoad = (cargo: Cargo) => {
+    setLoadToEdit(cargo);
+    setIsDuplicate(true);
     setInitialModalStep(1);
     setIsLoadFormModalOpen(true);
   };
@@ -225,6 +236,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   const handleCloseLoadFormModal = () => {
     setIsLoadFormModalOpen(false);
     setLoadToEdit(null);
+    setIsDuplicate(false);
   };
 
   const handleShowHistory = (load: Cargo) => {
@@ -260,20 +272,46 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       const product = products.find(p => p.id === load.productId)?.name?.toUpperCase() || 'N/A';
       const origin = load.origin.toUpperCase();
       const destination = load.destination.toUpperCase();
-      const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
-      const tollText = hasToll ? ' + Ped' : '';
-      const price = `${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`;
+      
+      const pjVal = load.freightLegs && load.freightLegs.length > 0 
+        ? load.freightLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTon || 0), 0)
+        : (load.driverFreightValuePerTon || 0);
+
+      const hasPjToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
+      const pjTollText = hasPjToll ? ' + Ped' : '';
+      const pjFormatted = `R$ ${pjVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${pjTollText} PJ`;
+
+      const allPfDisabled = load.freightLegs && load.freightLegs.length > 0 && load.freightLegs.every(l => l.disablePfFreight);
+      
+      let priceText = pjFormatted;
+      if (!allPfDisabled) {
+        const pfVal = load.freightLegs && load.freightLegs.length > 0
+          ? load.freightLegs.reduce((sum, leg) => sum + (leg.disablePfFreight ? 0 : (leg.driverFreightValuePerTonPf ?? leg.driverFreightValuePerTon ?? 0)), 0)
+          : (load.driverFreightValuePerTon || 0);
+        
+        const hasPfToll = load.driverFreightPfHasToll || load.freightLegs?.some(l => l.driverFreightPfHasToll);
+        const pfTollText = hasPfToll ? ' + Ped' : '';
+        const pfFormatted = `R$ ${pfVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${pfTollText} PF`;
+        priceText = `${pjFormatted} - ${pfFormatted}`;
+      }
+
       const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
 
-      let text = `📍 ${origin} x ${destination} \n🌾 ${product} - 💲 R$ ${price}\t\n🚛 ${bodyTypes} 🚛`;
-      
+      const lines = [
+        `📍 ${origin} x ${destination} `,
+        `🌾 ${product} - `,
+        `💲 ${priceText}\t`,
+        `🚛 ${bodyTypes} 🚛`
+      ];
+
       if (load.originMapLink) {
-        text += `\n📍Coleta - ${load.originMapLink}`;
+        lines.push(`📍Coleta - ${load.originMapLink}`);
       }
       if (load.destinationMapLink) {
-        text += `\n📍Entrega - ${load.destinationMapLink}`;
+        lines.push(`📍Entrega - ${load.destinationMapLink}`);
       }
-      return text;
+
+      return lines.join('\n');
     }).join('\n\n');
 
     const textToCopy = header + '\n' + loadsText;
@@ -313,12 +351,12 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         `ORIGEM: ${origin}`,
         `DESTINO: ${destination}`,
         `PRODUTO: ${product}`,
-        `VALOR: ${price}`,
+        `VALOR: A combinar`,
         `VEÍCULO: ${vehicleTypes}`,
         `CARROCERIA: ${bodyTypes}`,
         `RASTREADA: ${rastreada}`,
         `LONA: Sim`,
-        `FORMA DE PAGAMENTO: Pix, Cartão`,
+        `FORMA DE PAGAMENTO: Pix, Outro*`,
         `OBSERVAÇÕES:`,
       ].join('\n');
     }).join('\n\n---\n\n');
@@ -405,6 +443,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         onDailyBalanceDateChange={setDailyBalanceDate}
         onCreateShipment={!isDemo && canCreateShipment ? handleOpenNewShipmentModal : undefined} 
         onEdit={!isDemo && canUpdateLoad ? handleEditLoad : undefined}
+        onDuplicate={!isDemo && canCreateLoad ? handleDuplicateLoad : undefined}
         onShowHistory={handleShowHistory}
         onReactivate={!isDemo && (currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onReactivateLoad : undefined}
         onSuspend={!isDemo && (currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onSuspendLoad : undefined}
@@ -445,6 +484,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         loads={loads}
         branches={branches}
         initialStep={initialModalStep}
+        isDuplicate={isDuplicate}
       />
       
       {selectedLoadForHistory && (
@@ -467,6 +507,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         stays={stays}
         shipments={shipments}
         currentUser={currentUser}
+        onDuplicate={!isDemo && canCreateLoad ? handleDuplicateLoad : undefined}
       />
 
       <CargoShipmentsSidePanel

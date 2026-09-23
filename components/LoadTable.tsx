@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import type { Cargo, Client, Product, Shipment, User } from '../types';
 import { DailyScheduleType, CargoStatus, UserProfile, ShipmentStatus } from '../types';
 import VolumeBar from './VolumeBar';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Copy } from 'lucide-react';
 import { PlusIcon } from './icons/PlusIcon';
 import { HistoryIcon } from './icons/HistoryIcon';
 import { Search, Filter, X, ChevronLeft, ChevronRight, ArrowUpDown, AlertCircle, AlertTriangle } from 'lucide-react';
@@ -25,6 +25,7 @@ interface LoadTableProps {
   onReactivate?: (load: Cargo) => void;
   onFinalize?: (load: Cargo) => void;
   onEdit?: (load: Cargo) => void;
+  onDuplicate?: (load: Cargo) => void;
   onClose?: (load: Cargo) => void;
   onShowHistory?: (load: Cargo) => void;
   onShowDetails?: (load: Cargo) => void;
@@ -40,7 +41,7 @@ interface LoadTableProps {
   onFilteredLoadsChange?: (loads: Cargo[]) => void;
 }
 
-const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipments, dailyBalanceDate, onDailyBalanceDateChange, onCreateShipment, onSuspend, onReactivate, onFinalize, onEdit, onClose, onShowHistory, onShowDetails, onEditSchedule, onShowShipments, onRecommendDrivers, onDelete, onRequestLoadOrder, onSaveLoad, currentUser, stays = [], tickets = [], onFilteredLoadsChange }) => {
+const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipments, dailyBalanceDate, onDailyBalanceDateChange, onCreateShipment, onSuspend, onReactivate, onFinalize, onEdit, onDuplicate, onClose, onShowHistory, onShowDetails, onEditSchedule, onShowShipments, onRecommendDrivers, onDelete, onRequestLoadOrder, onSaveLoad, currentUser, stays = [], tickets = [], onFilteredLoadsChange }) => {
   const isDemo = isDemoUser(currentUser);
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
   const [tmsModalCargo, setTmsModalCargo] = useState<Cargo | null>(null);
@@ -627,6 +628,11 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                           {onEdit && (
                             <button onClick={() => { onEdit(load); setOpenActionMenu(null); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
                               Editar Carga
+                            </button>
+                          )}
+                          {onDuplicate && (
+                            <button onClick={() => { onDuplicate(load); setOpenActionMenu(null); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2">
+                              <Copy className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> Duplicar Carga
                             </button>
                           )}
                           {onEditSchedule && (

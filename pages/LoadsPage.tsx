@@ -49,6 +49,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBulkImportModalOpen, setIsBulkImportModalOpen] = useState(false);
   const [loadToEdit, setLoadToEdit] = useState<Cargo | null>(null);
+  const [isDuplicate, setIsDuplicate] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [selectedLoadForHistory, setSelectedLoadForHistory] = useState<Cargo | null>(null);
   const [dailyBalanceDate, setDailyBalanceDate] = useState(new Date().toISOString().split('T')[0]);
@@ -76,6 +77,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
       } else {
         // Client request - open LoadFormModal
         setLoadToEdit(null);
+        setIsDuplicate(false);
         setInitialModalStep(1);
         setIsModalOpen(true);
       }
@@ -114,17 +116,27 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
 
   const handleOpenModal = () => {
     setLoadToEdit(null);
+    setIsDuplicate(false);
     setInitialModalStep(1);
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
+    setIsDuplicate(false);
     if (setOfferToConvert) setOfferToConvert(null);
   };
 
   const handleEditLoad = (load: Cargo) => {
     setLoadToEdit(load);
+    setIsDuplicate(false);
+    setInitialModalStep(1);
+    setIsModalOpen(true);
+  };
+
+  const handleDuplicateLoad = (cargo: Cargo) => {
+    setLoadToEdit(cargo);
+    setIsDuplicate(true);
     setInitialModalStep(1);
     setIsModalOpen(true);
   };
@@ -148,6 +160,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
 
   const handleEditSchedule = (load: Cargo) => {
     setLoadToEdit(load);
+    setIsDuplicate(false);
     setInitialModalStep(2); // Step 2 is the scheduling timeline
     setIsModalOpen(true);
   };
@@ -182,6 +195,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
             dailyBalanceDate={dailyBalanceDate}
             onDailyBalanceDateChange={setDailyBalanceDate}
             onEdit={!isDemo && canUpdate ? handleEditLoad : undefined}
+            onDuplicate={!isDemo && canCreate ? handleDuplicateLoad : undefined}
             onClose={!isDemo && (canDelete || currentUser.profile === UserProfile.Supervisor) ? handleCloseLoad : undefined}
             onShowHistory={handleShowHistory}
             onReactivate={!isDemo && (currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onReactivateLoad : undefined}
@@ -211,6 +225,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
         branches={branches}
         initialStep={initialModalStep}
         offerToConvert={offerToConvert}
+        isDuplicate={isDuplicate}
       />
 
       <BulkCargoImportModal
@@ -246,6 +261,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
         stays={stays}
         shipments={shipments}
         currentUser={currentUser}
+        onDuplicate={!isDemo && canCreate ? handleDuplicateLoad : undefined}
       />
 
       <CargoShipmentsSidePanel

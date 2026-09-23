@@ -411,19 +411,46 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
       const product = products.find(p => p.id === load.productId)?.name?.toUpperCase() || 'N/A';
       const origin = load.origin.toUpperCase();
       const destination = load.destination.toUpperCase();
-      const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
-      const tollText = hasToll ? ' + Ped' : '';
-      const price = `${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`;
+      
+      const pjVal = load.freightLegs && load.freightLegs.length > 0 
+        ? load.freightLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTon || 0), 0)
+        : (load.driverFreightValuePerTon || 0);
+
+      const hasPjToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
+      const pjTollText = hasPjToll ? ' + Ped' : '';
+      const pjFormatted = `R$ ${pjVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${pjTollText} PJ`;
+
+      const allPfDisabled = load.freightLegs && load.freightLegs.length > 0 && load.freightLegs.every(l => l.disablePfFreight);
+      
+      let priceText = pjFormatted;
+      if (!allPfDisabled) {
+        const pfVal = load.freightLegs && load.freightLegs.length > 0
+          ? load.freightLegs.reduce((sum, leg) => sum + (leg.disablePfFreight ? 0 : (leg.driverFreightValuePerTonPf ?? leg.driverFreightValuePerTon ?? 0)), 0)
+          : (load.driverFreightValuePerTon || 0);
+        
+        const hasPfToll = load.driverFreightPfHasToll || load.freightLegs?.some(l => l.driverFreightPfHasToll);
+        const pfTollText = hasPfToll ? ' + Ped' : '';
+        const pfFormatted = `R$ ${pfVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${pfTollText} PF`;
+        priceText = `${pjFormatted} - ${pfFormatted}`;
+      }
+
       const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
-      let text = `📍 ${origin} x ${destination} \n🌾 ${product} - 💲 R$ ${price}\t\n🚛 ${bodyTypes} 🚛`;
-      
-      if (load.originLocation) text += `\n🏢 Coleta: ${load.originLocation}`;
-      if (load.originMapLink) text += `\n📍Mapa Coleta: ${load.originMapLink}`;
-      
-      if (load.destinationLocation) text += `\n🏢 Entrega: ${load.destinationLocation}`;
-      if (load.destinationMapLink) text += `\n📍Mapa Entrega: ${load.destinationMapLink}`;
-      
-      return text;
+
+      const lines = [
+        `📍 ${origin} x ${destination} `,
+        `🌾 ${product} - `,
+        `💲 ${priceText}\t`,
+        `🚛 ${bodyTypes} 🚛`
+      ];
+
+      if (load.originMapLink) {
+        lines.push(`📍Coleta - ${load.originMapLink}`);
+      }
+      if (load.destinationMapLink) {
+        lines.push(`📍Entrega - ${load.destinationMapLink}`);
+      }
+
+      return lines.join('\n');
     }).join('\n\n');
     navigator.clipboard.writeText(header + '\n' + loadsText).then(() => {
       setCopyButtonText('Copiado!');

@@ -21,6 +21,40 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_23_v2_7_3',
+    version: 'v2.7.3',
+    date: '23/09/2026',
+    title: 'Duplicação Rápida de Ordens de Carga',
+    summary: 'Nova funcionalidade que permite duplicar qualquer ordem de carga existente para criar uma nova carga baseada nela, com todos os dados de cliente, rotas, valores por tonelada, regras de pedágio, ICMS, tipos de veículos e anexos pré-preenchidos.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Ação de Duplicar Carga no Menu de Operações',
+        description: 'Adicionada a opção "Duplicar Carga" no menu de ações rápidas da tabela de cargas e no modal de detalhes da carga.'
+      },
+      {
+        category: 'feature',
+        title: 'Pré-preenchimento Inteligente e Sequenciamento Automático',
+        description: 'Ao duplicar, o formulário é carregado com as rotas, cliente, produto, valores de frete empresa/motorista e regras da carga de origem, gerando um novo número sequencial limpo (sem volumes herdados).'
+      },
+      {
+        category: 'improvement',
+        title: 'Identificação Visual do Modo Duplicação',
+        description: 'Identificação visual clara no formulário com badge "Nova Carga Duplicada" e banner explicativo indicando a carga base utilizada.'
+      },
+      {
+        category: 'improvement',
+        title: 'Ajuste no Prompt Fretebras',
+        description: 'Configuração do texto copiado do Prompt Fretebras para constar sempre "VALOR: A combinar" e "FORMA DE PAGAMENTO: Pix, Outro*".'
+      },
+      {
+        category: 'improvement',
+        title: 'Novo Padrão de Divulgação de Cargas',
+        description: 'Estruturação do texto copiado em "Divulgar Cargas" com linha dedicada para o produto, valores separados PJ e PF por tonelada (com pedágio quando houver), tipos de carroceria e links de coleta/entrega.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_19_v2_7_2',
     version: 'v2.7.2',
     date: '19/09/2026',

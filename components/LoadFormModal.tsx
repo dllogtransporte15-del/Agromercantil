@@ -25,6 +25,7 @@ interface LoadFormModalProps {
   branches: Branch[];
   initialStep?: number;
   offerToConvert?: FreightOffer | null;
+  isDuplicate?: boolean;
 }
 
 const STEPS = ['Informações da Carga', 'Programação Diária', 'Valores e Regras'];
@@ -64,7 +65,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   loads,
   branches,
   initialStep = 0,
-  offerToConvert = null
+  offerToConvert = null,
+  isDuplicate = false
 }) => {
   const getInitialState = (): Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'> => {
     const newSequenceId = loads.length > 0 ? Math.max(...loads.map(c => c.sequenceId)) + 1 : 101;
@@ -273,12 +275,16 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 legs.push({ companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0, freightCalculationType: calcType, icmsValue: 0 });
             }
             
+            const newSequenceId = loads.length > 0 ? Math.max(...loads.map(c => c.sequenceId || 0)) + 1 : 101;
+
             setLoad({ 
                 ...editableLoad, 
+                sequenceId: isDuplicate ? newSequenceId : editableLoad.sequenceId,
+                status: isDuplicate ? CargoStatus.EmAndamento : editableLoad.status,
                 freightCalculationType: calcType,
                 icmsValue: editableLoad.icmsValue || 0,
                 freightLegs: legs, 
-                dailySchedule: editableLoad.dailySchedule || [],
+                dailySchedule: isDuplicate ? [] : (editableLoad.dailySchedule || []),
                 observations: editableLoad.observations || '',
                 attachments: editableLoad.attachments || [],
                 allowedVehicleTypes: editableLoad.allowedVehicleTypes || [],
@@ -292,10 +298,11 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 schedulingPassword: editableLoad.schedulingPassword || '',
                 allowedProfiles: (editableLoad.allowedProfiles && editableLoad.allowedProfiles.length > 0) ? editableLoad.allowedProfiles : [...INTERNAL_PROFILES],
                 allowedUserIds: (editableLoad.allowedUserIds && editableLoad.allowedUserIds.length > 0) ? editableLoad.allowedUserIds : internalUsers.map(u => u.id),
-                tmsLoteNumber: editableLoad.tmsLoteNumber || '',
+                tmsLoteNumber: isDuplicate ? '' : (editableLoad.tmsLoteNumber || ''),
                 clientCnpj: editableLoad.clientCnpj || '',
                 clientBranchId: editableLoad.clientBranchId || '',
-                isExport: editableLoad.isExport !== undefined ? editableLoad.isExport : undefined
+                isExport: editableLoad.isExport !== undefined ? editableLoad.isExport : undefined,
+                createdById: isDuplicate ? currentUser.id : editableLoad.createdById
             });
             setHasMultiLeg(editableLoad.freightLegs ? editableLoad.freightLegs.length > 1 : false);
             setShowSalesperson(!!editableLoad.salespersonName);
@@ -573,7 +580,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
           destinationCoords: destinationCoords || undefined,
       };
 
-      if (loadToEdit) {
+      if (loadToEdit && !isDuplicate) {
         onSave({
           ...loadToEdit, 
           ...finalLoadData,
@@ -712,12 +719,41 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-4xl w-full max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-700 transition-all">
         
         {/* Title */}
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-          {loadToEdit ? 'Editar Carga' : 'Nova Carga'}
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+              {isDuplicate 
+                ? `Duplicar Carga (Base #${loadToEdit?.sequenceId || loadToEdit?.id})` 
+                : (loadToEdit ? `Editar Carga #${loadToEdit.sequenceId || loadToEdit.id}` : 'Nova Carga')}
+            </h2>
+            {isDuplicate && (
+              <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700">
+                Nova Carga Duplicada
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            title="Fechar"
+          >
+            <XIcon className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Duplicate Notice Banner */}
+        {isDuplicate && (
+          <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl text-emerald-800 dark:text-emerald-200 text-xs sm:text-sm flex items-center gap-2.5">
+            <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+            <span>
+              Criando uma nova carga com base na <strong>Carga #{loadToEdit?.sequenceId || loadToEdit?.id}</strong>. Os dados da rota, valores, produto e regras foram copiados. Ajuste os dados que desejar antes de salvar.
+            </span>
+          </div>
+        )}
 
         {/* Stepper Header */}
-        <div className="mb-8 flex items-center justify-between border-b dark:border-gray-700 pb-6 px-2">
+        <div className="mb-6 flex items-center justify-between border-b dark:border-gray-700 pb-5 px-2">
             {STEPS.map((s, i) => {
               const isCurrent = i + 1 === step;
               const isCompleted = i + 1 < step;
@@ -2080,7 +2116,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                       disabled={isSubmitting}
                       className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] text-white font-bold rounded-xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95 disabled:opacity-50"
                     >
-                      {isSubmitting ? 'Salvando...' : (loadToEdit ? 'Salvar Alterações' : 'Confirmar Registro')}
+                      {isSubmitting ? 'Salvando...' : (isDuplicate ? 'Cadastrar Carga Duplicada' : (loadToEdit ? 'Salvar Alterações' : 'Confirmar Registro'))}
                     </button>
                   )}
               </div>
