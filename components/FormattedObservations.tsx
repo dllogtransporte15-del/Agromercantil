@@ -26,7 +26,7 @@ export const FormattedObservations: React.FC<FormattedObservationsProps> = ({ te
               href={part}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-600 dark:text-blue-400 underline font-medium hover:text-blue-800 dark:hover:text-blue-300 break-all"
+              className="text-amber-600 dark:text-amber-400 underline font-medium hover:text-amber-800 dark:hover:text-amber-300 break-all"
               onClick={(e) => e.stopPropagation()}
             >
               {part}

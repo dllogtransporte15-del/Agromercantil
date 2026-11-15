@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { can } from '../auth';
+import { can, isDemoUser, isDeveloperUser, isInternalUser } from '../auth';
+import { ShipperCourseModal } from './ShipperCourseModal';
 import NotificationBell from './NotificationBell';
 import { DashboardIcon } from './icons/DashboardIcon';
 import { ClientsIcon } from './icons/ClientsIcon';
@@ -21,7 +22,8 @@ import { ArchiveIcon } from './icons/ArchiveIcon';
 import { ToolIcon } from './icons/ToolIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { InfoIcon } from './icons/InfoIcon';
-import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send, FileText, MapPin, Presentation, Globe, Headphones, Scale, Plus, GraduationCap, ExternalLink } from 'lucide-react';
 import DriverLocationTracker from './DriverLocationTracker';
 
 import type { User, Page, ProfilePermissions, Ticket, Shipment, FreightOffer, Cargo, Driver, Client, Product, Vehicle } from '../types';
@@ -34,7 +36,7 @@ interface TopNavBarProps {
   setCurrentPage: (page: Page) => void;
   profilePermissions: ProfilePermissions;
   companyLogo: string | null;
-  onOpenTickets: () => void;
+  onOpenTickets: (initialCreate?: boolean) => void;
   tickets: Ticket[];
   shipments?: Shipment[];
   freightOffers?: FreightOffer[];
@@ -76,7 +78,7 @@ const navItems: NavItem[] = [
   },
   {
     id: 'cadastro',
-    label: 'Cadastros',
+    label: 'Cadastros Gerais',
     icon: FolderIcon,
     children: [
         { id: 'clients', label: 'Clientes & Tomadores', icon: ClientsIcon },
@@ -84,25 +86,51 @@ const navItems: NavItem[] = [
         { id: 'drivers', label: 'Motoristas & Condutores', icon: DriverIcon },
         { id: 'vehicles', label: 'Frotas & Veículos', icon: TruckIcon },
         { id: 'loads', label: 'Ordens de Carga', icon: PackageIcon },
+        { id: 'locations', label: 'Expedidor/Recebedor', icon: MapPin },
         { id: 'products', label: 'Produtos', icon: PackageIcon },
         { id: 'risk-query-types', label: 'Tipos de Consulta GR', icon: ShieldCheck },
+    ]
+  },
+  {
+    id: 'financial',
+    label: 'Financeiro',
+    icon: DollarSignIcon,
+    children: [
+      { id: 'financial?tab=payables', label: 'Contas a Pagar', icon: ArrowDownCircle },
+      { id: 'financial?tab=receivables', label: 'Contas a Receber', icon: ArrowUpCircle },
+      { id: 'financial?tab=invoices', label: 'Notas Fiscais', icon: FileText },
+      { id: 'financial?tab=ofx', label: 'Conciliação Bancária OFX', icon: FileSpreadsheet },
+      { id: 'financial?tab=result-1', label: '1º Resultado Financeiro', icon: PieChart },
+      { id: 'financial?tab=result-2', label: '2º Resultado Financeiro', icon: Layers },
+      { id: 'financial?tab=result-3', label: '3º Resultado Financeiro', icon: TrendingUp },
+      {
+        id: 'financial-controladoria',
+        label: 'Controladoria',
+        icon: Building2,
+        children: [
+          { id: 'financial?tab=control-shipments', label: 'Planilha Embarque', icon: FileSpreadsheet },
+          { id: 'financial?tab=control-banking', label: 'Controladoria Bancária', icon: Landmark }
+        ]
+      }
     ]
   },
   { id: 'reports', label: 'Relatórios', icon: ChartIcon },
   {
     id: 'ferramentas',
-    label: 'Módulos & Utilit.',
+    label: 'Módulos & Utilitários',
     icon: ToolIcon,
     children: [
       { id: 'layover-calculator', label: 'Cálculo de Estadias', icon: CalculatorIcon },
       { id: 'freight-quote', label: 'Precificação & Cotações', icon: MapIcon },
+      { id: 'atua-reconciliation', label: 'Auditoria Atua TMS', icon: Scale },
+      { id: 'messenger', label: 'Mensageiro WhatsApp', icon: Send },
       { id: 'tools-history', label: 'Histórico de Cotações', icon: HistoryIcon },
       { id: 'freight-offers-history', label: 'Histórico de Ofertas', icon: HistoryIcon },
     ]
   },
   {
     id: 'settings',
-    label: 'Configurações',
+    label: 'Administração & Governança',
     icon: UsersIcon,
     children: [
       { id: 'users-register', label: 'Gestão de Acessos & Usuários', icon: UserPlusIcon },
@@ -138,13 +166,14 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
   onOpenUpdates
 }) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [isCourseModalOpen, setIsCourseModalOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const myOpenTicketsCount = useMemo(() => {
     return tickets.filter(
-      t => t.assignedToId === user.id &&
+      t => (t.assignedToId === user.id || t.createdById === user.id) &&
            t.status !== TicketStatus.Resolvido &&
            t.status !== TicketStatus.Fechado
     ).length;
@@ -174,7 +203,8 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
           }
         } 
         else {
-          if (can('read', user, item.id as Page, profilePermissions)) {
+          const pageToCheck = (item.id.startsWith('financial') ? 'financial' : item.id) as Page;
+          if (can('read', user, pageToCheck, profilePermissions)) {
             acc.push(item);
           }
         }
@@ -184,12 +214,22 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
     return filterItems(navItems);
   }, [user, profilePermissions]);
 
+  const navigate = useNavigate();
+
   const handleDropdownToggle = (id: string) => {
     setOpenDropdown(openDropdown === id ? null : id);
   };
   
-  const handlePageSelect = (page: Page) => {
-      setCurrentPage(page);
+  const handlePageSelect = (targetId: string) => {
+      if (targetId.startsWith('financial')) {
+        if (targetId.includes('?')) {
+          navigate(`/${targetId}`);
+        } else {
+          navigate('/financial');
+        }
+      } else {
+        setCurrentPage(targetId as Page);
+      }
       setOpenDropdown(null);
       setIsMobileMenuOpen(false);
   }
@@ -209,44 +249,38 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
   const isParentOfCurrentPage = (item: NavItem): boolean => {
       if (!item.children) return false;
       return item.children.some(child => {
-        if (child.id === currentPage) return true;
+        if (child.id === currentPage || (currentPage === 'financial' && child.id.startsWith('financial'))) return true;
         if (child.children) return isParentOfCurrentPage(child);
         return false;
       });
   }
 
   return (
-    <header className="bg-white/95 dark:bg-[#061e13]/95 shadow-lg shadow-emerald-950/30 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-200/80 dark:border-emerald-900/60 relative">
+    <header 
+      style={{ zoom: 0.9 }}
+      className="bg-white/95 dark:bg-[#1C1917]/90 shadow-lg shadow-amber-950/20 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-200/80 dark:border-slate-700/60 relative"
+    >
       {/* Top Border Glow (Same as Login Card) */}
-      <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent opacity-80 pointer-events-none" />
+      <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-400 to-transparent opacity-80 pointer-events-none" />
 
-      <div className="w-full max-w-[1920px] mx-auto px-2 sm:px-3 xl:px-5">
-        <div className="flex items-center justify-between h-16 lg:h-18 gap-1.5 xl:gap-3">
+      <div className="w-full max-w-[1920px] mx-auto px-3 sm:px-4 lg:pl-0 lg:pr-5">
+        <div className="flex items-center justify-between h-15 sm:h-16 lg:h-[68px] gap-2 lg:gap-0">
           
-          {/* Logo e Nome da Empresa + Status Online (Lado Esquerdo) */}
-          <div className="flex items-center gap-2 shrink-0">
-            <a href="#" onClick={(e) => { e.preventDefault(); handlePageSelect('dashboard')}} className="flex items-center py-1">
+          {/* Logo da Empresa (Centralizada no espaço à esquerda do menu) */}
+          <div className="flex items-center justify-start lg:justify-center grow shrink-0 z-10 px-1 lg:px-3">
+            <a href="#" onClick={(e) => { e.preventDefault(); handlePageSelect('dashboard')}} className="flex items-center justify-center py-1 shrink-0">
                 {companyLogo ? (
-                    <img src={companyLogo} alt="Logo" className="h-8 sm:h-9 w-auto object-contain max-w-[110px] sm:max-w-[130px] transition-all filter drop-shadow-[0_2px_10px_rgba(22,163,74,0.3)]" />
+                    <img src={companyLogo} alt="Logo DLLOG Transportes" className="h-8 sm:h-9 xl:h-10 w-auto object-contain max-w-[115px] sm:max-w-[140px] transition-all filter drop-shadow-[0_2px_10px_rgba(166,113,66,0.35)] dark:brightness-110" />
                 ) : (
-                    <h1 className="text-sm sm:text-base xl:text-lg font-black text-primary dark:text-white tracking-tighter uppercase whitespace-nowrap">
-                      AGRO<span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-amber-400">MERCANTIL</span>
+                    <h1 className="text-base md:text-lg xl:text-xl font-black text-primary dark:text-white tracking-tighter uppercase whitespace-nowrap">
+                      DLLOG <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-amber-500">TRANSPORTES</span>
                     </h1>
                 )}
             </a>
-
-            {/* Badge Status Online */}
-            <div className="hidden 2xl:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-[#03130b]/90 border border-slate-200 dark:border-emerald-800/60 shadow-inner backdrop-blur-md shrink-0">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span className="text-[9px] font-bold text-slate-600 dark:text-emerald-200 tracking-wider uppercase">Online</span>
-            </div>
           </div>
 
-          {/* Navegação Principal (Centralizada sem corte/overflow) */}
-          <nav className="hidden lg:flex items-center justify-center gap-1 xl:gap-1.5 flex-1 min-w-0 px-1">
+          {/* Navegação Principal (Centralizada e protegida contra sobreposição) */}
+          <nav className="hidden lg:flex items-center justify-center gap-0.5 xl:gap-1 2xl:gap-1.5 shrink-0 px-1">
             {filteredNavItems.map((item) => {
                 const isActive = currentPage === item.id || isParentOfCurrentPage(item);
                 if(item.children) {
@@ -254,28 +288,28 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                         <div className="relative shrink-0" key={item.id} ref={item.id === openDropdown ? dropdownRef : null}>
                             <button
                                 onClick={() => handleDropdownToggle(item.id)}
-                                className={`flex items-center px-2 py-1.5 xl:px-2.5 2xl:px-3 text-xs 2xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap cursor-pointer ${
+                                className={`flex items-center px-2 xl:px-2.5 2xl:px-3.5 py-1.5 xl:py-2 text-[11px] xl:text-xs 2xl:text-[13px] font-bold tracking-tight rounded-lg xl:rounded-xl transition-all duration-200 whitespace-nowrap cursor-pointer ${
                                     isActive 
-                                      ? 'bg-gradient-to-r from-emerald-600 via-primary to-green-700 text-white shadow-md shadow-emerald-950/40' 
-                                      : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-950/70 hover:text-slate-900 dark:hover:text-white'
+                                      ? 'bg-gradient-to-r from-amber-600 via-primary to-amber-700 text-white shadow-md shadow-amber-900/40' 
+                                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
                                 }`}
                             >
                                 <span>{item.label}</span>
-                                <ChevronDownIcon className={`w-3 h-3 2xl:w-3.5 2xl:h-3.5 ml-1 opacity-70 transition-transform ${openDropdown === item.id ? 'rotate-180' : ''}`} />
+                                <ChevronDownIcon className={`w-3 h-3 xl:w-3.5 xl:h-3.5 ml-0.5 xl:ml-1 shrink-0 transition-transform ${openDropdown === item.id ? 'rotate-180' : ''}`} />
                             </button>
                             {openDropdown === item.id && (
-                                <div className="absolute mt-2 w-60 origin-top-left bg-white/95 dark:bg-[#061e13]/95 border border-slate-200 dark:border-emerald-800/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
+                                <div className="absolute mt-2 min-w-[270px] origin-top-left bg-white/95 dark:bg-[#1C1917]/95 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
                                     {item.children.map(child => {
                                       if (child.children) {
                                         return (
-                                          <div key={child.id} className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-t border-slate-100 dark:border-emerald-950 mt-1 first:mt-0 first:border-0">
+                                          <div key={child.id} className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-t border-slate-100 dark:border-slate-800 mt-1 first:mt-0 first:border-0">
                                             {child.label}
                                             <div className="mt-1 normal-case font-normal text-sm space-y-0.5">
                                               {child.children.map(grandChild => (
                                                 <a key={grandChild.id} href="#" onClick={(e) => { e.preventDefault(); handlePageSelect(grandChild.id as Page); }}
-                                                   className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all ${currentPage === grandChild.id ? 'text-white bg-emerald-600 shadow-sm' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-900/60'}`}
+                                                   className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all ${currentPage === grandChild.id ? 'text-white bg-amber-600 shadow-sm' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'}`}
                                                 >
-                                                   <grandChild.icon className="w-4 h-4" />
+                                                   <grandChild.icon className="w-4 h-4 shrink-0" />
                                                    {grandChild.label}
                                                 </a>
                                               ))}
@@ -285,9 +319,9 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                                       }
                                       return (
                                         <a key={child.id} href="#" onClick={(e) => { e.preventDefault(); handlePageSelect(child.id as Page); }}
-                                           className={`flex items-center gap-3 px-3.5 py-2 mx-1 rounded-xl text-sm font-medium transition-all ${currentPage === child.id ? 'text-white bg-emerald-600 shadow-sm' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-900/60'}`}
+                                           className={`flex items-center gap-3 px-3.5 py-2 mx-1 rounded-xl text-sm font-medium transition-all ${currentPage === child.id ? 'text-white bg-amber-600 shadow-sm' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'}`}
                                         >
-                                           <child.icon className="w-4 h-4" />
+                                           <child.icon className="w-4 h-4 shrink-0" />
                                            {child.label}
                                         </a>
                                       )
@@ -299,10 +333,10 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                 }
                 return (
                     <a href="#" key={item.id} onClick={(e) => { e.preventDefault(); handlePageSelect(item.id as Page); }}
-                       className={`px-2 py-1.5 xl:px-2.5 2xl:px-3 text-xs 2xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap shrink-0 cursor-pointer ${
+                       className={`shrink-0 px-2 xl:px-2.5 2xl:px-3.5 py-1.5 xl:py-2 text-[11px] xl:text-xs 2xl:text-[13px] font-bold tracking-tight rounded-lg xl:rounded-xl transition-all duration-200 whitespace-nowrap cursor-pointer ${
                            isActive 
-                             ? 'bg-gradient-to-r from-emerald-600 via-primary to-green-700 text-white shadow-md shadow-emerald-950/40' 
-                             : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-950/70 hover:text-slate-900 dark:hover:text-white'
+                             ? 'bg-gradient-to-r from-amber-600 via-primary to-amber-700 text-white shadow-md shadow-amber-900/40' 
+                             : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
                        }`}
                     >{item.label}</a>
                 )
@@ -310,98 +344,262 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
           </nav>
 
           {/* Ícones, Seletor de Fundo e Menu do Usuário (Lado Direito) */}
-          <div className="flex items-center justify-end gap-1.5 xl:gap-2 shrink-0">
+          <div className="flex items-center justify-end gap-1.5 xl:gap-2 grow shrink-0 z-10 pl-2">
+             <div className="hidden lg:block h-6 w-px bg-slate-200/80 dark:bg-stone-800 mr-0.5" />
+
              {user.profile === UserProfile.Motorista && (
                 <DriverLocationTracker user={user} />
              )}
              
              {/* Seletor de Fundo: Escuro / Claro */}
-             <div className="flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-[#03130b]/90 border border-slate-200 dark:border-emerald-800/70 shadow-inner shrink-0">
+             <div className="flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-950/80 border border-slate-300/80 dark:border-slate-700/70 shadow-inner shrink-0">
                <button
                  type="button"
                  title="Ativar Fundo Claro"
                  onClick={() => onThemeModeChange && onThemeModeChange('light')}
-                 className={`p-1.5 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                 className={`p-1.5 2xl:px-2 2xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                    themeMode === 'light'
-                     ? 'bg-white text-emerald-600 shadow-sm'
-                     : 'text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100'
+                     ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-white shadow-sm'
+                     : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                  }`}
                >
-                 <Sun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                 <Sun className={`w-3.5 h-3.5 shrink-0 ${themeMode === 'light' ? 'text-white' : 'text-amber-600 dark:text-amber-400'}`} />
                  <span className="hidden 2xl:inline text-[11px]">Claro</span>
                </button>
                <button
                  type="button"
                  title="Ativar Fundo Escuro"
                  onClick={() => onThemeModeChange && onThemeModeChange('dark')}
-                 className={`p-1.5 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                 className={`p-1.5 2xl:px-2 2xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                    themeMode === 'dark'
-                     ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950/40'
-                     : 'text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100'
+                     ? 'bg-gradient-to-r from-amber-600 to-amber-600 text-white shadow-md shadow-amber-900/40'
+                     : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                  }`}
                >
-                 <Moon className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                 <Moon className={`w-3.5 h-3.5 shrink-0 ${themeMode === 'dark' ? 'text-amber-300' : 'text-slate-700 dark:text-amber-300'}`} />
                  <span className="hidden 2xl:inline text-[11px]">Escuro</span>
                </button>
              </div>
 
               {/* Botão de Novidades / Atualizações do Sistema */}
-              <button
-                type="button"
-                onClick={onOpenUpdates}
-                title="Novidades e Atualizações do Sistema"
-                className="p-1.5 xl:px-2 xl:py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-sm shrink-0"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse shrink-0" />
-                <span className="hidden 2xl:inline text-[11px]">Novidades</span>
-              </button>
+              {user.profile !== UserProfile.Cliente && (
+                <button
+                  type="button"
+                  onClick={onOpenUpdates}
+                  title="Novidades e Atualizações do Sistema"
+                  className="p-1.5 2xl:px-2.5 2xl:py-1 rounded-xl bg-amber-100/90 hover:bg-amber-200/80 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 text-amber-800 dark:text-amber-400 border border-amber-300 dark:border-amber-500/20 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400 animate-pulse shrink-0" />
+                  <span className="hidden 2xl:inline text-[11px]">Novidades</span>
+                </button>
+              )}
 
-              <div className="shrink-0">
-                <NotificationBell
-                  user={user}
-                  shipments={shipments}
-                  freightOffers={freightOffers}
-                  cargos={cargos}
-                  drivers={drivers}
-                  clients={clients}
-                  products={products}
-                  vehicles={vehicles}
-                  users={users}
-                  tickets={tickets}
-                  onOpenTickets={onOpenTickets}
-                  onNavigateTo={(page) => setCurrentPage(page)}
-                  onAcceptOrderRequest={onAcceptOrderRequest}
-                  onRefuseOrderRequest={onRefuseOrderRequest}
-                  onSaveFreightOffer={onSaveFreightOffer}
-                />
-              </div>
+              {/* Botão de Chamados / Suporte */}
+              {user.profile !== UserProfile.Cliente && (
+                <button
+                  type="button"
+                  onClick={() => onOpenTickets(false)}
+                  title="Painel de Chamados e Suporte"
+                  className="p-1.5 2xl:px-2.5 2xl:py-1 rounded-xl bg-amber-100/90 hover:bg-amber-200/80 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 text-amber-800 dark:text-amber-400 border border-amber-300 dark:border-amber-500/20 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0"
+                >
+                  <Headphones className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400 shrink-0" />
+                  <span className="hidden 2xl:inline text-[11px]">Chamados</span>
+                  {myOpenTicketsCount > 0 && (
+                    <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-extrabold text-white bg-red-500 rounded-full animate-pulse shadow-sm min-w-[16px] leading-none">
+                      {myOpenTicketsCount}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {/* Central de Alertas */}
+              {user.profile !== UserProfile.Cliente && (
+                <div className="shrink-0">
+                  <NotificationBell
+                    user={user}
+                    shipments={shipments}
+                    freightOffers={freightOffers}
+                    cargos={cargos}
+                    drivers={drivers}
+                    clients={clients}
+                    products={products}
+                    vehicles={vehicles}
+                    users={users}
+                    tickets={tickets}
+                    onOpenTickets={onOpenTickets}
+                    onNavigateTo={(page) => setCurrentPage(page)}
+                    onAcceptOrderRequest={onAcceptOrderRequest}
+                    onRefuseOrderRequest={onRefuseOrderRequest}
+                    onSaveFreightOffer={onSaveFreightOffer}
+                  />
+                </div>
+              )}
 
             <div className="relative shrink-0" ref={openDropdown === 'user' ? dropdownRef : null}>
-              <button onClick={() => handleDropdownToggle('user')} className="flex items-center gap-1.5 xl:gap-2 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-emerald-950/80 transition-all shrink-0 cursor-pointer">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-amber-400 text-white flex items-center justify-center font-bold shadow-md text-xs shrink-0">
+              <button onClick={() => handleDropdownToggle('user')} className="flex items-center gap-1.5 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all shrink-0 cursor-pointer">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 text-white flex items-center justify-center font-bold shadow-md text-xs shrink-0">
                   {user.name.charAt(0)}
                 </div>
-                <div className="hidden lg:block text-left min-w-0">
-                    <p className="text-xs xl:text-sm font-semibold text-slate-800 dark:text-white truncate max-w-[85px] xl:max-w-[130px] leading-tight">{user.name}</p>
-                    <p className="text-[10px] xl:text-xs text-slate-500 dark:text-emerald-300 truncate max-w-[85px] xl:max-w-[130px] leading-tight">{user.profile}</p>
+                <div className="hidden xl:block text-left min-w-0">
+                    <p className="text-xs font-semibold text-slate-800 dark:text-white truncate max-w-[90px] 2xl:max-w-[130px] leading-tight">{user.name}</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[90px] 2xl:max-w-[130px] leading-tight">{user.profile}</p>
                 </div>
-                 <ChevronDownIcon className={`hidden lg:block w-3.5 h-3.5 xl:w-4 xl:h-4 text-slate-500 shrink-0 transition-transform ${openDropdown === 'user' ? 'rotate-180' : ''}`} />
+                 <ChevronDownIcon className={`hidden lg:block w-3.5 h-3.5 text-slate-500 shrink-0 transition-transform ${openDropdown === 'user' ? 'rotate-180' : ''}`} />
               </button>
               {openDropdown === 'user' && (
-                <div className="absolute mt-2 w-52 right-0 origin-top-right bg-white/95 dark:bg-[#061e13]/95 border border-slate-200 dark:border-emerald-800/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
+                <div className="absolute mt-2.5 w-72 sm:w-80 right-0 origin-top-right bg-white/95 dark:bg-[#1C1917]/95 border border-slate-200/90 dark:border-slate-700/80 rounded-2xl shadow-2xl shadow-slate-950/25 backdrop-blur-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                    {/* Header do Perfil no Dropdown */}
+                    <div className="p-3 mb-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/50 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 via-amber-600 to-amber-400 text-white flex items-center justify-center font-black shadow-md text-sm shrink-0">
+                        {user.name.charAt(0)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate leading-tight">
+                          {user.name}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
+                            {user.profile}
+                          </span>
+                          {user.username && (
+                            <span className="text-[10px] text-slate-400 truncate font-mono">
+                              @{user.username}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Seção de Chamados & Suporte */}
+                    {user.profile !== UserProfile.Cliente && (
+                      <div className="space-y-1 mb-1">
+                        <button 
+                          onClick={() => {
+                            handleDropdownToggle('user');
+                            onOpenTickets(false);
+                          }} 
+                          className="w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
+                        >
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-800/40 group-hover:scale-105 transition-transform">
+                                <Headphones className="w-4 h-4" />
+                              </div>
+                              <span>Painel de Chamados</span>
+                            </div>
+                            {myOpenTicketsCount > 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 whitespace-nowrap shrink-0">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                                {myOpenTicketsCount} pendente{myOpenTicketsCount > 1 ? 's' : ''}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20">Suporte</span>
+                            )}
+                        </button>
+                        {!isDemoUser(user) && (
+                          <button 
+                            onClick={() => {
+                              handleDropdownToggle('user');
+                              onOpenTickets(true);
+                            }} 
+                            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50/70 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 border border-amber-200/60 dark:border-amber-800/50 transition-all cursor-pointer shadow-2xs"
+                          >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Abrir Novo Chamado</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Links e Ações Rápidas */}
+                    <div className="space-y-0.5">
+                      <button 
+                        onClick={() => {
+                          handleDropdownToggle('user');
+                          setCurrentPage('apresentacao-comercial' as Page);
+                        }} 
+                        className="w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
+                      >
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-800/40 group-hover:scale-105 transition-transform">
+                              <Presentation className="w-4 h-4" />
+                            </div>
+                            <span>Apresentação Comercial</span>
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">PDF</span>
+                      </button>
+
+                      <button 
+                        onClick={() => {
+                          handleDropdownToggle('user');
+                          setCurrentPage('website' as Page);
+                        }} 
+                        className="w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
+                      >
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/40 group-hover:scale-105 transition-transform">
+                              <Globe className="w-4 h-4" />
+                            </div>
+                            <span>Website Institucional</span>
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">Site</span>
+                      </button>
+
+                      {user.profile !== UserProfile.Cliente && (
+                        <button 
+                          onClick={() => {
+                            handleDropdownToggle('user');
+                            onOpenUpdates && onOpenUpdates();
+                          }} 
+                          className="w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
+                        >
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-800/40 group-hover:scale-105 transition-transform">
+                                <Sparkles className="w-4 h-4" />
+                              </div>
+                              <span>Novidades da Versão</span>
+                            </div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                              v2.91
+                            </span>
+                        </button>
+                      )}
+
+                      {/* Curso para Embarcador (Liberado para Todos os Usuários Internos) - Abre em Nova Guia */}
+                      {isInternalUser(user) && (
+                        <a 
+                          href="/curso-embarcador"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => {
+                            handleDropdownToggle('user');
+                          }} 
+                          className="w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
+                          title="Abrir Curso para Embarcador em Nova Guia"
+                        >
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-1.5 rounded-lg bg-violet-50 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 border border-violet-200/50 dark:border-violet-800/40 group-hover:scale-105 transition-transform">
+                                <GraduationCap className="w-4 h-4" />
+                              </div>
+                              <span>Curso para Embarcador</span>
+                            </div>
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 flex items-center gap-1">
+                              NOVA GUIA
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </span>
+                        </a>
+                      )}
+                    </div>
+
+                    <div className="h-px bg-slate-200/80 dark:bg-slate-700/60 my-1.5 mx-1"></div>
+
+                    {/* Sair do Sistema */}
                     <button 
-                      onClick={() => {
-                        handleDropdownToggle('user');
-                        onOpenUpdates && onOpenUpdates();
-                      }} 
-                      className="w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-900/60 transition-all cursor-pointer"
+                      onClick={onLogout} 
+                      className="w-full text-left flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer group"
                     >
-                        <Sparkles className="w-4 h-4 text-amber-500" />
-                        <span>Novidades da Versão</span>
-                    </button>
-                    <div className="h-px bg-slate-200 dark:bg-emerald-900/60 my-1"></div>
-                    <button onClick={onLogout} className="w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-emerald-900/60 transition-all cursor-pointer">
-                        <LogOutIcon className="w-4 h-4 text-red-400" />
+                        <div className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200/50 dark:border-rose-800/40 group-hover:scale-105 transition-transform">
+                          <LogOutIcon className="w-4 h-4" />
+                        </div>
                         <span>Sair do Sistema</span>
                     </button>
                 </div>
@@ -430,7 +628,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
       {isMobileMenuOpen && (
         <div 
           ref={mobileMenuRef}
-          className="lg:hidden border-t dark:border-emerald-900 bg-white dark:bg-[#061e13] absolute left-0 right-0 top-full shadow-2xl max-h-[calc(100vh-4rem)] overflow-y-auto z-50 transition-all duration-300"
+          className="lg:hidden border-t dark:border-gray-700 bg-white dark:bg-gray-800 absolute left-0 right-0 top-full shadow-2xl max-h-[calc(100vh-4rem)] overflow-y-auto z-50 transition-all duration-300"
         >
           <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
              {filteredNavItems.map((item) => {
@@ -441,7 +639,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                          <button
                             onClick={() => handleDropdownToggle(item.id)}
                             className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium ${
-                                isActive ? 'text-primary dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                isActive ? 'text-primary dark:text-amber-400 bg-amber-50 dark:bg-amber-900/50' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                             }`}
                          >
                             <div className="flex items-center">
@@ -460,7 +658,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                                               <div className="space-y-1">
                                                 {child.children.map(grandchild => (
                                                     <a key={grandchild.id} href="#" onClick={(e) => { e.preventDefault(); handlePageSelect(grandchild.id as Page); }}
-                                                       className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${currentPage === grandchild.id ? 'text-primary dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                                                       className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${currentPage === grandchild.id ? 'text-primary dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                                                     >
                                                         <grandchild.icon className="w-4 h-4 mr-3" />
                                                         {grandchild.label}
@@ -472,7 +670,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                                   }
                                   return (
                                       <a key={child.id} href="#" onClick={(e) => { e.preventDefault(); handlePageSelect(child.id as Page); }}
-                                         className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${currentPage === child.id ? 'text-primary dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                                         className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${currentPage === child.id ? 'text-primary dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                                       >
                                           <child.icon className="w-4 h-4 mr-3" />
                                           {child.label}
@@ -487,7 +685,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                 return (
                     <a key={item.id} href="#" onClick={(e) => { e.preventDefault(); handlePageSelect(item.id as Page); }}
                        className={`flex items-center px-3 py-2 rounded-md text-base font-medium ${
-                           isActive ? 'text-primary dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                           isActive ? 'text-primary dark:text-amber-400 bg-amber-50 dark:bg-amber-900/50' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                        }`}
                     >
                         <item.icon className="w-5 h-5 mr-3" />
@@ -498,7 +696,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
           </div>
           <div className="pt-4 pb-3 border-t border-gray-200 dark:border-gray-700">
              <div className="flex items-center px-5 space-x-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold text-lg">
+                <div className="w-10 h-10 rounded-full bg-amber-200 text-primary flex items-center justify-center font-bold text-lg">
                    {user.name.charAt(0)}
                 </div>
                 <div>
@@ -507,6 +705,82 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                 </div>
              </div>
              <div className="mt-3 px-2 space-y-1">
+                <button
+                   onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      setCurrentPage('apresentacao-comercial' as Page);
+                   }}
+                   className="w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                   <div className="flex items-center">
+                      <Presentation className="w-5 h-5 mr-3 text-amber-500" />
+                      Apresentação Comercial
+                   </div>
+                   <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">PDF</span>
+                </button>
+                <button
+                   onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      setCurrentPage('website' as Page);
+                   }}
+                   className="w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                   <div className="flex items-center">
+                      <Globe className="w-5 h-5 mr-3 text-emerald-500" />
+                      Website Institucional
+                   </div>
+                   <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Site</span>
+                </button>
+                {isInternalUser(user) && (
+                  <a
+                    href="/curso-embarcador"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <div className="flex items-center">
+                      <GraduationCap className="w-5 h-5 mr-3 text-violet-500" />
+                      Curso para Embarcador
+                    </div>
+                    <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-violet-500/10 text-violet-500 border border-violet-500/20 flex items-center gap-1">
+                      Nova Guia
+                      <ExternalLink className="w-3 h-3" />
+                    </span>
+                  </a>
+                )}
+                {user.profile !== UserProfile.Cliente && (
+                  <>
+                    <button
+                       onClick={() => {
+                          setIsMobileMenuOpen(false);
+                          onOpenTickets(false);
+                       }}
+                       className="w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                       <div className="flex items-center">
+                          <Headphones className="w-5 h-5 mr-3 text-amber-500" />
+                          Painel de Chamados
+                       </div>
+                       {myOpenTicketsCount > 0 && (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-500 text-white">
+                            {myOpenTicketsCount}
+                          </span>
+                       )}
+                    </button>
+                    {!isDemoUser(user) && (
+                       <button
+                          onClick={() => {
+                             setIsMobileMenuOpen(false);
+                             onOpenTickets(true);
+                          }}
+                          className="w-full flex items-center px-3 py-1.5 pl-11 rounded-md text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30"
+                       >
+                          + Abrir Novo Chamado
+                       </button>
+                    )}
+                  </>
+                )}
                 <button
                    onClick={onLogout}
                    className="w-full flex items-center px-3 py-2 rounded-md text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -518,6 +792,11 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
           </div>
         </div>
       )}
+      <ShipperCourseModal 
+        isOpen={isCourseModalOpen} 
+        onClose={() => setIsCourseModalOpen(false)} 
+        currentUser={user} 
+      />
     </header>
   );
 };

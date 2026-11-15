@@ -40,8 +40,8 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
       const shipmentStays = stays.filter(stay => isStayForShipment(stay, s) && (stay.approvedValue || 0) > 0);
       const hasStayCte = shipmentStays.some(stay => stay.cteUrl);
 
-      // Contabiliza apenas se tiver CT-e do embarque ou CT-e complementar de estadia
-      if (!hasShipmentCte && !hasStayCte) return;
+      // Contabiliza apenas se tiver CT-e do embarque emitido
+      if (!hasShipmentCte) return;
 
       const cargo = cargoMap.get(s.cargoId);
       if (!cargo) return;
@@ -56,7 +56,7 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
       const stats = statsMap.get(effectiveBranchId);
       if (!stats) return;
 
-      const expenses = calculateShipmentExpenses(s, cargo);
+      const expenses = calculateShipmentExpenses(s, cargo, undefined, stays);
       
       const demurrageRevenue = shipmentStays
           .reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
@@ -99,7 +99,7 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-primary to-blue-700 p-5 rounded-2xl text-white shadow-lg shadow-primary/20">
+        <div className="bg-gradient-to-br from-primary to-amber-700 p-5 rounded-2xl text-white shadow-lg shadow-primary/20">
           <p className="text-[10px] uppercase font-bold opacity-80 mb-1">Lucro Total Período</p>
           <h3 className="text-2xl font-black">{formatCurrency(totals.margin)}</h3>
           <div className="mt-2 flex items-center gap-2 text-xs opacity-90">
@@ -120,9 +120,9 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
         <div className="bg-white dark:bg-gray-800/90 p-5 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-300 mb-1">Melhor Filial</p>
-            <h3 className="text-lg font-bold text-primary dark:text-blue-400 truncate max-w-[120px]">{branchData[0]?.name || 'N/A'}</h3>
+            <h3 className="text-lg font-bold text-primary dark:text-amber-400 truncate max-w-[120px]">{branchData[0]?.name || 'N/A'}</h3>
           </div>
-          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary dark:text-blue-400">
+          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary dark:text-amber-400">
             <Building2 className="w-6 h-6" />
           </div>
         </div>
@@ -131,7 +131,7 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
       <div className="bg-white dark:bg-gray-800/90 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm overflow-hidden transition-all duration-300">
         <div className="p-6 border-b border-gray-100 dark:border-gray-700/80 flex justify-between items-center">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-primary dark:text-blue-400" />
+                <Building2 className="w-5 h-5 text-primary dark:text-amber-400" />
                 Desempenho por Filial
             </h3>
         </div>
@@ -153,7 +153,7 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700/60 flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-                        <Building2 className="w-4 h-4 text-gray-500 dark:text-gray-400 group-hover:text-primary dark:group-hover:text-blue-400" />
+                        <Building2 className="w-4 h-4 text-gray-500 dark:text-gray-400 group-hover:text-primary dark:group-hover:text-amber-400" />
                       </div>
                       <div>
                         <p className="font-bold text-gray-900 dark:text-white">{branch.name}</p>

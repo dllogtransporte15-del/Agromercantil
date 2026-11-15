@@ -30,7 +30,7 @@ const ArmadorTable: React.FC<ArmadorTableProps> = ({ armadores, onEdit, onDelete
                   <div className="text-sm font-medium text-gray-900 dark:text-white">{armador.name}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <button onClick={() => onEdit(armador)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">
+                  <button onClick={() => onEdit(armador)} className="text-amber-600 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-300">
                     Editar
                   </button>
                   <button onClick={() => onDelete(armador.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 ml-4">

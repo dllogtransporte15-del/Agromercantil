@@ -14,9 +14,9 @@ import { WhatsAppIcon } from '../components/icons/WhatsAppIcon';
 import { DashboardIcon } from '../components/icons/DashboardIcon';
 import { ChevronDownIcon } from '../components/icons/ChevronDownIcon';
 import { CheckCircleIcon } from '../components/icons/CheckCircleIcon';
-import { Building2, ChevronRight } from 'lucide-react';
+import { Building2, ChevronRight, Calendar, ChevronDown, Check, X, Filter } from 'lucide-react';
 import { CargoStatus, ShipmentStatus, UserProfile, FreightOfferStatus, REQUIRED_DOCUMENT_MAP } from '../types';
-import type { Cargo, Driver, Shipment, User, Client, Product, Vehicle, FreightOffer, RiskQueryOption } from '../types';
+import type { Cargo, Driver, Shipment, User, Client, Product, Vehicle, FreightOffer, RiskQueryOption, Owner } from '../types';
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
 import AttachmentModal from '../components/AttachmentModal';
 import CadastroAnttModal from '../components/CadastroAnttModal';
@@ -24,7 +24,7 @@ import { OptimizedShipmentsBoard, KanbanColumnConfig } from '../components/Optim
 import FreightOfferModal from '../components/FreightOfferModal';
 import FreightOffersList from '../components/FreightOffersList';
 import DriverOrderRequestsList from '../components/DriverOrderRequestsList';
-import { getMatchedCargo, getShipmentEffectiveDate } from '../utils';
+import { getMatchedCargo, getShipmentEffectiveDate, hasCteAttached, findCargoById, findProductForCargo, checkRequiresRiskManagement } from '../utils';
 
 import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
 import NewShipmentModal from '../components/NewShipmentModal';
@@ -52,9 +52,9 @@ const VIEW_MODES: ViewModeConfig[] = [
     shortBadge: 'Geral',
     description: 'Indicadores, ofertas de frete, gráficos operacionais e ranking',
     icon: DashboardIcon,
-    color: 'from-blue-600 to-indigo-600',
-    badgeBg: 'bg-blue-100 dark:bg-blue-900/40 border-blue-200 dark:border-blue-700/50',
-    badgeText: 'text-blue-700 dark:text-blue-300'
+    color: 'from-amber-600 to-amber-600',
+    badgeBg: 'bg-amber-100 dark:bg-amber-900/40 border-amber-200 dark:border-amber-700/50',
+    badgeText: 'text-amber-700 dark:text-amber-300'
   },
   {
     id: 'fiscal',
@@ -85,7 +85,7 @@ const VIEW_MODES: ViewModeConfig[] = [
     shortBadge: 'Supervisor',
     description: 'Acompanhamento operacional e pesagem/carregamento de veículos',
     icon: TruckIcon,
-    color: 'from-purple-600 to-indigo-600',
+    color: 'from-purple-600 to-amber-600',
     badgeBg: 'bg-purple-100 dark:bg-purple-900/40 border-purple-200 dark:border-purple-700/50',
     badgeText: 'text-purple-700 dark:text-purple-300'
   }
@@ -101,14 +101,15 @@ interface DashboardPageProps {
   companyLogo?: string | null;
   vehicles: Vehicle[];
   drivers?: Driver[];
+  owners?: Owner[];
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void>;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => Promise<void>;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onUpdateAnttAndBankDetails?: (shipmentId: string, data: { anttOwnerIdentifier: string; bankDetails?: string }) => Promise<void>;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
   freightOffers?: FreightOffer[];
-  onSaveFreightOffer?: (offer: Omit<FreightOffer, 'id' | 'createdAt'>) => Promise<void>;
+  onSaveFreightOffer?: (offer: FreightOffer | Omit<FreightOffer, 'id' | 'createdAt'>) => Promise<void>;
   onAcceptFreightOffer?: (offer: FreightOffer) => void;
   onDeleteFreightOffer?: (offer: FreightOffer) => void;
   onConvertToCargo?: (offer: FreightOffer) => void;
@@ -116,6 +117,9 @@ interface DashboardPageProps {
   allShipments?: Shipment[];
   riskQueryOptions?: RiskQueryOption[];
   onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
+  realtimeStatus?: 'connected' | 'connecting' | 'disconnected' | 'error';
+  lastSyncTime?: Date;
+  onRefreshData?: (isBackground?: boolean) => Promise<void>;
 }
 
 
@@ -206,7 +210,7 @@ const ShipmentListCard: React.FC<ShipmentListCardProps> = ({ title, shipments, u
                             {onShowDetails ? (
                                 <button
                                     onClick={() => onShowDetails(shipment)}
-                                    className="font-mono text-xs text-primary dark:text-blue-400 font-bold mb-1 hover:underline text-left"
+                                    className="font-mono text-xs text-primary dark:text-amber-400 font-bold mb-1 hover:underline text-left"
                                 >
                                     {shipment.id}
                                 </button>
@@ -261,6 +265,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   companyLogo, 
   vehicles, 
   drivers = [], 
+  owners = [],
   onDeleteAttachment, 
   onUpdateAttachment,
   onUpdateShipmentData,
@@ -275,7 +280,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   onCreateShipment, 
   allShipments,
   riskQueryOptions,
-  onSwapCargo
+  onSwapCargo,
+  realtimeStatus,
+  lastSyncTime,
+  onRefreshData
 }) => {
   const navigate = useNavigate();
   const [detailsModalShipment, setDetailsModalShipment] = React.useState<Shipment | null>(null);
@@ -286,7 +294,152 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const [selectedDriverForHistoryId, setSelectedDriverForHistoryId] = React.useState<string | null>(null);
   const [offerForNewShipment, setOfferForNewShipment] = React.useState<FreightOffer | null>(null);
   const [selectedClientForBranchesHistory, setSelectedClientForBranchesHistory] = useState<Client | null>(null);
-  
+
+  // Filtro de Período e Calendário para os Relatórios do Dashboard (Padrão: Mês Atual dos Efetivados)
+  const [periodFilter, setPeriodFilter] = useState<'month' | 'today' | 'week' | 'year' | 'custom' | 'all'>('month');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [showDatePickerPopup, setShowDatePickerPopup] = useState<boolean>(false);
+  const datePickerPopoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showDatePickerPopup) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (datePickerPopoverRef.current && !datePickerPopoverRef.current.contains(e.target as Node)) {
+        setShowDatePickerPopup(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowDatePickerPopup(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showDatePickerPopup]);
+
+  const dateRangeBounds = useMemo(() => {
+    if (periodFilter === 'all') return { start: null, end: null };
+    const now = new Date();
+
+    if (periodFilter === 'today') {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime();
+      return { start, end };
+    }
+    if (periodFilter === 'week') {
+      const dayOfWeek = now.getDay();
+      const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMonday, 0, 0, 0, 0);
+      const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6, 23, 59, 59, 999);
+      return { start: monday.getTime(), end: sunday.getTime() };
+    }
+    if (periodFilter === 'month') {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+      return { start: firstDay, end: lastDay };
+    }
+    if (periodFilter === 'year') {
+      const firstDay = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0).getTime();
+      const lastDay = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999).getTime();
+      return { start: firstDay, end: lastDay };
+    }
+    if (periodFilter === 'custom') {
+      let start: number | null = null;
+      let end: number | null = null;
+      if (customStartDate) {
+        const parts = customStartDate.split('-');
+        if (parts.length === 3) {
+          start = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0).getTime();
+        }
+      }
+      if (customEndDate) {
+        const parts = customEndDate.split('-');
+        if (parts.length === 3) {
+          end = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59, 999).getTime();
+        }
+      }
+      return { start, end };
+    }
+    return { start: null, end: null };
+  }, [periodFilter, customStartDate, customEndDate]);
+
+  const periodLabel = useMemo(() => {
+    if (periodFilter === 'month') return 'Mês Atual';
+    if (periodFilter === 'today') return 'Hoje';
+    if (periodFilter === 'week') return 'Esta Semana';
+    if (periodFilter === 'year') return 'Este Ano';
+    if (periodFilter === 'custom') {
+      if (customStartDate && customEndDate) {
+        return `${customStartDate.split('-').reverse().join('/')} a ${customEndDate.split('-').reverse().join('/')}`;
+      }
+      return 'Período Personalizado';
+    }
+    return 'Todos os Períodos';
+  }, [periodFilter, customStartDate, customEndDate]);
+
+  const isShipmentEffectiveAndInPeriod = useCallback((s: Shipment): boolean => {
+    if (s.status === ShipmentStatus.Cancelado || (s.status as string) === 'Cancelado') return false;
+
+    // Embarque efetivado: ter CT-e emitido ou ter alcançado status de carregamento efetivo (Ag. Nota em diante)
+    const effectiveStatuses: (string | ShipmentStatus)[] = [
+      ShipmentStatus.AguardandoNota,
+      'Ag. Nota',
+      'Aguardando Nota',
+      ShipmentStatus.AguardandoFiscal,
+      'Ag. Fiscal',
+      'Aguardando Fiscal',
+      ShipmentStatus.AguardandoAdiantamento,
+      'Ag. Adiantamento',
+      'Aguardando Adiantamento',
+      ShipmentStatus.AguardandoAgendamento,
+      'Ag. Agendamento',
+      'Ag. Agend. ou Troca/nfe',
+      ShipmentStatus.AguardandoDescarga,
+      'Ag. Descarga',
+      'Aguardando Descarga',
+      ShipmentStatus.ValidacaoTicket,
+      'Valid. de Ticket',
+      'Validação de Ticket',
+      ShipmentStatus.AguardandoPagamentoSaldo,
+      'Ag. Saldo',
+      'Aguardando Saldo',
+      ShipmentStatus.Finalizado,
+      'Finalizado',
+    ];
+
+    const hasCte = Boolean(hasCteAttached(s) || (s.documents as any)?.cte_number || s.cteNumber);
+    const isStatusEffective = effectiveStatuses.includes(s.status);
+
+    if (!hasCte && !isStatusEffective) {
+      return false;
+    }
+
+    if (dateRangeBounds.start === null && dateRangeBounds.end === null) {
+      return true;
+    }
+
+    const effDateStr = getShipmentEffectiveDate(s);
+    let timestamp = 0;
+    if (effDateStr) {
+      const parts = effDateStr.split('-');
+      if (parts.length === 3) {
+        timestamp = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0).getTime();
+      } else {
+        timestamp = new Date(effDateStr).getTime();
+      }
+    } else if (s.createdAt) {
+      timestamp = new Date(s.createdAt).getTime();
+    }
+
+    if (!timestamp || isNaN(timestamp)) return false;
+    if (dateRangeBounds.start !== null && timestamp < dateRangeBounds.start) return false;
+    if (dateRangeBounds.end !== null && timestamp > dateRangeBounds.end) return false;
+
+    return true;
+  }, [dateRangeBounds]);
   // Modals state for quick direct actions (Attachment and ANTT)
   const [selectedShipmentForAttachment, setSelectedShipmentForAttachment] = useState<Shipment | null>(null);
   const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
@@ -345,7 +498,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       title: 'Aguardando Seguradora',
       statuses: [ShipmentStatus.AguardandoSeguradora],
       thresholds: { yellow: 30, red: 50 },
-      accentColor: '#3b82f6',
+      accentColor: '#A67142',
       emptyText: 'Nenhum embarque aguardando liberação da seguradora'
     },
     {
@@ -380,7 +533,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       title: 'Aguardando Seguradora',
       statuses: [ShipmentStatus.AguardandoSeguradora],
       thresholds: { yellow: 30, red: 50 },
-      accentColor: '#3b82f6',
+      accentColor: '#A67142',
       emptyText: 'Nenhum embarque aguardando liberação da seguradora'
     }
   ], []);
@@ -389,7 +542,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     {
       id: 'aguardando-adiantamento',
       title: 'Aguardando Pagamento de Adiantamento',
-      statuses: [ShipmentStatus.AguardandoAdiantamento],
+      statuses: [
+        ShipmentStatus.AguardandoAdiantamento,
+        'Ag. Adiantamento' as ShipmentStatus,
+        'Aguardando Adiantamento' as ShipmentStatus,
+        'Aguardando Pagamento de Adiantamento' as ShipmentStatus,
+      ],
       thresholds: { yellow: 150, red: 165 }, // 2:30h alerta - 2:45h crítico
       accentColor: '#f59e0b',
       emptyText: 'Nenhum embarque aguardando adiantamento'
@@ -397,15 +555,29 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     {
       id: 'em-transito',
       title: 'Em Trânsito / Entrega',
-      statuses: [ShipmentStatus.AguardandoDescarga],
+      statuses: [
+        ShipmentStatus.AguardandoDescarga,
+        'Ag. Descarga' as ShipmentStatus,
+        'Aguardando Descarga' as ShipmentStatus,
+        'Em Trânsito' as ShipmentStatus,
+        'Em Transito' as ShipmentStatus,
+        ShipmentStatus.ValidacaoTicket,
+        'Valid. de Ticket' as ShipmentStatus,
+        'Validação de Ticket' as ShipmentStatus,
+      ],
       thresholds: { yellow: 24 * 60, red: 48 * 60 },
-      accentColor: '#3b82f6',
+      accentColor: '#A67142',
       emptyText: 'Nenhum embarque em trânsito'
     },
     {
       id: 'aguardando-saldo',
       title: 'Aguardando Pagamento de Saldo',
-      statuses: [ShipmentStatus.AguardandoPagamentoSaldo],
+      statuses: [
+        ShipmentStatus.AguardandoPagamentoSaldo,
+        'Ag. Saldo' as ShipmentStatus,
+        'Aguardando Saldo' as ShipmentStatus,
+        'Aguardando Pagamento de Saldo' as ShipmentStatus,
+      ],
       thresholds: { yellow: 150, red: 165 }, // 2:30h alerta - 2:45h crítico
       accentColor: '#ef4444',
       emptyText: 'Nenhum embarque aguardando liquidação de saldo'
@@ -418,7 +590,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       title: 'Embarques Aguardando Carregamento',
       statuses: [ShipmentStatus.AguardandoCarregamento],
       thresholds: { yellow: 60, red: 120 },
-      accentColor: '#3b82f6',
+      accentColor: '#A67142',
       emptyText: 'Nenhum embarque aguardando carregamento'
     }
   ], []);
@@ -450,9 +622,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     }, {} as Record<CargoStatus, number>);
 
     return [
-      { label: CargoStatus.EmAndamento, value: counts[CargoStatus.EmAndamento] || 0, color: 'bg-blue-500' },
+      { label: CargoStatus.EmAndamento, value: counts[CargoStatus.EmAndamento] || 0, color: 'bg-amber-500' },
       { label: CargoStatus.Suspensa, value: counts[CargoStatus.Suspensa] || 0, color: 'bg-gray-500' },
-      { label: CargoStatus.Fechada, value: counts[CargoStatus.Fechada] || 0, color: 'bg-blue-300' },
+      { label: CargoStatus.Fechada, value: counts[CargoStatus.Fechada] || 0, color: 'bg-amber-300' },
     ];
   }, [cargos]);
 
@@ -472,26 +644,20 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   }, [shipments]);
 
   const clientVolumeData = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
     const volumesByClient: Record<string, { total: number; branches: Record<string, { name: string; cnpj: string; city?: string; state?: string; volume: number; shipmentsCount: number }> }> = {};
 
     shipments.forEach(s => {
-      // Find effective date (CT-e emission date or when it reached Aguardando Nota)
-      const effDateStr = getShipmentEffectiveDate(s);
-      if (effDateStr) {
-        const date = new Date(effDateStr + 'T00:00:00');
-        if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
-          const cargo = cargos.find(c => c.id === s.cargoId);
-          if (cargo) {
-            const client = clients.find(c => c.id === cargo.clientId);
-            if (!volumesByClient[cargo.clientId]) {
-              volumesByClient[cargo.clientId] = { total: 0, branches: {} };
-            }
-            const clientEntry = volumesByClient[cargo.clientId];
-            const tonnage = Number(s.shipmentTonnage) || 0;
-            clientEntry.total += tonnage;
+      if (!isShipmentEffectiveAndInPeriod(s)) return;
+
+      const cargo = cargos.find(c => c.id === s.cargoId);
+      if (cargo) {
+        const client = clients.find(c => c.id === cargo.clientId);
+        if (!volumesByClient[cargo.clientId]) {
+          volumesByClient[cargo.clientId] = { total: 0, branches: {} };
+        }
+        const clientEntry = volumesByClient[cargo.clientId];
+        const tonnage = Number(s.shipmentTonnage) || 0;
+        clientEntry.total += tonnage;
 
             // Resolve branch
             let branchKey = 'matriz';
@@ -530,12 +696,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             }
             clientEntry.branches[branchKey].volume += tonnage;
             clientEntry.branches[branchKey].shipmentsCount += 1;
-          }
-        }
       }
     });
 
-    const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-orange-500', 'bg-purple-500', 'bg-red-500', 'bg-yellow-500', 'bg-pink-500', 'bg-indigo-500'];
+    const colors = ['bg-amber-500', 'bg-emerald-500', 'bg-orange-500', 'bg-purple-500', 'bg-red-500', 'bg-yellow-500', 'bg-pink-500', 'bg-amber-500'];
     
     return Object.entries(volumesByClient)
       .map(([clientId, data], index) => {
@@ -560,7 +724,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         };
       })
       .sort((a, b) => b.value - a.value);
-  }, [shipments, cargos, clients]);
+  }, [shipments, cargos, clients, isShipmentEffectiveAndInPeriod]);
   
   const activeShipments = useMemo(() => {
     return shipments.filter(s => s.status !== ShipmentStatus.Finalizado && s.status !== ShipmentStatus.Cancelado).length;
@@ -572,35 +736,27 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   const canViewRanking = useMemo(() => {
     if (!currentUser) return false;
-    return [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Demonstracao].includes(currentUser.profile);
+    return [UserProfile.Desenvolvedor, UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Demonstracao].includes(currentUser.profile);
   }, [currentUser]);
 
   const dashboardStats = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
     let monthlyEffectiveTonnage = 0;
     
     shipments.forEach(s => {
-      const effDateStr = getShipmentEffectiveDate(s);
-      if (effDateStr) {
-        const date = new Date(effDateStr + 'T00:00:00');
-        if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
-          monthlyEffectiveTonnage += s.shipmentTonnage || 0;
-        }
+      if (isShipmentEffectiveAndInPeriod(s)) {
+        monthlyEffectiveTonnage += s.shipmentTonnage || 0;
       }
     });
 
     const monthlyCommission = monthlyEffectiveTonnage * 2;
-    const canViewCommission = currentUser && [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Demonstracao].includes(currentUser.profile);
+    const canViewCommission = currentUser && [UserProfile.Desenvolvedor, UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Demonstracao].includes(currentUser.profile);
 
     return {
       monthlyEffectiveTonnage,
       monthlyCommission,
       canViewCommission
     };
-  }, [shipments, currentUser]);
+  }, [shipments, currentUser, isShipmentEffectiveAndInPeriod]);
 
   const clientDashboardData = useMemo(() => {
     if (currentUser?.profile !== UserProfile.Cliente) return null;
@@ -629,11 +785,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         'Ag. Adiantamento',
         ShipmentStatus.AguardandoAgendamento,
         'Ag. Agendamento',
+        'Ag. Agend. ou Troca/nfe',
     ];
 
     const loadedAndFinishedStatuses: (string | ShipmentStatus)[] = [
         ShipmentStatus.AguardandoDescarga,
         'Ag. Descarga',
+        ShipmentStatus.ValidacaoTicket,
+        'Validação de Ticket',
+        'Valid. de Ticket',
         ShipmentStatus.AguardandoPagamentoSaldo,
         'Ag. Saldo',
         ShipmentStatus.Finalizado,
@@ -698,22 +858,24 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     };
   }, [cargos, shipments, allShipments, currentUser, clients]);
 
-  // View mode switcher for Admin / Diretor / Demo
+  // View mode switcher for Admin / Diretor / Demo / Gerenciadora de Risco
   const canSwitchView = useMemo(() => {
     if (!currentUser) return false;
     return [
+      UserProfile.Desenvolvedor,
       UserProfile.Admin,
+      UserProfile.GerenciadoraDeRisco,
       UserProfile.Diretor,
       UserProfile.Demonstracao,
     ].includes(currentUser.profile);
   }, [currentUser]);
 
   const [viewMode, setViewMode] = useState<DashboardViewMode>(() => {
-    if (currentUser?.profile === UserProfile.Fiscal || currentUser?.profile === UserProfile.GerenciadoraDeRisco) return 'fiscal';
+    if (currentUser?.profile === UserProfile.Fiscal) return 'fiscal';
     if (currentUser?.profile === UserProfile.Financeiro) return 'financeiro';
     if (currentUser?.profile === UserProfile.Supervisor) return 'supervisor';
 
-    const saved = localStorage.getItem('agromercantil_dashboard_view_mode') || localStorage.getItem('transcunha_dashboard_view_mode');
+    const saved = localStorage.getItem('transcunha_dashboard_view_mode');
     if (saved && ['geral', 'fiscal', 'financeiro', 'supervisor'].includes(saved)) {
       return saved as DashboardViewMode;
     }
@@ -744,6 +906,165 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     };
   }, [isViewSelectorOpen]);
 
+  const renderPeriodSelector = () => {
+    const periodOptions = [
+      { id: 'month', label: 'Este Mês', badge: 'Padrão' },
+      { id: 'week', label: 'Esta Semana' },
+      { id: 'today', label: 'Hoje' },
+      { id: 'year', label: 'Este Ano' },
+      { id: 'custom', label: 'Personalizado...' },
+      { id: 'all', label: 'Todos os Períodos' },
+    ];
+
+    return (
+      <div className="relative inline-block text-left" ref={datePickerPopoverRef}>
+        <button
+          type="button"
+          onClick={() => setShowDatePickerPopup(prev => !prev)}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 border shadow-sm ${
+            periodFilter === 'month'
+              ? 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-700 hover:border-primary/50 dark:hover:border-amber-500'
+              : 'bg-primary/10 text-primary dark:bg-amber-900/30 dark:text-amber-300 border-primary/30 dark:border-amber-700 hover:bg-primary/15'
+          }`}
+          title="Filtrar período das métricas e relatórios do Dashboard"
+          aria-expanded={showDatePickerPopup}
+        >
+          <Calendar className="w-4 h-4 text-primary dark:text-amber-400 shrink-0" />
+          <span className="truncate max-w-[170px] sm:max-w-[220px]">
+            {periodFilter === 'month' ? 'Período: Este Mês' : `Período: ${periodLabel}`}
+          </span>
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showDatePickerPopup ? 'rotate-180' : ''}`} />
+        </button>
+
+        {showDatePickerPopup && (
+          <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white dark:bg-gray-800 shadow-2xl ring-1 ring-black/10 dark:ring-white/10 z-50 p-3 border border-gray-100 dark:border-gray-700 backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-150">
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-100 dark:border-gray-700">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-primary dark:text-amber-400" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+                  Filtrar por Período
+                </h4>
+              </div>
+              <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                Apenas Efetivados
+              </span>
+            </div>
+
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3 leading-relaxed">
+              Exibe apenas embarques efetivados (com CT-e ou carregamento concluído) dentro do período selecionado.
+            </p>
+
+            <div className="grid grid-cols-2 gap-1.5 mb-3">
+              {periodOptions.map(opt => {
+                const isActive = periodFilter === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setPeriodFilter(opt.id as any);
+                      if (opt.id !== 'custom') {
+                        setShowDatePickerPopup(false);
+                      }
+                    }}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                      isActive
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'bg-gray-50 dark:bg-gray-700/60 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <span className="truncate">{opt.label}</span>
+                    {opt.badge && !isActive && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300 ml-1 font-bold">
+                        {opt.badge}
+                      </span>
+                    )}
+                    {isActive && <Check className="w-3.5 h-3.5 shrink-0 ml-1" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Custom Date Range Inputs */}
+            {periodFilter === 'custom' && (
+              <div className="p-3 bg-gray-50 dark:bg-gray-700/40 rounded-xl border border-gray-200/80 dark:border-gray-600/60 mb-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-gray-700 dark:text-gray-300">
+                    Definir Intervalo:
+                  </span>
+                  {(customStartDate || customEndDate) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomStartDate('');
+                        setCustomEndDate('');
+                      }}
+                      className="text-[10px] text-gray-400 hover:text-red-500 transition-colors"
+                    >
+                      Limpar datas
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">
+                      Data Inicial
+                    </label>
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(e) => setCustomStartDate(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">
+                      Data Final
+                    </label>
+                    <input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(e) => setCustomEndDate(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDatePickerPopup(false)}
+                  disabled={!customStartDate && !customEndDate}
+                  className="w-full mt-2 py-1.5 text-xs font-semibold bg-primary hover:bg-primary-hover text-white rounded-lg transition-all disabled:opacity-50"
+                >
+                  Aplicar Período
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700 text-[11px]">
+              <span className="text-gray-500 dark:text-gray-400">
+                Ativo: <strong className="text-gray-700 dark:text-gray-200">{periodLabel}</strong>
+              </span>
+              {periodFilter !== 'month' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPeriodFilter('month');
+                    setCustomStartDate('');
+                    setCustomEndDate('');
+                    setShowDatePickerPopup(false);
+                  }}
+                  className="text-primary dark:text-amber-400 hover:underline font-medium"
+                >
+                  Restaurar Mês Atual
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const currentViewConfig = VIEW_MODES.find(m => m.id === viewMode) || VIEW_MODES[0];
 
   const renderHeaderTitle = () => {
@@ -762,14 +1083,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           title="Clique para alternar o modo de visualização do Dashboard"
         >
           <div className="flex items-center gap-2.5">
-            <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight group-hover:text-primary dark:group-hover:text-blue-400 transition-colors">
+            <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight group-hover:text-primary dark:group-hover:text-amber-400 transition-colors">
               {currentViewConfig.title}
             </h1>
             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-all ${currentViewConfig.badgeBg} ${currentViewConfig.badgeText}`}>
               {currentViewConfig.shortBadge}
             </span>
           </div>
-          <div className={`p-1.5 rounded-xl bg-gray-100 dark:bg-gray-700/80 text-gray-600 dark:text-gray-300 group-hover:bg-primary group-hover:text-white dark:group-hover:bg-blue-600 transition-all duration-200 shadow-sm ${isViewSelectorOpen ? 'bg-primary text-white dark:bg-blue-600 rotate-180' : ''}`}>
+          <div className={`p-1.5 rounded-xl bg-gray-100 dark:bg-gray-700/80 text-gray-600 dark:text-gray-300 group-hover:bg-primary group-hover:text-white dark:group-hover:bg-amber-600 transition-all duration-200 shadow-sm ${isViewSelectorOpen ? 'bg-primary text-white dark:bg-amber-600 rotate-180' : ''}`}>
             <ChevronDownIcon className="w-4 h-4" />
           </div>
         </button>
@@ -800,31 +1121,31 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                     type="button"
                     onClick={() => {
                       setViewMode(mode.id);
-                      localStorage.setItem('agromercantil_dashboard_view_mode', mode.id);
+                      localStorage.setItem('transcunha_dashboard_view_mode', mode.id);
                       setIsViewSelectorOpen(false);
                     }}
                     className={`w-full flex items-start gap-3 p-2.5 rounded-xl text-left transition-all duration-150 group ${
                       isSelected
-                        ? 'bg-blue-50/90 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 shadow-sm'
+                        ? 'bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 shadow-sm'
                         : 'hover:bg-gray-50 dark:hover:bg-gray-700/50 border border-transparent'
                     }`}
                   >
                     <div className={`p-2 rounded-xl flex-shrink-0 transition-all ${
                       isSelected
                         ? 'bg-gradient-to-br ' + mode.color + ' text-white shadow-md'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 group-hover:bg-primary/10 group-hover:text-primary dark:group-hover:text-blue-400'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 group-hover:bg-primary/10 group-hover:text-primary dark:group-hover:text-amber-400'
                     }`}>
                       <Icon className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <span className={`text-sm font-bold ${
-                          isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-gray-800 dark:text-gray-200 group-hover:text-gray-900 dark:group-hover:text-white'
+                          isSelected ? 'text-amber-700 dark:text-amber-300' : 'text-gray-800 dark:text-gray-200 group-hover:text-gray-900 dark:group-hover:text-white'
                         }`}>
                           {mode.label}
                         </span>
                         {isSelected && (
-                          <span className="flex items-center text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 rounded-full">
+                          <span className="flex items-center text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/50 px-2 py-0.5 rounded-full">
                             Ativo
                           </span>
                         )}
@@ -847,18 +1168,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     const pendingRequests = freightOffers?.filter(o => {
        if (o.status !== FreightOfferStatus.Pendente) return false;
        if (!o.driverId) return false;
+       const reqTime = o.requestTimestamp ? new Date(o.requestTimestamp).getTime() : new Date(o.createdAt).getTime();
+       const now = Date.now();
+       if ((now - reqTime) >= 10 * 60 * 1000) return false; // Expirada aos 10 minutos
        if (o.requestedEmbarcadorId === currentUser.id) return true;
-       if (o.requestTimestamp) {
-         const requestTime = new Date(o.requestTimestamp).getTime();
-         const now = Date.now();
-         if ((now - requestTime) > 5 * 60 * 1000) return true;
-       }
+       if ((now - reqTime) > 5 * 60 * 1000) return true;
        return false;
     }) || [];
 
     return (
       <>
-        <Header title="Dashboard do Embarcador" />
+        <Header title="Dashboard do Embarcador">
+          {renderPeriodSelector()}
+        </Header>
         {pendingRequests.length > 0 && (
           <div className="mb-8">
             <DriverOrderRequestsList
@@ -941,7 +1263,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           <div className="space-y-6">
             <DonutChartCard title="Distribuição de Cargas por Status" data={cargoStatusData} />
             <DonutChartCard 
-              title="Volume Carregado por Cliente (Mês)" 
+              title={`Volume Carregado por Cliente (${periodLabel})`} 
               data={clientVolumeData} 
               unit="t" 
               onViewClientHistory={(clientId) => {
@@ -951,13 +1273,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             />
           </div>
           <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
-          <ShipperRankingCard shipments={allShipments || shipments} cargos={cargos} users={users} currentUser={currentUser} />
+          <ShipperRankingCard shipments={allShipments || shipments} cargos={cargos} users={users} currentUser={currentUser} dateRangeBounds={dateRangeBounds} periodLabel={periodLabel} />
         </div>
         <ShipmentDetailsModal
           isOpen={!!detailsModalShipment}
           onClose={() => setDetailsModalShipment(null)}
           shipment={detailsModalShipment}
-          cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+          cargo={detailsModalShipment ? (findCargoById(cargos, detailsModalShipment.cargoId) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
           currentUser={currentUser}
           clients={clients}
           products={products}
@@ -991,8 +1313,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               });
               setOfferForNewShipment(null);
             }}
-            cargo={cargos.find(c => c.id === offerForNewShipment.cargoId) || null}
+            cargo={findCargoById(cargos, offerForNewShipment.cargoId) || null}
             drivers={drivers}
+            owners={owners}
             clients={clients}
             vehicles={vehicles}
             currentUser={currentUser}
@@ -1061,6 +1384,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               currentUser={currentUser || undefined}
               onDelete={onDeleteFreightOffer}
               onConvertToCargo={onConvertToCargo}
+              onSaveFreightOffer={onSaveFreightOffer}
             />
           </div>
         )}
@@ -1069,7 +1393,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               title="Total de Cargas Ativas"
               value={totalActiveLoads.toString()}
               icon={<PackageIcon className="w-6 h-6 text-white" />}
-              colorClass="bg-blue-500"
+              colorClass="bg-amber-500"
             />
             <Card
               title="Aguardando Carregamento"
@@ -1122,16 +1446,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
             documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
             currentUser={currentUser}
-            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            cargo={findCargoById(cargos, selectedShipmentForAttachment.cargoId)}
             requiresRiskManagement={
-              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
-                ?.requiresRiskManagement !== false
+              checkRequiresRiskManagement(
+                findCargoById(cargos, selectedShipmentForAttachment.cargoId),
+                findProductForCargo(products, findCargoById(cargos, selectedShipmentForAttachment.cargoId))
+              )
             }
             products={products}
             clients={clients}
             users={users}
             riskQueryOptions={riskQueryOptions}
             onUpdateShipmentData={onUpdateShipmentData}
+            onDeleteAttachment={onDeleteAttachment}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1198,16 +1525,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
             documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
             currentUser={currentUser}
-            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            cargo={findCargoById(cargos, selectedShipmentForAttachment.cargoId)}
             requiresRiskManagement={
-              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
-                ?.requiresRiskManagement !== false
+              checkRequiresRiskManagement(
+                findCargoById(cargos, selectedShipmentForAttachment.cargoId),
+                findProductForCargo(products, findCargoById(cargos, selectedShipmentForAttachment.cargoId))
+              )
             }
             products={products}
             clients={clients}
             users={users}
             riskQueryOptions={riskQueryOptions}
             onUpdateShipmentData={onUpdateShipmentData}
+            onDeleteAttachment={onDeleteAttachment}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1246,6 +1576,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
             onOpenCadastroAntt={handleOpenCadastroAntt}
             onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+            realtimeStatus={realtimeStatus}
+            lastSyncTime={lastSyncTime}
+            onRefreshData={onRefreshData}
           />
         </div>
         <ShipmentDetailsModal
@@ -1274,16 +1607,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
             documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
             currentUser={currentUser}
-            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            cargo={findCargoById(cargos, selectedShipmentForAttachment.cargoId)}
             requiresRiskManagement={
-              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
-                ?.requiresRiskManagement !== false
+              checkRequiresRiskManagement(
+                findCargoById(cargos, selectedShipmentForAttachment.cargoId),
+                findProductForCargo(products, findCargoById(cargos, selectedShipmentForAttachment.cargoId))
+              )
             }
             products={products}
             clients={clients}
             users={users}
             riskQueryOptions={riskQueryOptions}
             onUpdateShipmentData={onUpdateShipmentData}
+            onDeleteAttachment={onDeleteAttachment}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1322,6 +1658,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
             onOpenCadastroAntt={handleOpenCadastroAntt}
             onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+            realtimeStatus={realtimeStatus}
+            lastSyncTime={lastSyncTime}
+            onRefreshData={onRefreshData}
           />
         </div>
         <ShipmentDetailsModal
@@ -1350,16 +1689,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
             documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
             currentUser={currentUser}
-            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            cargo={findCargoById(cargos, selectedShipmentForAttachment.cargoId)}
             requiresRiskManagement={
-              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
-                ?.requiresRiskManagement !== false
+              checkRequiresRiskManagement(
+                findCargoById(cargos, selectedShipmentForAttachment.cargoId),
+                findProductForCargo(products, findCargoById(cargos, selectedShipmentForAttachment.cargoId))
+              )
             }
             products={products}
             clients={clients}
             users={users}
             riskQueryOptions={riskQueryOptions}
             onUpdateShipmentData={onUpdateShipmentData}
+            onDeleteAttachment={onDeleteAttachment}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1427,7 +1769,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     }, {} as Record<string, number>);
 
     const cargoChartData = [
-      { label: 'Em Andamento', value: cargoStatusCounts[CargoStatus.EmAndamento] || 0, color: '#3b82f6' },
+      { label: 'Em Andamento', value: cargoStatusCounts[CargoStatus.EmAndamento] || 0, color: '#A67142' },
       { label: 'Fechada', value: cargoStatusCounts[CargoStatus.Fechada] || 0, color: '#10b981' },
       { label: 'Suspensa', value: cargoStatusCounts[CargoStatus.Suspensa] || 0, color: '#f59e0b' },
     ].filter(d => d.value > 0);
@@ -1442,6 +1784,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       { label: 'Ag. Nota', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoNota || (s.status as string) === 'Ag. Nota').length },
       { label: 'Ag. Fiscal', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoFiscal || (s.status as string) === 'Ag. Fiscal').length },
       { label: 'Ag. Descarga', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoDescarga || (s.status as string) === 'Ag. Descarga').length },
+      { label: 'Valid. de Ticket', value: myShipments.filter(s => s.status === ShipmentStatus.ValidacaoTicket || (s.status as string) === 'Valid. de Ticket' || (s.status as string) === 'Validação de Ticket').length },
       { label: 'Finalizado', value: myShipments.filter(s => s.status === ShipmentStatus.Finalizado || (s.status as string) === 'Finalizado').length },
     ].filter(d => d.value > 0);
 
@@ -1454,7 +1797,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             </div>
             <button
               onClick={() => setIsOfferModalOpen(true)}
-              className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white rounded-lg font-medium transition-all shadow-md hover:shadow-lg flex items-center gap-2 transform hover:-translate-y-0.5"
+              className="px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-lg font-medium transition-all shadow-md hover:shadow-lg flex items-center gap-2 transform hover:-translate-y-0.5"
             >
               <PackageIcon className="w-5 h-5" />
               Nova Oferta de Frete
@@ -1462,9 +1805,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           </div>
 
           {myClient && (
-            <div className="bg-gradient-to-r from-blue-50/90 to-indigo-50/90 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200/80 dark:border-blue-800/60 rounded-2xl p-5 mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+            <div className="bg-gradient-to-r from-amber-50/90 to-amber-50/90 dark:from-amber-950/40 dark:to-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 rounded-2xl p-5 mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
               <div className="flex items-center gap-3.5">
-                <div className="p-3 bg-blue-600 text-white rounded-xl shadow-md">
+                <div className="p-3 bg-amber-600 text-white rounded-xl shadow-md">
                   <Building2 className="w-6 h-6" />
                 </div>
                 <div>
@@ -1489,7 +1832,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               </div>
               <button
                 onClick={() => navigate('/reports')}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm hover:shadow-md cursor-pointer shrink-0"
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm hover:shadow-md cursor-pointer shrink-0"
               >
                 <Building2 className="w-4 h-4" />
                 Ver Histórico & Relatório por CNPJ
@@ -1503,13 +1846,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               title="Cargas em Andamento"
               value={clientDashboardData.pendingLoads.toString()}
               icon={<PackageIcon className="w-6 h-6 text-white" />}
-              colorClass="bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-500/20"
+              colorClass="bg-gradient-to-br from-amber-500 to-amber-600 shadow-amber-500/20"
             />
             <Card
               title="Volume Mensal"
               value={`${clientDashboardData.volumeLoadedThisMonth.toLocaleString('pt-BR')} ton`}
               icon={<TruckIcon className="w-6 h-6 text-white" />}
-              colorClass="bg-gradient-to-br from-indigo-500 to-indigo-600 shadow-indigo-500/20"
+              colorClass="bg-gradient-to-br from-amber-500 to-amber-600 shadow-amber-500/20"
             />
             <Card
               title="Volume Anual"
@@ -1622,6 +1965,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
              currentUser={currentUser || undefined}
             onDelete={onDeleteFreightOffer}
             onConvertToCargo={onConvertToCargo}
+            onSaveFreightOffer={onSaveFreightOffer}
             onUpdateStatus={async (offer, status) => {
               if (onSaveFreightOffer) {
                 const history = addOfferHistory(offer, `Status alterado para "${status}" pelo Cliente.`);
@@ -1637,6 +1981,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             products={products}
             currentClient={clients.find(c => c.id === currentUser.clientId)}
             onSave={onSaveFreightOffer || (async () => {})}
+            currentUser={currentUser}
           />
         </>
     )
@@ -1653,16 +1998,24 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     return true;
   });
 
-  const driverOffers = freightOffers.filter(o => 
-    o.driverId === currentUser?.id && o.status === FreightOfferStatus.Pendente
-  );
+  const driverOffers = freightOffers.filter(o => {
+    if (o.driverId !== currentUser?.id) return false;
+    if (o.status === FreightOfferStatus.Pendente) return true;
+    if (o.status === FreightOfferStatus.Recusada) {
+      const age = Date.now() - new Date(o.requestTimestamp || o.createdAt).getTime();
+      return age < 24 * 60 * 60 * 1000; // Mantém exibição recente por 24h para acompanhamento do motorista
+    }
+    return false;
+  });
 
-  const canViewOffers = currentUser && [UserProfile.Admin, UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Diretor, UserProfile.Demonstracao].includes(currentUser.profile);
+  const canViewOffers = currentUser && [UserProfile.Desenvolvedor, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Diretor, UserProfile.Demonstracao].includes(currentUser.profile);
   const isMotorista = currentUser?.profile === UserProfile.Motorista;
 
   return (
     <>
-      <Header title={renderHeaderTitle()} />
+      <Header title={renderHeaderTitle()}>
+        {renderPeriodSelector()}
+      </Header>
 
       {viewMode === 'fiscal' && (
         <div className="mb-8">
@@ -1682,6 +2035,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
             onOpenCadastroAntt={handleOpenCadastroAntt}
             onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+            realtimeStatus={realtimeStatus}
+            lastSyncTime={lastSyncTime}
+            onRefreshData={onRefreshData}
           />
         </div>
       )}
@@ -1704,6 +2060,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
             onOpenCadastroAntt={handleOpenCadastroAntt}
             onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+            realtimeStatus={realtimeStatus}
+            lastSyncTime={lastSyncTime}
+            onRefreshData={onRefreshData}
           />
         </div>
       )}
@@ -1760,7 +2119,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               title="Total de Cargas Ativas"
               value={totalActiveLoads.toString()}
               icon={<PackageIcon className="w-6 h-6 text-white" />}
-              colorClass="bg-blue-500"
+              colorClass="bg-amber-500"
             />
             <Card
               title="Aguardando Carregamento"
@@ -1870,14 +2229,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               colorClass="bg-secondary"
             />
             <Card
-              title="Tons Efetivadas (Mês)"
+              title={`Tons Efetivadas (${periodLabel})`}
               value={`${dashboardStats.monthlyEffectiveTonnage.toLocaleString('pt-BR')} t`}
               icon={<TruckIcon className="w-6 h-6 text-white" />}
               colorClass="bg-green-500"
             />
             {dashboardStats.canViewCommission ? (
               <Card
-                title="Comissão (Mês)"
+                title={`Comissão (${periodLabel})`}
                 value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardStats.monthlyCommission)}
                 icon={<DollarSignIcon className="w-6 h-6 text-white" />}
                 colorClass="bg-accent"
@@ -1895,7 +2254,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             <div className="space-y-6">
                 <DonutChartCard title="Distribuição de Cargas por Status" data={cargoStatusData} />
                 <DonutChartCard 
-                  title="Volume Carregado por Cliente (Mês)" 
+                  title={`Volume Carregado por Cliente (${periodLabel})`} 
                   data={clientVolumeData} 
                   unit="t" 
                   onViewClientHistory={(clientId) => {
@@ -1905,7 +2264,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                 />
             </div>
             <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
-            {canViewRanking && <ShipperRankingCard shipments={shipments} cargos={cargos} users={users} currentUser={currentUser} />}
+            {canViewRanking && <ShipperRankingCard shipments={shipments} cargos={cargos} users={users} currentUser={currentUser} dateRangeBounds={dateRangeBounds} periodLabel={periodLabel} />}
           </div>
         </>
       )}
@@ -1951,16 +2310,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
           documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
           currentUser={currentUser}
-          cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+          cargo={findCargoById(cargos, selectedShipmentForAttachment.cargoId)}
           requiresRiskManagement={
-            products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
-              ?.requiresRiskManagement !== false
+            checkRequiresRiskManagement(
+              findCargoById(cargos, selectedShipmentForAttachment.cargoId),
+              findProductForCargo(products, findCargoById(cargos, selectedShipmentForAttachment.cargoId))
+            )
           }
           products={products}
           clients={clients}
           users={users}
           riskQueryOptions={riskQueryOptions}
           onUpdateShipmentData={onUpdateShipmentData}
+          onDeleteAttachment={onDeleteAttachment}
         />
       )}
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Truck, Calendar, Weight, Info } from 'lucide-react';
 import type { Cargo, Shipment, User, Client, Product, Vehicle } from '../types';
 import ShipmentDetailsModal from './ShipmentDetailsModal';
+import { formatShipmentStatusLabel } from '../utils/formatters';
 
 interface CargoShipmentsSidePanelProps {
   isOpen: boolean;
@@ -113,8 +114,8 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
                   </div>
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                        <Truck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                        <Truck className="w-5 h-5 text-amber-600 dark:text-amber-400" />
                       </div>
                       <div>
                         <h3 className="font-bold text-gray-900 dark:text-white leading-tight">{shipment.driverName}</h3>
@@ -124,9 +125,9 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
                     <span className={`px-2 py-1 text-[10px] font-bold rounded-full uppercase tracking-wider ${
                       shipment.status === 'Finalizado' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' :
                       shipment.status === 'Cancelado' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' :
-                      'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                      'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
                     }`}>
-                      {shipment.status}
+                      {formatShipmentStatusLabel(shipment.status)}
                     </span>
                   </div>
 

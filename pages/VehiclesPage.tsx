@@ -164,7 +164,7 @@ const VehiclesPage: React.FC<VehiclesPageProps> = ({
         {canCreate && (
           <>
             <button onClick={handleImportClick} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">Importar</button>
-            <button onClick={handleExport} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">Exportar</button>
+            <button onClick={handleExport} className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600">Exportar</button>
             <button onClick={handleOpenModal} className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark">Adicionar Veículo</button>
           </>
         )}

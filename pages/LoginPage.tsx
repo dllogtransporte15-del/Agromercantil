@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabase';
+import { fetchDriverExtraConfig, saveDriverExtraConfig, fetchUserExtraConfig, saveUserExtraConfig } from '../lib/db';
 import { User, UserProfile, DriverClassification, VehicleSetType, VehicleBodyType } from '../types';
 import type { ProfilePermissions } from '../types';
 import { formatCPF, formatPhone } from '../utils/formatters';
 import { 
   UserPlus, ArrowLeft, Eye, EyeOff, CheckCircle2, 
   ShieldCheck, Activity, Clock, Smartphone, Mail, Lock, 
-  Check, Sparkles, Building2, Truck, HelpCircle
+  Check, Sparkles, Building2, Truck, HelpCircle, Download,
+  X, Share2, Monitor, ArrowRight, ExternalLink
 } from 'lucide-react';
 
 interface LoginPageProps {
@@ -25,6 +27,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   // Estado para alternar entre login e cadastro de novo motorista
   const [isRegisteringDriver, setIsRegisteringDriver] = useState(false);
@@ -45,21 +48,23 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
   const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
 
   React.useEffect(() => {
-    const originalBodyBg = document.body.style.backgroundColor;
-    const originalHtmlBg = document.documentElement.style.backgroundColor;
-    document.body.style.backgroundColor = '#04150e';
-    document.documentElement.style.backgroundColor = '#04150e';
-    return () => {
-      document.body.style.backgroundColor = originalBodyBg;
-      document.documentElement.style.backgroundColor = originalHtmlBg;
-    };
-  }, []);
-
-  React.useEffect(() => {
     if (profilePermissions?.system_settings?.driver_portal_enabled === false) {
       setLoginType('interno');
       setIsRegisteringDriver(false);
     }
+  }, [profilePermissions]);
+
+  React.useEffect(() => {
+    const isPwaEnabled = profilePermissions?.system_settings?.pwa_enabled !== false;
+    if (!isPwaEnabled) return;
+    
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
   }, [profilePermissions]);
 
   const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -78,6 +83,23 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
     return val.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 8);
   };
 
+  const [showAppInstallModal, setShowAppInstallModal] = useState(false);
+
+  const handlePwaInstall = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult: any) => {
+        if (choiceResult.outcome === 'accepted') {
+          setDeferredPrompt(null);
+          setShowAppInstallModal(false);
+        }
+      });
+    } else {
+      setShowAppInstallModal(true);
+    }
+  };
+
   // Submit de Login (Interno ou Motorista Existente)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,6 +108,19 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
     if (loginType === 'motorista') {
       if ('geolocation' in navigator) {
         navigator.geolocation.getCurrentPosition(() => {}, () => {});
+      }
+      
+      if (deferredPrompt) {
+        try {
+          deferredPrompt.prompt();
+          deferredPrompt.userChoice.then((choiceResult: any) => {
+            if (choiceResult.outcome === 'accepted') {
+              setDeferredPrompt(null);
+            }
+          });
+        } catch(err) {
+          console.error('Erro ao chamar o prompt de instalação:', err);
+        }
       }
     }
 
@@ -182,21 +217,27 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
         onLogin(userProfile);
 
       } else {
-        const cleanEmail = email.trim().toLowerCase();
+        const inputLogin = email.trim();
+        const cleanEmail = inputLogin.toLowerCase();
         const cleanPassword = password.trim();
+        const cleanDigits = inputLogin.replace(/\D/g, '');
+        const formattedCpf = cleanDigits.length === 11 ? formatCPF(cleanDigits) : '';
 
-        console.log('[LoginPage] Iniciando login interno para:', cleanEmail);
+        console.log('[LoginPage] Iniciando login para:', inputLogin);
         
-        const { data: dbUser, error: dbError } = await supabase
-          .from('app_users')
-          .select('*')
-          .eq('email', cleanEmail)
-          .eq('password', cleanPassword)
-          .single();
+        let query = supabase.from('app_users').select('*').eq('password', cleanPassword);
+        if (formattedCpf) {
+          query = query.or(`email.ilike.${cleanEmail},email.eq.${inputLogin},email.eq.${formattedCpf},email.eq.${cleanDigits}`);
+        } else {
+          query = query.or(`email.ilike.${cleanEmail},email.eq.${inputLogin}`);
+        }
+
+        const { data: dbUserList, error: dbError } = await query;
+        const dbUser = dbUserList && dbUserList.length > 0 ? dbUserList[0] : null;
 
         if (dbError || !dbUser) {
           console.error('[LoginPage] Erro de login:', dbError);
-          setError('Email ou senha inválidos no sistema interno.');
+          setError('Usuário, e-mail ou senha inválidos.');
           setIsLoading(false);
           return;
         }
@@ -208,7 +249,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
           profile: dbUser.profile,
           active: dbUser.active,
           password: dbUser.password,
-          clientId: dbUser.client_id,
+          clientId: dbUser.client_id || undefined,
+          branchId: dbUser.branch_id || undefined,
+          filialId: dbUser.branch_id || undefined,
           requirePasswordChange: dbUser.require_password_change,
           authId: dbUser.auth_id
         };
@@ -315,7 +358,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
           .update({
             name: upperName || existingDriver.name,
             phone: regPhone.trim() || existingDriver.phone,
-            has_app: true,
             active: true,
           })
           .eq('id', driverId);
@@ -337,7 +379,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
             phone: regPhone.trim(),
             classification: DriverClassification.Terceiro,
             active: true,
-            has_app: true,
           });
 
         if (driverErr) {
@@ -347,6 +388,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
           return;
         }
       }
+
+      // Persiste has_app no driver_extra_config
+      try {
+        const driverExtra = await fetchDriverExtraConfig();
+        driverExtra[driverId] = { ...(driverExtra[driverId] || {}), has_app: true };
+        await saveDriverExtraConfig(driverExtra);
+      } catch {}
 
       // 2. Registra ou atualiza o Cavalo Mecânico na tabela 'vehicles'
       if (cleanHorsePlate) {
@@ -425,7 +473,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
           id: driverId,
           name: upperName,
           email: cleanCpf,
-          phone: regPhone.trim(),
           profile: UserProfile.Motorista,
           active: true,
           password: regPassword.trim(),
@@ -436,6 +483,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
       if (userErr) {
         console.warn('[LoginPage] Aviso ao salvar usuário em app_users:', userErr);
       }
+
+      try {
+        const userExtra = await fetchUserExtraConfig();
+        userExtra[driverId] = { ...(userExtra[driverId] || {}), phone: regPhone.trim() };
+        await saveUserExtraConfig(userExtra);
+      } catch {}
 
       // 5. Realiza o login direto no app
       const userProfile: User = {
@@ -470,57 +523,62 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
 
   return (
     <div 
-      className="relative min-h-screen w-full bg-[#04150e] text-slate-100 flex flex-col justify-between overflow-x-hidden font-sans selection:bg-emerald-500 selection:text-white"
+      className="relative min-h-screen w-full bg-[#12100F] text-slate-100 flex flex-col justify-between overflow-x-hidden font-sans"
+      style={{ zoom: 0.81 }}
     >
-      {/* Background Grid Pattern & Ambient Glows (Fixed to guarantee 100% viewport coverage) */}
+      {/* Background Grid Pattern & Ambient Glows */}
       <div 
-        className="fixed inset-0 pointer-events-none z-0"
+        className="absolute inset-0 pointer-events-none z-0"
         style={{
           backgroundImage: `
-            linear-gradient(to right, rgba(22, 163, 74, 0.06) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(22, 163, 74, 0.06) 1px, transparent 1px)
+            linear-gradient(to right, rgba(166, 113, 66, 0.05) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(166, 113, 66, 0.05) 1px, transparent 1px)
           `,
           backgroundSize: '48px 48px'
         }}
       />
       
       {/* Soft Radial Ambient Lighting */}
-      <div className="fixed top-0 left-1/4 w-[600px] h-[500px] bg-emerald-600/15 rounded-full blur-[140px] pointer-events-none z-0" />
-      <div className="fixed bottom-0 right-1/4 w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-[140px] pointer-events-none z-0" />
-      <div className="fixed top-1/2 right-10 w-[350px] h-[350px] bg-emerald-700/10 rounded-full blur-[100px] pointer-events-none z-0" />
+      <div className="absolute top-0 left-1/4 w-[600px] h-[500px] bg-amber-600/10 rounded-full blur-[140px] pointer-events-none z-0" />
+      <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-[140px] pointer-events-none z-0" />
+      <div className="absolute top-1/2 right-10 w-[350px] h-[350px] bg-amber-500/10 rounded-full blur-[100px] pointer-events-none z-0" />
 
       {/* Main Container */}
-      <div className="relative z-10 w-full max-w-7xl mx-auto px-5 sm:px-8 lg:px-12 py-8 lg:py-12 flex-1 flex flex-col justify-center my-auto">
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-5 sm:px-8 lg:px-12 py-8 lg:py-12 flex-1 flex flex-col justify-center">
         
-        {/* Top Header Row (Logo + Status Badge) */}
-        <div className="flex items-center justify-between pb-8 lg:pb-12">
-          <div className="flex items-center gap-3">
-            {companyLogo ? (
-              <img 
-                src={companyLogo} 
-                alt="Logo Agromercantil" 
-                className="h-24 sm:h-28 lg:h-32 max-w-[320px] sm:max-w-[380px] object-contain filter drop-shadow-[0_4px_20px_rgba(22,163,74,0.35)] transition-all" 
-              />
-            ) : (
-              <div className="flex items-center gap-3">
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-tr from-emerald-700 via-primary to-amber-400 p-0.5 shadow-xl shadow-emerald-950/40 flex items-center justify-center">
-                  <div className="w-full h-full bg-[#061e13] rounded-[14px] flex items-center justify-center">
-                    <Truck className="w-8 h-8 sm:w-10 sm:h-10 text-emerald-400" />
+        {/* Top Header Row (Logo Centralizada com a Janela de Login + Status Badge) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-16 items-center pb-6 lg:pb-8">
+          <div className="lg:col-span-5 flex justify-center w-full">
+            <div className={`w-full ${isRegisteringDriver ? 'max-w-xl' : 'max-w-md'} flex items-center justify-center`}>
+              {companyLogo ? (
+                <img 
+                  src={companyLogo} 
+                  alt="Logo DLLOG Transportes" 
+                  className="h-24 sm:h-28 lg:h-32 max-w-[320px] sm:max-w-[380px] object-contain mx-auto filter drop-shadow-[0_4px_20px_rgba(166,113,66,0.45)] brightness-110 transition-all" 
+                />
+              ) : (
+                <div className="flex items-center justify-center gap-3 mx-auto">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-tr from-amber-700 via-primary to-amber-400 p-0.5 shadow-xl shadow-amber-500/25 flex items-center justify-center">
+                    <div className="w-full h-full bg-[#12100F] rounded-[14px] flex items-center justify-center">
+                      <Truck className="w-8 h-8 sm:w-10 sm:h-10 text-amber-400" />
+                    </div>
                   </div>
+                  <span className="text-4xl sm:text-5xl font-black tracking-tight text-white">
+                    DLLOG <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-amber-500">TRANSPORTES</span>
+                  </span>
                 </div>
-                <span className="text-4xl sm:text-5xl font-black tracking-tight text-white">
-                  AGRO<span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-amber-400">MERCANTIL</span>
-                </span>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#062014]/90 border border-emerald-800/60 shadow-inner backdrop-blur-md">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span className="text-[11px] font-bold text-emerald-200 tracking-wider uppercase">Sistema Online</span>
+          <div className="hidden lg:flex lg:col-span-7 items-center justify-end">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-slate-700/60 shadow-inner backdrop-blur-md">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="text-[11px] font-bold text-slate-300 tracking-wider uppercase">Sistema Online</span>
+            </div>
           </div>
         </div>
 
@@ -531,17 +589,17 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
           {/* LEFT SECTION: Portal de Acesso (Auth Card)               */}
           {/* ========================================================= */}
           <div className="lg:col-span-5 flex justify-center w-full">
-            <div className={`w-full ${isRegisteringDriver ? 'max-w-xl' : 'max-w-md'} p-6 sm:p-8 rounded-3xl bg-[#061e13]/90 border border-emerald-800/60 shadow-2xl shadow-emerald-950/60 backdrop-blur-2xl transition-all duration-300 relative overflow-hidden`}>
+            <div className={`w-full ${isRegisteringDriver ? 'max-w-xl' : 'max-w-md'} p-6 sm:p-8 rounded-3xl bg-[#1C1917]/85 border border-slate-700/60 shadow-2xl shadow-amber-950/50 backdrop-blur-2xl transition-all duration-300 relative overflow-hidden`}>
               
               {/* Card Top Border Glow */}
-              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent opacity-80" />
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-400 to-transparent opacity-80" />
 
               {/* Header Title */}
               <div className="text-center mb-6">
                 <h2 className="text-2xl font-black text-white tracking-tight">
                   {isRegisteringDriver ? 'Cadastro de Motorista' : 'Portal de Acesso'}
                 </h2>
-                <p className="text-xs text-slate-300 mt-1">
+                <p className="text-xs text-slate-400 mt-1">
                   {isRegisteringDriver 
                     ? 'Preencha seus dados para criar sua conta no aplicativo' 
                     : 'Entre com suas credenciais corporativas ou CPF'}
@@ -550,12 +608,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
 
               {/* Tab Switcher (Acesso Interno / Sou Motorista) */}
               {!isRegisteringDriver && profilePermissions?.system_settings?.driver_portal_enabled !== false && (
-                <div className="flex p-1 mb-6 rounded-xl bg-[#03130b]/80 border border-emerald-900/80">
+                <div className="flex p-1 mb-6 rounded-xl bg-slate-950/70 border border-slate-800">
                   <button
                     type="button"
                     className={`flex-1 py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
                       loginType === 'interno'
-                        ? 'bg-gradient-to-r from-emerald-600 to-green-700 text-white shadow-md shadow-emerald-900/40'
+                        ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-white shadow-md shadow-amber-900/40'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                     onClick={() => { setLoginType('interno'); setError(''); }}
@@ -567,7 +625,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                     type="button"
                     className={`flex-1 py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
                       loginType === 'motorista'
-                        ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-md shadow-emerald-900/40'
+                        ? 'bg-gradient-to-r from-amber-600 to-amber-600 text-white shadow-md shadow-amber-900/40'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                     onClick={() => { setLoginType('motorista'); setError(''); }}
@@ -587,12 +645,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                     <button
                       type="button"
                       onClick={() => { setIsRegisteringDriver(false); setError(''); }}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-sky-400 transition-colors"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-amber-400 transition-colors"
                     >
                       <ArrowLeft className="w-4 h-4" />
                       <span>Voltar ao login</span>
                     </button>
-                    <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider bg-sky-950/60 px-2.5 py-1 rounded-md border border-sky-800/60">
+                    <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider bg-amber-950/60 px-2.5 py-1 rounded-md border border-amber-800/60">
                       Novo Motorista
                     </span>
                   </div>
@@ -611,7 +669,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                         onChange={handleRegCpfChange}
                         placeholder="000.000.000-00"
                         maxLength={14}
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
                       />
                     </div>
 
@@ -627,7 +685,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                         onChange={handleRegPhoneChange}
                         placeholder="(00) 00000-0000"
                         maxLength={15}
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
                       />
                     </div>
                   </div>
@@ -644,7 +702,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                       value={regName}
                       onChange={e => setRegName(e.target.value)}
                       placeholder="Nome completo do motorista"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
                     />
                   </div>
 
@@ -661,7 +719,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                       onChange={e => setRegHorsePlate(formatPlate(e.target.value))}
                       placeholder="ABC-1234 ou ABC1D23"
                       maxLength={8}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
                     />
                   </div>
 
@@ -676,7 +734,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                         disabled={isLoading}
                         value={regVehicleSetType}
                         onChange={e => setRegVehicleSetType(e.target.value as VehicleSetType)}
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
                       >
                         <option value="" disabled className="bg-slate-900 text-slate-400">Selecione...</option>
                         {Object.values(VehicleSetType).map(t => (
@@ -694,7 +752,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                         disabled={isLoading}
                         value={regVehicleBodyType}
                         onChange={e => setRegVehicleBodyType(e.target.value as VehicleBodyType)}
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
                       >
                         <option value="" disabled className="bg-slate-900 text-slate-400">Selecione...</option>
                         {Object.values(VehicleBodyType).map(b => (
@@ -718,7 +776,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                         onChange={e => setRegTrailer1Plate(formatPlate(e.target.value))}
                         placeholder="Obrigatório"
                         maxLength={8}
-                        className="w-full px-2.5 py-2 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all"
+                        className="w-full px-2.5 py-2 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
                       />
                     </div>
                     <div>
@@ -732,7 +790,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                         onChange={e => setRegTrailer2Plate(formatPlate(e.target.value))}
                         placeholder="Opcional"
                         maxLength={8}
-                        className="w-full px-2.5 py-2 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all"
+                        className="w-full px-2.5 py-2 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
                       />
                     </div>
                     <div>
@@ -746,7 +804,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                         onChange={e => setRegTrailer3Plate(formatPlate(e.target.value))}
                         placeholder="Opcional"
                         maxLength={8}
-                        className="w-full px-2.5 py-2 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all"
+                        className="w-full px-2.5 py-2 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
                       />
                     </div>
                   </div>
@@ -765,7 +823,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                           value={regPassword}
                           onChange={e => setRegPassword(e.target.value)}
                           placeholder="Mínimo 4 dígitos"
-                          className="w-full px-3 py-2.5 pr-9 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all"
+                          className="w-full px-3 py-2.5 pr-9 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
                         />
                         <button
                           type="button"
@@ -789,7 +847,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                           value={regConfirmPassword}
                           onChange={e => setRegConfirmPassword(e.target.value)}
                           placeholder="Repita a senha"
-                          className="w-full px-3 py-2.5 pr-9 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all"
+                          className="w-full px-3 py-2.5 pr-9 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
                         />
                         <button
                           type="button"
@@ -819,7 +877,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                     <button
                       type="submit"
                       disabled={isLoading}
-                      className="w-full py-3.5 px-4 rounded-xl font-black text-sm text-white bg-gradient-to-r from-blue-600 via-primary to-sky-500 hover:from-blue-500 hover:to-sky-400 shadow-lg shadow-blue-900/40 hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                      className="w-full py-3.5 px-4 rounded-xl font-black text-sm text-white bg-gradient-to-r from-amber-600 via-primary to-amber-500 hover:from-amber-500 hover:to-amber-400 shadow-lg shadow-amber-900/40 hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                     >
                       {isLoading ? (
                         <span>CADASTRANDO MOTORISTA...</span>
@@ -839,10 +897,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                 <form className="space-y-4" onSubmit={handleSubmit}>
                   {loginType === 'interno' ? (
                     <>
-                      {/* Campo E-mail */}
+                      {/* Campo E-mail / Usuário / CPF */}
                       <div>
                         <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                          E-mail Corporativo
+                          Usuário, E-mail ou CPF
                         </label>
                         <div className="relative">
                           <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
@@ -851,13 +909,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                           <input
                             id="email-address"
                             name="email"
-                            type="email"
+                            type="text"
                             required
                             disabled={isLoading}
                             value={email}
                             onChange={e => setEmail(e.target.value)}
-                            placeholder="seu.email@agromercantil.com.br"
-                            className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            placeholder="seu.email@dllog.com.br, usuário ou CPF"
+                            className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
                           />
                         </div>
                       </div>
@@ -880,7 +938,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                             value={password}
                             onChange={e => setPassword(e.target.value)}
                             placeholder="Digite sua senha de acesso"
-                            className="w-full pl-10 pr-10 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            className="w-full pl-10 pr-10 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
                           />
                           <button
                             type="button"
@@ -913,7 +971,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                             onChange={handleCpfChange}
                             maxLength={14}
                             placeholder="000.000.000-00"
-                            className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                            className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
                           />
                         </div>
                       </div>
@@ -933,7 +991,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             placeholder="Senha (Opcional no 1º acesso)"
-                            className="w-full pl-10 pr-10 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                            className="w-full pl-10 pr-10 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
                           />
                           <button
                             type="button"
@@ -953,7 +1011,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                       <button
                         type="button"
                         onClick={() => { setIsRegisteringDriver(true); setError(''); }}
-                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-emerald-500/50 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-400 font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-amber-500/50 bg-amber-500/5 hover:bg-amber-500/10 text-amber-400 font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
                       >
                         <UserPlus className="w-4 h-4" />
                         <span>Não é cadastrado? Criar conta de motorista</span>
@@ -972,7 +1030,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                     <button
                       type="submit"
                       disabled={isLoading}
-                      className="w-full py-3.5 px-4 rounded-xl font-extrabold text-sm sm:text-base text-white bg-gradient-to-r from-emerald-600 via-primary to-green-700 hover:from-emerald-500 hover:to-green-600 shadow-lg shadow-emerald-950/50 hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 disabled:opacity-50 tracking-wide uppercase"
+                      className="w-full py-3.5 px-4 rounded-xl font-extrabold text-sm sm:text-base text-white bg-gradient-to-r from-amber-600 via-primary to-amber-700 hover:from-amber-500 hover:to-amber-600 shadow-lg shadow-amber-900/50 hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 disabled:opacity-50 tracking-wide uppercase"
                     >
                       {isLoading ? (
                         <span>PROCESSANDO...</span>
@@ -988,14 +1046,28 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
               )}
 
               {/* Card Footer Links */}
-              <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-center gap-4 text-xs text-slate-400">
+              <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between gap-3 text-xs text-slate-400">
                 <button
                   type="button"
-                  onClick={() => alert("Para obter suporte ou recuperar credenciais corporativas, contate a administração pelo ramal interno ou envie um e-mail para suporte@agromercantil.com.br.")}
+                  onClick={() => alert("Para obter suporte ou recuperar credenciais corporativas, contate a administração pelo ramal interno ou envie um e-mail para suporte@dllog.com.br.")}
                   className="hover:text-slate-200 transition-colors flex items-center gap-1.5"
                 >
                   <HelpCircle className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Precisa de ajuda com o acesso?</span>
+                  <span>Precisa de ajuda?</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePwaInstall}
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-amber-500/20 via-amber-600/20 to-amber-600/25 hover:from-amber-500/30 hover:via-amber-600/30 hover:to-amber-600/35 border border-amber-400/40 text-amber-300 hover:text-white font-bold text-xs transition-all shadow-md shadow-amber-950/60 group"
+                  title="Baixar e instalar o aplicativo DLLOG Transportes"
+                >
+                  <Download className="w-3.5 h-3.5 text-amber-400 group-hover:translate-y-0.5 transition-transform" />
+                  <span>Baixar App</span>
+                  <span className="flex h-2 w-2 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400"></span>
+                  </span>
                 </button>
               </div>
 
@@ -1003,26 +1075,26 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
           </div>
 
           {/* ========================================================= */}
-          {/* RIGHT HERO SECTION: Agromercantil Presentation & Features    */}
+          {/* RIGHT HERO SECTION: DLLOG Transportes Presentation & Features    */}
           {/* ========================================================= */}
           <div className="lg:col-span-7 flex flex-col space-y-6 lg:space-y-8 text-left">
             
             {/* Tag Pill */}
-            <div className="inline-flex items-center gap-2 self-start px-3 py-1.5 rounded-full bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 text-xs font-bold tracking-wide shadow-sm">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+            <div className="inline-flex items-center gap-2 self-start px-3 py-1.5 rounded-full bg-amber-950/60 border border-amber-500/30 text-amber-400 text-xs font-bold tracking-wide shadow-sm">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
               <span>LOGÍSTICA INTELIGENTE & GESTÃO DE CARGAS</span>
             </div>
 
             {/* Main Headline */}
             <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight leading-[1.15]">
-              Soluções Inteligentes{' '}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-green-300 to-amber-400">
-                para o Agro.
+              Tecnologia que movimenta{' '}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-amber-300 to-amber-400">
+                o Agronegócio.
               </span>
             </h1>
 
             {/* Description */}
-            <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl">
+            <p className="text-sm sm:text-base text-slate-400 leading-relaxed max-w-2xl">
               A plataforma definitiva para transportadores, embarcadores e motoristas. Acompanhe fretes, pedidos, emissões e rotas com transparência em tempo real.
             </p>
 
@@ -1030,70 +1102,95 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4 pt-2">
               
               {/* Card 1: Operações ao Vivo */}
-              <div className="p-4 rounded-2xl bg-[#061e13]/80 border border-emerald-900/70 hover:border-emerald-700/80 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-md shadow-emerald-950/40">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0 group-hover:bg-emerald-500/20 transition-colors">
-                  <Activity className="w-5 h-5 text-emerald-400" />
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-sm">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 group-hover:bg-amber-500/20 transition-colors">
+                  <Activity className="w-5 h-5 text-amber-400" />
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-white mb-0.5">Operações ao Vivo</h2>
-                  <p className="text-xs text-slate-300 leading-relaxed">Controle completo de status e carregamento em tempo real.</p>
+                  <p className="text-xs text-slate-400 leading-relaxed">Controle completo de status e carregamento em tempo real.</p>
                 </div>
               </div>
 
               {/* Card 2: Segurança & ANTT */}
-              <div className="p-4 rounded-2xl bg-[#061e13]/80 border border-emerald-900/70 hover:border-emerald-700/80 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-md shadow-emerald-950/40">
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-sm">
                 <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 group-hover:bg-amber-500/20 transition-colors">
                   <ShieldCheck className="w-5 h-5 text-amber-400" />
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-white mb-0.5">Segurança & ANTT</h2>
-                  <p className="text-xs text-slate-300 leading-relaxed">Validação rigorosa de documentos e conformidade fiscal.</p>
+                  <p className="text-xs text-slate-400 leading-relaxed">Validação rigorosa de documentos e conformidade fiscal.</p>
                 </div>
               </div>
 
               {/* Card 3: Cálculo de Estadias */}
-              <div className="p-4 rounded-2xl bg-[#061e13]/80 border border-emerald-900/70 hover:border-emerald-700/80 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-md shadow-emerald-950/40">
-                <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0 group-hover:bg-teal-500/20 transition-colors">
-                  <Clock className="w-5 h-5 text-teal-400" />
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-sm">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0 group-hover:bg-emerald-500/20 transition-colors">
+                  <Clock className="w-5 h-5 text-emerald-400" />
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-white mb-0.5">Cálculo de Estadias</h2>
-                  <p className="text-xs text-slate-300 leading-relaxed">Cálculos precisos da Lei 11.442 e relatórios transparentes.</p>
+                  <p className="text-xs text-slate-400 leading-relaxed">Cálculos precisos da Lei 11.442 e relatórios transparentes.</p>
                 </div>
               </div>
 
-              {/* Card 4: Portal do Motorista */}
-              <div className="p-4 rounded-2xl bg-[#061e13]/80 border border-emerald-900/70 hover:border-emerald-700/80 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-md shadow-emerald-950/40">
-                <div className="w-10 h-10 rounded-xl bg-lime-500/10 border border-lime-500/20 flex items-center justify-center shrink-0 group-hover:bg-lime-500/20 transition-colors">
-                  <Smartphone className="w-5 h-5 text-lime-400" />
+              {/* Card 4: App para Celular / Motoristas (Super Destacado) */}
+              <div 
+                onClick={handlePwaInstall}
+                className="relative p-4 rounded-2xl bg-gradient-to-br from-amber-950/80 via-slate-900/90 to-purple-950/60 border-2 border-amber-500/50 hover:border-amber-400 transition-all flex flex-col justify-between gap-3 backdrop-blur-md group hover:-translate-y-1 shadow-lg shadow-amber-950/50 cursor-pointer overflow-hidden"
+              >
+                {/* Glow Effect */}
+                <div className="absolute -top-10 -right-10 w-28 h-28 bg-amber-500/20 rounded-full blur-2xl pointer-events-none group-hover:bg-amber-500/30 transition-all"></div>
+
+                <div className="flex items-start gap-3.5 relative z-10">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/30 to-purple-500/30 border border-amber-400/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-inner">
+                    <Smartphone className="w-5 h-5 text-amber-300" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between gap-2 mb-0.5">
+                      <h2 className="text-sm font-extrabold text-white group-hover:text-amber-200 transition-colors">App no Celular</h2>
+                      <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500/30 to-purple-500/30 border border-amber-400/40 text-[10px] font-black tracking-wide text-amber-200 uppercase">
+                        Disponível
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Instale o app oficial direto no seu celular para acompanhar fretes, status e canhotos.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-sm font-bold text-white mb-0.5">Portal do Motorista</h2>
-                  <p className="text-xs text-slate-300 leading-relaxed">Acesso web 100% responsivo e ágil diretamente do celular.</p>
+
+                {/* Direct Action Button Inside Card */}
+                <div className="pt-1 flex items-center justify-between border-t border-amber-500/20 text-xs relative z-10">
+                  <span className="text-[11px] font-semibold text-amber-300/80">Sem ocupar memória da loja</span>
+                  <div className="inline-flex items-center gap-1.5 font-black text-xs text-amber-300 group-hover:text-white group-hover:translate-x-0.5 transition-all">
+                    <Download className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Baixar App</span>
+                    <ArrowRight className="w-3 h-3 text-amber-400" />
+                  </div>
                 </div>
               </div>
 
             </div>
 
-            {/* Agromercantil Pillars / Lema */}
-            <div className="pt-2 flex flex-wrap items-center gap-6 sm:gap-8 text-xs font-bold tracking-wider uppercase text-slate-300">
-              <div className="flex items-center gap-2 text-slate-200">
-                <div className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
-                  <Check className="w-2.5 h-2.5 text-emerald-400" />
+            {/* DLLOG Transportes Pillars / Lema */}
+            <div className="pt-2 flex flex-wrap items-center gap-6 sm:gap-8 text-xs font-bold tracking-wider uppercase text-slate-400">
+              <div className="flex items-center gap-2 text-slate-300">
+                <div className="w-4 h-4 rounded-full bg-orange-500/20 border border-orange-500/40 flex items-center justify-center">
+                  <Check className="w-2.5 h-2.5 text-orange-400" />
                 </div>
                 <span>Transparência</span>
               </div>
-              <div className="flex items-center gap-2 text-slate-200">
+              <div className="flex items-center gap-2 text-slate-300">
                 <div className="w-4 h-4 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center">
                   <Check className="w-2.5 h-2.5 text-amber-400" />
                 </div>
-                <span>Cuidado & Qualidade</span>
+                <span>Cuidado</span>
               </div>
-              <div className="flex items-center gap-2 text-slate-200">
-                <div className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
-                  <Check className="w-2.5 h-2.5 text-emerald-400" />
+              <div className="flex items-center gap-2 text-slate-300">
+                <div className="w-4 h-4 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center">
+                  <Check className="w-2.5 h-2.5 text-amber-400" />
                 </div>
-                <span>Pontualidade</span>
+                <span>Prazo</span>
               </div>
             </div>
 
@@ -1103,17 +1200,131 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
 
       </div>
 
-      {/* Footer Bottom Bar */}
-      <footer className="relative z-10 w-full border-t border-emerald-950/80 bg-[#03130b]/90 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto py-3.5 px-6 text-[11px] text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div>
-            © 2026 AGROMERCANTIL Logística. Todos os direitos reservados.
-          </div>
-          <div className="font-mono text-emerald-400/80 font-medium">
-            v2.7.1 • Alta Performance
+      {/* ========================================================= */}
+      {/* MODAL DE INSTRUÇÕES PARA BAIXAR O APP                    */}
+      {/* ========================================================= */}
+      {showAppInstallModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl overflow-hidden text-left text-white">
+            
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 bg-gradient-to-r from-amber-900/60 via-amber-900/40 to-slate-900 border-b border-slate-800 flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-600 p-0.5 shadow-lg shadow-amber-950/50 shrink-0 flex items-center justify-center">
+                  <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+                    <Smartphone className="w-6 h-6 text-amber-400" />
+                  </div>
+                </div>
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 text-[10px] font-black uppercase tracking-wider mb-1">
+                    <Sparkles className="w-3 h-3 text-amber-400" />
+                    App Oficial
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-black text-white leading-tight">
+                    Baixar App DLLOG Transportes
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAppInstallModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 sm:p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Instale o aplicativo direto no seu celular ou computador para ter acesso instantâneo, com notificações e visual otimizado:
+              </p>
+
+              {/* Botão de instalação direta se disponível */}
+              {deferredPrompt && (
+                <button
+                  type="button"
+                  onClick={() => handlePwaInstall()}
+                  className="w-full py-3 px-4 rounded-xl font-black text-sm text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2 transition-all active:scale-[0.99]"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>CLIQUE AQUI PARA INSTALAR AGORA</span>
+                </button>
+              )}
+
+              {/* Guias por Plataforma */}
+              <div className="space-y-3 pt-1">
+                {/* Android */}
+                <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                    <Smartphone className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div className="flex-1 text-xs">
+                    <div className="font-bold text-white text-sm mb-1 flex items-center gap-2">
+                      <span>No Android (Chrome / Edge)</span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed">
+                      Toque no menu <span className="font-bold text-slate-200">⋮ (3 pontinhos)</span> no topo do navegador e selecione <span className="text-emerald-300 font-bold">"Instalar aplicativo"</span> ou <span className="text-emerald-300 font-bold">"Adicionar à tela inicial"</span>.
+                    </p>
+                  </div>
+                </div>
+
+                {/* iPhone / iPad */}
+                <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                    <Share2 className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div className="flex-1 text-xs">
+                    <div className="font-bold text-white text-sm mb-1 flex items-center gap-2">
+                      <span>No iPhone / iPad (Safari)</span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed">
+                      Toque no ícone de <span className="font-bold text-slate-200">Compartilhar</span> (quadrado com seta para cima) na barra inferior e escolha <span className="text-amber-300 font-bold">"Adicionar à Tela de Início"</span>.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Computador */}
+                <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                    <Monitor className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <div className="flex-1 text-xs">
+                    <div className="font-bold text-white text-sm mb-1 flex items-center gap-2">
+                      <span>No Computador (Chrome / Edge)</span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed">
+                      Clique no ícone de <span className="text-purple-300 font-bold">instalar aplicativo ⊕</span> localizado no canto direito da barra de endereço do navegador.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-950/80 border-t border-slate-800 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAppInstallModal(false)}
+                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-colors"
+              >
+                Entendi
+              </button>
+            </div>
+
           </div>
         </div>
-      </footer>
+      )}
+
+      {/* Footer Bottom Bar */}
+      <div className="relative z-10 w-full border-t border-slate-800/80 bg-[#060a14]/90 py-4 px-6 text-[11px] text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2 max-w-7xl mx-auto">
+        <div>
+          © 2026 DLLOG Transportes. Todos os direitos reservados.
+        </div>
+        <div className="font-mono text-slate-400">
+          v2.5 • Alta Performance
+        </div>
+      </div>
     </div>
   );
 };

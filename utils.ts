@@ -1,5 +1,3 @@
-import { ShipmentStatus, DailyScheduleType } from './types';
-
 export const formatId = (num: number, prefix: string, pad: number = 3): string => {
   return `${prefix}-${String(num).padStart(pad, '0')}`;
 };
@@ -86,8 +84,48 @@ export const formatWeightPtBr = (num: number): string => {
   return (result || 'zero toneladas').toUpperCase();
 };
 
-import type { FreightOffer, Cargo } from './types';
-import { FreightOfferStatus } from './types';
+import type { FreightOffer, Cargo, Product } from './types';
+import { FreightOfferStatus, ShipmentStatus } from './types';
+
+/**
+ * Busca uma carga por id ou sequenceId com total tolerância a formatos ('CRG-123', '123', 123, etc.)
+ */
+export const findCargoById = (cargos?: Cargo[] | null, cargoId?: string | number | null): Cargo | undefined => {
+  if (!cargoId || !cargos || cargos.length === 0) return undefined;
+  const strId = String(cargoId).trim();
+  const cleanNum = strId.replace(/\D/g, '');
+  return cargos.find(c => 
+    c.id === strId ||
+    String(c.id).toLowerCase() === strId.toLowerCase() ||
+    (c.sequenceId !== undefined && c.sequenceId !== null && String(c.sequenceId) === strId) ||
+    (cleanNum && c.sequenceId !== undefined && c.sequenceId !== null && String(c.sequenceId) === cleanNum) ||
+    (c.sequenceId !== undefined && c.sequenceId !== null && `crg-${c.sequenceId}` === strId.toLowerCase())
+  );
+};
+
+/**
+ * Encontra o produto associado a uma carga por ID ou nome
+ */
+export const findProductForCargo = (products?: Product[] | null, cargo?: Cargo | null): Product | undefined => {
+  if (!cargo || !products || products.length === 0) return undefined;
+  const prodId = cargo.productId ? String(cargo.productId).trim() : '';
+  if (!prodId) return undefined;
+  return products.find(p => 
+    p.id === prodId ||
+    String(p.id).toLowerCase() === prodId.toLowerCase() ||
+    (p.name && p.name.trim().toLowerCase() === prodId.toLowerCase())
+  );
+};
+
+/**
+ * Verifica se a carga ou produto exige Gerenciamento de Risco (GR).
+ * Se o produto tiver requiresRiskManagement === false ou a carga tiver requiresRiskManagement === false, retorna false.
+ */
+export const checkRequiresRiskManagement = (cargo?: Cargo | null, product?: Product | null): boolean => {
+  if (product && product.requiresRiskManagement === false) return false;
+  if (cargo && (cargo as any).requiresRiskManagement === false) return false;
+  return true;
+};
 
 export const getMatchedCargo = (offer: FreightOffer, cargosList?: Cargo[]): Cargo | null => {
   if (!cargosList || cargosList.length === 0) return null;
@@ -161,55 +199,330 @@ export function getShipmentCte(shipment?: { status?: any; cteNumber?: string; do
   if (!shipment) return '-';
   if (shipment.status && !isCteApplicableForStatus(shipment.status)) return '-';
 
-  if (shipment.cteNumber && typeof shipment.cteNumber === 'string' && shipment.cteNumber.trim() !== '') {
-    return shipment.cteNumber.trim();
-  }
-  if (shipment.documents?.cte_number && String(shipment.documents.cte_number).trim() !== '') {
-    return String(shipment.documents.cte_number).trim();
+  // 1. Extrair lista de números de CT-es cancelados, se houver
+  const cancelledNumbers: string[] = [];
+  if (Array.isArray(shipment.documents?.cancelled_ctes)) {
+    for (const c of shipment.documents.cancelled_ctes) {
+      const numStr = String(c?.cteNumber || '').trim();
+      if (numStr && !cancelledNumbers.includes(numStr)) {
+        cancelledNumbers.push(numStr);
+      }
+    }
   }
 
+  // 2. Extrair número registrado no embarque
+  let directNum = '';
+  if (shipment.cteNumber && typeof shipment.cteNumber === 'string' && shipment.cteNumber.trim() !== '') {
+    directNum = shipment.cteNumber.trim();
+  } else if (shipment.documents?.cte_number && String(shipment.documents.cte_number).trim() !== '') {
+    directNum = String(shipment.documents.cte_number).trim();
+  }
+
+  // Se directNum já contiver barra (ex: "2211/2233"), já está completo e no formato desejado
+  if (directNum && directNum.includes('/')) {
+    return directNum;
+  }
+
+  // Se houver números cancelados registrados e um número ativo
+  if (cancelledNumbers.length > 0) {
+    const allNums = [...cancelledNumbers];
+    if (directNum && !allNums.includes(directNum)) {
+      allNums.push(directNum);
+    }
+    return allNums.join('/');
+  }
+
+  if (directNum) {
+    return directNum;
+  }
+
+  // 3. Fallback: extração a partir dos anexos (removendo prefixo de timestamp de upload para evitar números falsos)
   const cteDocs = shipment.documents?.['CT-e'] || shipment.documents?.['CT-E'] || shipment.documents?.['cte'] || shipment.documents?.['Cte'];
   if (Array.isArray(cteDocs) && cteDocs.length > 0) {
     const extractedList: string[] = [];
     for (const item of cteDocs) {
       if (typeof item === 'string') {
-        const match = item.match(/DACTE_(\d+)/i) || 
-                      item.match(/CT[-_]?e[^\d]*(\d{3,8})/i) || 
-                      item.match(/_(\d{3,8})\.(?:pdf|xml)/i);
+        const cleanItem = item.replace(/CT[-_]?e_\d{10,14}_/i, '').replace(/DACTE_\d{10,14}_/i, '');
+        const match = cleanItem.match(/DACTE_(\d{1,8})/i) || 
+                      cleanItem.match(/(?:^|_)CTE_(\d{1,8})/i) || 
+                      cleanItem.match(/_(\d{1,8})\.(?:pdf|xml)/i);
         if (match && match[1]) {
-          if (!extractedList.includes(match[1])) extractedList.push(match[1]);
+          const numStr = match[1];
+          if (!numStr.startsWith('178') && !numStr.startsWith('179') && !extractedList.includes(numStr)) {
+            extractedList.push(numStr);
+          }
         }
       }
     }
-    if (extractedList.length > 0) return extractedList.join(', ');
+    if (extractedList.length > 0) return extractedList.join('/');
   } else if (typeof cteDocs === 'string' && cteDocs.trim() !== '') {
-    const match = cteDocs.match(/DACTE_(\d+)/i) || 
-                  cteDocs.match(/CT[-_]?e[^\d]*(\d{3,8})/i) || 
-                  cteDocs.match(/_(\d{3,8})\.(?:pdf|xml)/i);
-    if (match && match[1]) return match[1];
+    const cleanItem = cteDocs.replace(/CT[-_]?e_\d{10,14}_/i, '').replace(/DACTE_\d{10,14}_/i, '');
+    const match = cleanItem.match(/DACTE_(\d{1,8})/i) || 
+                  cleanItem.match(/(?:^|_)CTE_(\d{1,8})/i) || 
+                  cleanItem.match(/_(\d{1,8})\.(?:pdf|xml)/i);
+    if (match && match[1]) {
+      const numStr = match[1];
+      if (!numStr.startsWith('178') && !numStr.startsWith('179')) {
+        return numStr;
+      }
+    }
   }
 
   return '-';
 }
 
+export function hasCteAttached(shipment?: { cteNumber?: string; documents?: any; status?: any } | null): boolean {
+  if (!shipment) return false;
+  if (shipment.cteNumber && typeof shipment.cteNumber === 'string' && shipment.cteNumber.trim() !== '' && shipment.cteNumber.trim() !== '-') {
+    return true;
+  }
+  if (shipment.documents?.cte_number && String(shipment.documents.cte_number).trim() !== '' && String(shipment.documents.cte_number).trim() !== '-') {
+    return true;
+  }
+
+  const docs = shipment.documents;
+  if (docs && typeof docs === 'object') {
+    for (const [key, val] of Object.entries(docs)) {
+      if (/ct[-_]?e/i.test(key)) {
+        if (Array.isArray(val) && val.length > 0) return true;
+        if (typeof val === 'string' && val.trim() !== '') return true;
+      }
+    }
+  }
+
+  const cteNum = getShipmentCte(shipment);
+  if (cteNum && cteNum !== '-') return true;
+
+  return false;
+}
+
+/**
+ * Retorna true se o embarque já está faturado com CT-e emitido.
+ * Embarques em cadastro, seguradora, carregamento, aguardando nota ou cancelados
+ * NÃO são considerados faturados.
+ */
+export function isShipmentFaturado(shipment?: { status?: any; cteNumber?: string; documents?: any } | null): boolean {
+  if (!shipment) return false;
+  const statusStr = String(shipment.status || '');
+  if (shipment.status === ShipmentStatus.Cancelado || statusStr === 'Cancelado') return false;
+  if (!isCteApplicableForStatus(shipment.status)) return false;
+  const cteNum = getShipmentCte(shipment);
+  return (cteNum !== '-' && cteNum.trim() !== '') || hasCteAttached(shipment);
+}
+
+export const getShipmentCteNumber = getShipmentCte;
+
+/**
+ * Retorna o Remetente informado no CT-e do embarque.
+ * Prioriza com máxima exatidão os dados fiscais extraídos do CT-e (DACTE / XML).
+ */
+export function getShipmentCteRemetente(shipment?: { documents?: any; [key: string]: any } | null, cargo?: any): string {
+  if (!shipment) return '-';
+
+  const docs = shipment.documents;
+  if (docs && typeof docs === 'object') {
+    const docRem = 
+      docs.cte_remetente || 
+      docs.remetente_cte || 
+      docs.cte_remetente_nome ||
+      docs.remetente_nome || 
+      docs.remetente?.razaoSocial || 
+      docs.remetente?.xNome ||
+      docs.remetente || 
+      docs.cteRemetente ||
+      docs.senderName;
+    if (docRem && typeof docRem === 'string' && docRem.trim() && docRem !== '-') {
+      return docRem.trim().toUpperCase();
+    }
+  }
+
+  const directRem = (shipment as any).cteRemetente || (shipment as any).cte_remetente || (shipment as any).remetente;
+  if (directRem && typeof directRem === 'string' && directRem.trim() && directRem !== '-') {
+    return directRem.trim().toUpperCase();
+  }
+
+  // Fallback: empresa de carregamento / remetente cadastrado na carga
+  if (cargo) {
+    const cargoRem = cargo.loadingCompany || cargo.remetente || cargo.sender;
+    if (cargoRem && typeof cargoRem === 'string' && cargoRem.trim()) {
+      return cargoRem.trim().toUpperCase();
+    }
+  }
+
+  return '-';
+}
+
+/**
+ * Retorna o número do CIOT informado ou extraído no embarque.
+ * Se não houver CIOT cadastrado, retorna '-'.
+ * Garante que o ID do embarque (ex: CEL-665) não seja erroneamente retornado como CIOT.
+ */
+export function getShipmentCiotNumber(shipment?: { id?: string; ciot?: string; ciotNumber?: string; documents?: any } | null): string {
+  if (!shipment) return '-';
+  const sId = shipment.id ? String(shipment.id).trim().toUpperCase() : '';
+
+  const isInvalid = (val: any) => {
+    if (!val || typeof val !== 'string') return true;
+    const trimmed = val.trim();
+    if (!trimmed || trimmed === '-' || trimmed === 'N/A' || trimmed === 'null' || trimmed === 'undefined') return true;
+    if (sId && trimmed.toUpperCase() === sId) return true;
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:') || trimmed.startsWith('/')) return true;
+    return false;
+  };
+
+  // Normalização do CIOT preservando obrigatoriamente a barra "/" e os dígitos após a barra (padrão oficial ANTT / e-Frete)
+  const normalizeCiot = (val: any): string => {
+    if (isInvalid(val)) return '-';
+    const clean = String(val).trim();
+
+    // Se o valor contiver uma barra "/", preserva exatamente o número antes e depois da barra (ex: 520.038.012.363/9057 ou 520038012363/9057)
+    if (clean.includes('/')) {
+      const parts = clean.split('/');
+      const prefix = parts[0].trim();
+      const suffix = parts.slice(1).join('/').trim();
+      if (suffix) {
+        return `${prefix}/${suffix}`;
+      }
+      return prefix;
+    }
+
+    // Se tiver 16 dígitos contínuos (padrão 12 dígitos CIOT + 4 dígitos da operação), formata automaticamente com a barra
+    const digits = clean.replace(/\D/g, '');
+    if (digits.length === 16) {
+      return `${digits.slice(0, 12)}/${digits.slice(12)}`;
+    }
+
+    return clean;
+  };
+
+  const docs = shipment.documents;
+
+  // Lista ordenada de candidatos a CIOT
+  const explicitCandidates: string[] = [];
+  const docCandidates: string[] = [];
+
+  // 1. Campo explícito no objeto do embarque
+  if (!isInvalid(shipment.ciotNumber)) explicitCandidates.push(String(shipment.ciotNumber).trim());
+  if (!isInvalid(shipment.ciot)) explicitCandidates.push(String(shipment.ciot).trim());
+  if (!isInvalid((shipment as any).ciot_number)) explicitCandidates.push(String((shipment as any).ciot_number).trim());
+
+  // 2. Campo em documents
+  if (docs && typeof docs === 'object') {
+    if (!isInvalid(docs.ciot_number)) docCandidates.push(String(docs.ciot_number).trim());
+    if (!isInvalid(docs.ciotNumber)) docCandidates.push(String(docs.ciotNumber).trim());
+    if (!isInvalid(docs.ciot)) docCandidates.push(String(docs.ciot).trim());
+    if (!isInvalid(docs.CIOT)) docCandidates.push(String(docs.CIOT).trim());
+    if (!isInvalid(docs.mdfe_ciot)) docCandidates.push(String(docs.mdfe_ciot).trim());
+    if (!isInvalid(docs.ciot_mdfe)) docCandidates.push(String(docs.ciot_mdfe).trim());
+    if (!isInvalid(docs.mdfeCiot)) docCandidates.push(String(docs.mdfeCiot).trim());
+
+    // Buscar em chaves com nome ciot
+    for (const [key, val] of Object.entries(docs)) {
+      if (/ciot/i.test(key)) {
+        if (!isInvalid(val)) {
+          docCandidates.push(String(val).trim());
+        }
+        if (Array.isArray(val) && val.length > 0) {
+          for (const item of val) {
+            if (typeof item === 'string') {
+              const m = item.match(/(\d{3}\.\d{3}\.\d{3}\.\d{3}\/\d{4}|\d{12}\/\d{4}|\d{3}\.\d{3}\.\d{3}\.\d{3}|\b520\d{9,15}\b|\b\d{16}\b|\b\d{12}\b)/i);
+              if (m && m[1] && (!sId || m[1].toUpperCase() !== sId)) docCandidates.push(m[1].trim());
+            }
+          }
+        }
+      }
+    }
+
+    // Buscar em comprovantes / contratos de frete / PEF / Carta Frete
+    for (const [key, val] of Object.entries(docs)) {
+      if (/carta|contrato|pef/i.test(key)) {
+        const items = Array.isArray(val) ? val : (typeof val === 'string' ? [val] : []);
+        for (const item of items) {
+          if (typeof item === 'string') {
+            const m = item.match(/(\d{3}\.\d{3}\.\d{3}\.\d{3}\/\d{4}|\d{12}\/\d{4}|\d{3}\.\d{3}\.\d{3}\.\d{3}|\b520\d{9,15}\b|\b\d{16}\b|\b\d{12}\b)/i);
+            if (m && m[1] && (!sId || m[1].toUpperCase() !== sId)) docCandidates.push(m[1].trim());
+          }
+        }
+      }
+    }
+  }
+
+  const allCandidates = [...explicitCandidates, ...docCandidates];
+
+  // Prioridade 1: Qualquer candidato que contenha "/" ou tenha 16 dígitos (formato completo com sufixo da operação)
+  // Isso garante que números informados após a barra (ex: 520.038.012.363/9057) nunca sejam truncados por versões parciais (ex: 12 dígitos)
+  const candidateWithSlash = allCandidates.find(c => c.includes('/') || c.replace(/\D/g, '').length === 16);
+  if (candidateWithSlash) {
+    return normalizeCiot(candidateWithSlash);
+  }
+
+  // Prioridade 2: Primeiro candidato explícito válido
+  if (explicitCandidates.length > 0) {
+    return normalizeCiot(explicitCandidates[0]);
+  }
+
+  // Prioridade 3: Primeiro candidato documental válido
+  if (docCandidates.length > 0) {
+    return normalizeCiot(docCandidates[0]);
+  }
+
+  return '-';
+}
+
+
 export function getShipmentCteEmissionDate(shipment?: { status?: any; cteEmissionDate?: string; documents?: any } | null): string | null {
   if (!shipment) return null;
-  if (shipment.status && !isCteApplicableForStatus(shipment.status)) return null;
 
-  if (shipment.cteEmissionDate) return shipment.cteEmissionDate;
-  if (shipment.documents?.cte_emission_date) return String(shipment.documents.cte_emission_date);
+  if (shipment.cteEmissionDate && typeof shipment.cteEmissionDate === 'string' && shipment.cteEmissionDate.trim() !== '' && shipment.cteEmissionDate.trim() !== '-') {
+    return shipment.cteEmissionDate.trim();
+  }
 
-  const cteDocs = shipment.documents?.['CT-e'] || shipment.documents?.['CT-E'] || shipment.documents?.['cte'] || shipment.documents?.['Cte'];
-  if (Array.isArray(cteDocs) && cteDocs.length > 0) {
-    for (const item of cteDocs) {
-      if (typeof item === 'string') {
-        const matchPt = item.match(/(\d{2})[-_.](\d{2})[-_.](\d{4})(?:[-_.\s]*(\d{2})[:_.](\d{2}))?/);
-        if (matchPt) {
-          return matchPt[4] ? `${matchPt[1]}/${matchPt[2]}/${matchPt[3]} ${matchPt[4]}:${matchPt[5]}` : `${matchPt[1]}/${matchPt[2]}/${matchPt[3]}`;
-        }
-        const matchIso = item.match(/(\d{4})[-_.](\d{2})[-_.](\d{2})(?:[T\s_-]*(\d{2})[:_.](\d{2}))?/);
-        if (matchIso) {
-          return matchIso[4] ? `${matchIso[3]}/${matchIso[2]}/${matchIso[1]} ${matchIso[4]}:${matchIso[5]}` : `${matchIso[3]}/${matchIso[2]}/${matchIso[1]}`;
+  const docs = shipment.documents;
+  if (docs && typeof docs === 'object') {
+    const directFields = [
+      docs.cte_emission_date,
+      docs.cteEmissionDate,
+      docs.data_emissao,
+      docs.dataEmissao,
+      docs.data_hora_emissao,
+      docs.dataHoraEmissao,
+      docs.emission_date,
+      docs.emissionDate,
+      docs.dhEmi,
+      docs.dEmi,
+    ];
+    for (const val of directFields) {
+      if (val && typeof val === 'string' && val.trim() !== '' && val.trim() !== '-') {
+        return val.trim();
+      }
+    }
+  }
+
+  if (shipment.status && !isCteApplicableForStatus(shipment.status) && !hasCteAttached(shipment as any)) return null;
+
+  if (docs && typeof docs === 'object') {
+    for (const [key, val] of Object.entries(docs)) {
+      if (/ct[-_]?e|dacte/i.test(key)) {
+        const items = Array.isArray(val) ? val : [val];
+        for (const item of items) {
+          if (typeof item === 'string') {
+            const matchPt = item.match(/(?:^|\b|_)(\d{1,2})[-_.](\d{1,2})[-_.](\d{4})(?:[-_.\s]*(\d{1,2})[:_.](\d{2}))?/);
+            if (matchPt) {
+              const day = matchPt[1].padStart(2, '0');
+              const month = matchPt[2].padStart(2, '0');
+              const year = matchPt[3];
+              const time = matchPt[4] ? ` ${matchPt[4].padStart(2, '0')}:${matchPt[5]}` : '';
+              return `${day}/${month}/${year}${time}`;
+            }
+            const matchIso = item.match(/(?:^|\b|_)(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})(?:[T\s_-]*(\d{1,2})[:_.](\d{2}))?/);
+            if (matchIso) {
+              const year = matchIso[1];
+              const month = matchIso[2].padStart(2, '0');
+              const day = matchIso[3].padStart(2, '0');
+              const time = matchIso[4] ? ` ${matchIso[4].padStart(2, '0')}:${matchIso[5]}` : '';
+              return `${day}/${month}/${year}${time}`;
+            }
+          }
         }
       }
     }
@@ -221,18 +534,34 @@ export function getShipmentCteEmissionDate(shipment?: { status?: any; cteEmissio
 export function parseDateToYmd(dateStr?: string | null): string | null {
   if (!dateStr || typeof dateStr !== 'string') return null;
   const trimmed = dateStr.trim();
-  if (!trimmed) return null;
+  if (!trimmed || trimmed === '-' || trimmed === '0') return null;
 
-  // Match DD/MM/YYYY or DD-MM-YYYY (with optional time)
-  const dmy = trimmed.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+  // Match DD/MM/YYYY or DD-MM-YYYY or D/M/YYYY (with optional time)
+  const dmy = trimmed.match(/(?:^|\b)(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
   if (dmy) {
-    return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+    const day = dmy[1].padStart(2, '0');
+    const month = dmy[2].padStart(2, '0');
+    const year = dmy[3];
+    return `${year}-${month}-${day}`;
   }
 
-  // Match YYYY-MM-DD (with optional time)
-  const ymd = trimmed.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})/);
+  // Match YYYY-MM-DD or YYYY/M/D (with optional time)
+  const ymd = trimmed.match(/(?:^|\b)(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
   if (ymd) {
-    return `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+    const year = ymd[1];
+    const month = ymd[2].padStart(2, '0');
+    const day = ymd[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // Match DD/MM/YY (2-digit year)
+  const dmy2 = trimmed.match(/(?:^|\b)(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})\b/);
+  if (dmy2) {
+    const day = dmy2[1].padStart(2, '0');
+    const month = dmy2[2].padStart(2, '0');
+    let year = parseInt(dmy2[3], 10);
+    year = year > 50 ? 1900 + year : 2000 + year;
+    return `${year}-${month}-${day}`;
   }
 
   const parsed = new Date(trimmed);
@@ -279,14 +608,15 @@ export function getShipmentEffectiveDate(shipment?: { status?: any; cteEmissionD
 }
 
 export function isStayForShipment(
-  stay?: { shipmentId?: string; plate?: string; driver?: string; invoice?: string; entryDate?: string; date?: string } | null,
+  stay?: { shipmentId?: string; shipment_id?: string; plate?: string; driver?: string; invoice?: string; entryDate?: string; date?: string } | null,
   shipment?: { id?: string; orderId?: string; horsePlate?: string; driverName?: string; nfeNumber?: string; documents?: any; scheduledDate?: string; createdAt?: string } | null
 ): boolean {
   if (!stay || !shipment) return false;
 
   // 1. Direct match by shipmentId
-  if (stay.shipmentId && typeof stay.shipmentId === 'string' && stay.shipmentId.trim() !== '') {
-    const cleanStayId = stay.shipmentId.trim().toLowerCase();
+  const stayShipmentId = stay.shipmentId || (stay as any).shipment_id;
+  if (stayShipmentId && typeof stayShipmentId === 'string' && stayShipmentId.trim() !== '') {
+    const cleanStayId = stayShipmentId.trim().toLowerCase();
     if (shipment.id && shipment.id.toLowerCase() === cleanStayId) return true;
     if (shipment.orderId && shipment.orderId.toLowerCase() === cleanStayId) return true;
     return false; // If stay has an explicit shipmentId assigned, it strictly belongs to that shipment
@@ -428,78 +758,147 @@ export function getStayEffectiveDate(
 }
 
 /**
- * Mapeia o status do embarque para a nomenclatura corporativa aprovada
+ * Retorna o link do Google Maps para a origem, destino ou trajeto de uma carga.
+ * Prioriza link de mapa salvo > coordenadas geográficas > ponto de coleta/entrega + cidade > cidade/UF.
  */
-export const formatShipmentStatus = (status: string | ShipmentStatus): string => {
-  if (!status) return '';
-  const s = String(status).trim();
-  switch (s) {
-    case ShipmentStatus.PreCadastro:
-    case 'Ag. Cadastro':
-    case 'Pre-cadastro':
-    case 'Pré-cadastro':
-    case 'Triagem / Pré-Cadastro':
-      return 'Triagem / Pré-Cadastro';
-    case ShipmentStatus.AguardandoSeguradora:
-    case 'Ag. Seguradora':
-    case 'Análise de Risco (PGR)':
-      return 'Análise de Risco (PGR)';
-    case ShipmentStatus.AguardandoCarregamento:
-    case 'Ag. Carregamento':
-    case 'Aguardando Check-in / Carga':
-      return 'Aguardando Check-in / Carga';
-    case ShipmentStatus.AguardandoNota:
-    case ShipmentStatus.AguardandoFiscal:
-    case 'Ag. Nota':
-    case 'Ag. Fiscal':
-    case 'Emissão Fiscal (CT-e / NF-e)':
-      return 'Emissão Fiscal (CT-e / NF-e)';
-    case ShipmentStatus.AguardandoAdiantamento:
-    case 'Ag. Adiantamento':
-    case 'Liberação de Adiantamento':
-      return 'Liberação de Adiantamento';
-    case ShipmentStatus.AguardandoAgendamento:
-    case 'Ag. Agendamento':
-    case 'Agendamento de Descarga (Slot)':
-      return 'Agendamento de Descarga (Slot)';
-    case ShipmentStatus.AguardandoDescarga:
-    case 'Ag. Descarga':
-    case 'Em Trânsito / Aguardando Descarga':
-      return 'Em Trânsito / Aguardando Descarga';
-    case ShipmentStatus.AguardandoPagamentoSaldo:
-    case 'Ag. Saldo':
-    case 'Ag. Pagamento Saldo':
-    case 'Liquidação de Saldo':
-      return 'Liquidação de Saldo';
-    case ShipmentStatus.Finalizado:
-    case 'Finalizado':
-    case 'Operação Concluída':
-      return 'Operação Concluída';
-    case ShipmentStatus.Cancelado:
-    case 'Cancelado':
-      return 'Cancelado';
-    default:
-      return s;
+export function getCargoMapUrl(
+  type: 'origin' | 'destination' | 'route',
+  cargo?: {
+    origin?: string;
+    originLocation?: string;
+    originMapLink?: string;
+    originCoords?: { lat: number; lng: number };
+    destination?: string;
+    destinationLocation?: string;
+    destinationMapLink?: string;
+    destinationCoords?: { lat: number; lng: number };
+  } | null
+): string | null {
+  if (!cargo) return null;
+
+  if (type === 'origin') {
+    if (cargo.originMapLink && cargo.originMapLink.trim()) {
+      return cargo.originMapLink.trim();
+    }
+    if (cargo.originCoords?.lat && cargo.originCoords?.lng) {
+      return `https://www.google.com/maps/search/?api=1&query=${cargo.originCoords.lat},${cargo.originCoords.lng}`;
+    }
+    const query = [cargo.originLocation, cargo.origin].filter(Boolean).join(', ').trim();
+    if (query) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    }
+    return null;
   }
-};
+
+  if (type === 'destination') {
+    if (cargo.destinationMapLink && cargo.destinationMapLink.trim()) {
+      return cargo.destinationMapLink.trim();
+    }
+    if (cargo.destinationCoords?.lat && cargo.destinationCoords?.lng) {
+      return `https://www.google.com/maps/search/?api=1&query=${cargo.destinationCoords.lat},${cargo.destinationCoords.lng}`;
+    }
+    const query = [cargo.destinationLocation, cargo.destination].filter(Boolean).join(', ').trim();
+    if (query) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    }
+    return null;
+  }
+
+  if (type === 'route') {
+    const originPart = cargo.originMapLink?.trim() ||
+      (cargo.originCoords?.lat ? `${cargo.originCoords.lat},${cargo.originCoords.lng}` : [cargo.originLocation, cargo.origin].filter(Boolean).join(', ').trim());
+    const destPart = cargo.destinationMapLink?.trim() ||
+      (cargo.destinationCoords?.lat ? `${cargo.destinationCoords.lat},${cargo.destinationCoords.lng}` : [cargo.destinationLocation, cargo.destination].filter(Boolean).join(', ').trim());
+
+    if (originPart && destPart) {
+      return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(originPart)}&destination=${encodeURIComponent(destPart)}`;
+    }
+    return null;
+  }
+
+  return null;
+}
 
 /**
- * Mapeia o tipo de demanda para a nomenclatura corporativa aprovada
+ * Normaliza o peso/tonelagem para Toneladas (t).
+ * Corrige automaticamente casos onde o peso foi inserido em kg (ex: 46150 kg -> 46.15 t)
+ * ou com pontuações/zeros adicionais de balança/gramas (ex: 46150000 -> 46.15 t).
  */
-export const formatDemandType = (type: string | DailyScheduleType): string => {
-  if (!type) return '';
-  const t = String(type).trim();
-  switch (t) {
-    case 'Demanda Livre':
-    case 'Demanda Contínua':
-      return 'Demanda Contínua';
-    case 'Demanda Fixa':
-    case 'Cota Diária Programada':
-      return 'Cota Diária Programada';
-    case 'Demanda a Verificar':
-    case 'Demanda Sob Consulta':
-      return 'Demanda Sob Consulta';
-    default:
-      return t;
+export function normalizeWeightTonnage(raw: number | string | undefined | null): number {
+  if (raw === undefined || raw === null || raw === '') return 0;
+  const num = typeof raw === 'string' ? parseFloat(raw.replace(/[^\d.,]/g, '').replace(',', '.')) : Number(raw);
+  if (isNaN(num) || num <= 0) return 0;
+  
+  let val = num;
+  if (val >= 1000000) {
+    val = val / 1000000;
+  } else if (val >= 1000) {
+    val = val / 1000;
   }
-};
+  return Number(val.toFixed(2));
+}
+
+export type FinancialPeriodFilter = 'hoje' | 'semana' | 'mes' | 'ano';
+
+export interface FinancialDateRange {
+  startDate: string; // Formato YYYY-MM-DD
+  endDate: string;   // Formato YYYY-MM-DD
+}
+
+/**
+ * Converte um objeto Date para string no formato local YYYY-MM-DD
+ */
+export function toLocalYmd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Retorna o intervalo dinâmico de datas para os relatórios financeiros:
+ * - "hoje": estritamente o dia atual / de referência (YYYY-MM-DD a YYYY-MM-DD)
+ * - "semana": Domingo a Sábado da semana corrente
+ * - "mes": 1º ao último dia do mês corrente
+ * - "ano": 1º ao último dia do ano corrente
+ */
+export function getFinancialPeriodRange(filter: FinancialPeriodFilter, refDate: Date = new Date()): FinancialDateRange {
+  const y = refDate.getFullYear();
+  const m = refDate.getMonth();
+  const d = refDate.getDate();
+
+  switch (filter) {
+    case 'hoje': {
+      const todayStr = toLocalYmd(refDate);
+      return { startDate: todayStr, endDate: todayStr };
+    }
+    case 'semana': {
+      const dayOfWeek = refDate.getDay(); // 0 = Domingo, 6 = Sábado
+      const sunday = new Date(y, m, d - dayOfWeek);
+      const saturday = new Date(y, m, d + (6 - dayOfWeek));
+      return { startDate: toLocalYmd(sunday), endDate: toLocalYmd(saturday) };
+    }
+    case 'mes': {
+      const firstDay = new Date(y, m, 1);
+      const lastDay = new Date(y, m + 1, 0);
+      return { startDate: toLocalYmd(firstDay), endDate: toLocalYmd(lastDay) };
+    }
+    case 'ano': {
+      const firstDay = new Date(y, 0, 1);
+      const lastDay = new Date(y, 11, 31);
+      return { startDate: toLocalYmd(firstDay), endDate: toLocalYmd(lastDay) };
+    }
+  }
+}
+
+
+export { 
+  COMMISSION_ELIGIBLE_STATUSES,
+  END_OF_MONTH_TRANSIT_STATUSES,
+  getShipmentEffectiveYmd,
+  isShipmentLoadedAtEndOfMonth,
+  isShipmentEligibleByEndOfMonthException,
+  isShipmentEligibleForCommission,
+  canViewPredictedCommission,
+  isShipmentPredictedForCommission
+} from './utils/financialCalculations';

@@ -52,6 +52,7 @@ const SalespersonReport: React.FC<SalespersonReportProps> = ({ shipments, cargos
         ShipmentStatus.AguardandoAdiantamento,
         ShipmentStatus.AguardandoAgendamento,
         ShipmentStatus.AguardandoDescarga,
+        ShipmentStatus.ValidacaoTicket,
         ShipmentStatus.AguardandoPagamentoSaldo,
         ShipmentStatus.Finalizado
     ];
@@ -72,7 +73,7 @@ const SalespersonReport: React.FC<SalespersonReportProps> = ({ shipments, cargos
           const cargo = cargoMap.get(shipment.cargoId);
           if (!cargo) return acc;
 
-          const expenses = calculateShipmentExpenses(shipment, cargo);
+          const expenses = calculateShipmentExpenses(shipment, cargo, undefined, stays);
           
           const shipmentStays = stays.filter(stay => isStayForShipment(stay, shipment));
           const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
@@ -110,11 +111,11 @@ const SalespersonReport: React.FC<SalespersonReportProps> = ({ shipments, cargos
         <div className="space-y-6">
           {salespersonStats.map(stats => (
             <div key={stats.id} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-              <h3 className="text-xl font-bold text-primary dark:text-blue-400 mb-4">{stats.name}</h3>
+              <h3 className="text-xl font-bold text-primary dark:text-amber-400 mb-4">{stats.name}</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard title="Valor Bruto Faturado" value={stats.grossBilled} icon={<DollarSignIcon className="w-8 h-8 text-blue-500"/>} formatAsCurrency />
+                <StatCard title="Valor Bruto Faturado" value={stats.grossBilled} icon={<DollarSignIcon className="w-8 h-8 text-amber-500"/>} formatAsCurrency />
                 <StatCard title="Valor Líquido Faturado (-ICMS)" value={stats.netBilled} icon={<DollarSignIcon className="w-8 h-8 text-gray-500"/>} formatAsCurrency />
-                <StatCard title="Lucro Operacional Estimado" value={stats.profitMargin} icon={<DollarSignIcon className="w-8 h-8 text-blue-400"/>} formatAsCurrency />
+                <StatCard title="Lucro Operacional Estimado" value={stats.profitMargin} icon={<DollarSignIcon className="w-8 h-8 text-amber-400"/>} formatAsCurrency />
                 <StatCard title="Volume Transportado" value={`${stats.totalTonnage.toLocaleString('pt-BR')} ton`} icon={<PackageIcon className="w-8 h-8 text-gray-400"/>} />
               </div>
             </div>

@@ -10,7 +10,7 @@ import {
 import Header from '../components/Header';
 import { saveToolStay, getToolClients, saveToolClient, ToolClient, getAllToolClients } from '../utils/toolStorage';
 import { User as AppUser, Shipment, Cargo, Client as AppClient, ShipmentStatus, UserProfile } from '../types';
-import { isDemoUser } from '../auth';
+import { isDemoUser, isDeveloperUser } from '../auth';
 import { autoFormatInput } from '../utils/formatters';
 import { addPdfLogo } from '../utils/pdfGenerator';
 
@@ -47,7 +47,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
   const loadClients = useCallback(async () => {
     if (!currentUser) return;
     const isDemo = isDemoUser(currentUser);
-    const isAdmin = !isDemo && [UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile);
+    const isAdmin = !isDemo && (isDeveloperUser(currentUser) || [UserProfile.Desenvolvedor, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile));
     const data = await (isAdmin ? getAllToolClients() : getToolClients(currentUser.id));
     setClients(data);
   }, [currentUser]);
@@ -406,7 +406,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 p-6">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-medium flex items-center text-slate-800 dark:text-gray-200">
-                <FileText className="w-5 h-5 mr-2 text-indigo-500" />
+                <FileText className="w-5 h-5 mr-2 text-amber-500" />
                 Dados da Estadia
               </h2>
               <button onClick={clearFields} className="text-sm text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-200 flex items-center transition-colors">
@@ -428,7 +428,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                   }}
                   className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs md:text-sm font-bold transition-all ${
                     formData.calculationType === 'TON_HOUR'
-                      ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-200/60 dark:border-gray-700'
+                      ? 'bg-white dark:bg-gray-800 text-amber-600 dark:text-amber-400 shadow-sm border border-slate-200/60 dark:border-gray-700'
                       : 'text-slate-500 dark:text-gray-400 hover:text-slate-700 dark:hover:text-gray-200'
                   }`}
                 >
@@ -443,7 +443,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                   }}
                   className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs md:text-sm font-bold transition-all ${
                     formData.calculationType === 'DAILY_FIXED'
-                      ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-200/60 dark:border-gray-700'
+                      ? 'bg-white dark:bg-gray-800 text-amber-600 dark:text-amber-400 shadow-sm border border-slate-200/60 dark:border-gray-700'
                       : 'text-slate-500 dark:text-gray-400 hover:text-slate-700 dark:hover:text-gray-200'
                   }`}
                 >
@@ -454,8 +454,8 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
             </div>
             
             {/* Vincular a Embarque */}
-            <div className="mb-6 p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-xl">
-              <label className="text-sm font-medium text-indigo-900 dark:text-indigo-300 flex items-center mb-2">
+            <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl">
+              <label className="text-sm font-medium text-amber-900 dark:text-amber-300 flex items-center mb-2">
                 Vincular a um Embarque (Opcional)
               </label>
               <div className="relative" ref={dropdownRef}>
@@ -469,13 +469,13 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                     setIsShipmentDropdownOpen(true);
                   }}
                   onFocus={() => setIsShipmentDropdownOpen(true)}
-                  className="w-full px-3 py-2 border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-gray-800 text-slate-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                  className="w-full px-3 py-2 border border-amber-200 dark:border-amber-700 bg-white dark:bg-gray-800 text-slate-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all"
                 />
                 
                 {isShipmentDropdownOpen && (
-                  <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                     <div 
-                      className="px-3 py-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-sm text-slate-600 dark:text-gray-400 border-b border-indigo-50 dark:border-indigo-900/50"
+                      className="px-3 py-2 cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-900/30 text-sm text-slate-600 dark:text-gray-400 border-b border-amber-50 dark:border-amber-900/50"
                       onClick={() => handleShipmentSelect('')}
                     >
                       -- Não vincular (avulso) --
@@ -489,7 +489,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                           <div 
                             key={s.id} 
                             onClick={() => handleShipmentSelect(s.id)}
-                            className={`px-3 py-2 cursor-pointer text-sm transition-colors ${isSelected ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-900 dark:text-indigo-200' : 'hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-700 dark:text-gray-300'}`}
+                            className={`px-3 py-2 cursor-pointer text-sm transition-colors ${isSelected ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200' : 'hover:bg-amber-50 dark:hover:bg-amber-900/30 text-slate-700 dark:text-gray-300'}`}
                           >
                             <div className="font-medium">{s.horsePlate} - {s.driverName}</div>
                             <div className="text-xs opacity-75 mt-0.5">
@@ -506,7 +506,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                   </div>
                 )}
               </div>
-              <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-2">
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
                 Selecionar um embarque preencherá automaticamente os dados do Motorista, Placa, Peso, Origem e Destino.
               </p>
             </div>
@@ -516,7 +516,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                 <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                   <Building2 className="w-4 h-4 mr-1.5 text-slate-400" /> Cliente (Opcional)
                 </label>
-                <input type="text" name="clientName" value={formData.clientName} onChange={handleInputChange} list="clients-list" className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="Clique para selecionar ou digite um novo" />
+                <input type="text" name="clientName" value={formData.clientName} onChange={handleInputChange} list="clients-list" className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" placeholder="Clique para selecionar ou digite um novo" />
                 <datalist id="clients-list">
                   {clients.map(c => <option key={c.id} value={c.name} />)}
                 </datalist>
@@ -526,42 +526,42 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                 <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                   <User className="w-4 h-4 mr-1.5 text-slate-400" /> Motorista *
                 </label>
-                <input type="text" name="driver" value={formData.driver} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                <input type="text" name="driver" value={formData.driver} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                   <Truck className="w-4 h-4 mr-1.5 text-slate-400" /> Placa *
                 </label>
-                <input type="text" name="plate" value={formData.plate} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="ABC-1234" />
+                <input type="text" name="plate" value={formData.plate} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" placeholder="ABC-1234" />
               </div>
 
               <div className="space-y-1.5 md:col-span-2">
                 <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                   <FileDigit className="w-4 h-4 mr-1.5 text-slate-400" /> Nota Fiscal
                 </label>
-                <input type="text" name="invoice" value={formData.invoice} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                <input type="text" name="invoice" value={formData.invoice} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                   <MapPin className="w-4 h-4 mr-1.5 text-slate-400" /> Origem *
                 </label>
-                <input type="text" name="origin" value={formData.origin} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                <input type="text" name="origin" value={formData.origin} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                   <MapPin className="w-4 h-4 mr-1.5 text-slate-400" /> Destino *
                 </label>
-                <input type="text" name="destination" value={formData.destination} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                <input type="text" name="destination" value={formData.destination} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" />
               </div>
 
               <div className="space-y-1.5 md:col-span-2">
                 <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                   <MapPin className="w-4 h-4 mr-1.5 text-slate-400" /> Local do Evento
                 </label>
-                <select name="location" value={formData.location} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-white dark:bg-gray-700">
+                <select name="location" value={formData.location} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all bg-white dark:bg-gray-700">
                   <option value="Origem">Origem (Carregamento)</option>
                   <option value="Destino">Destino (Descarregamento)</option>
                 </select>
@@ -574,14 +574,14 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                     <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                       <Weight className="w-4 h-4 mr-1.5 text-slate-400" /> Peso (Toneladas) *
                     </label>
-                    <input type="number" step="0.01" name="weight" value={formData.weight} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="57.94" />
+                    <input type="number" step="0.01" name="weight" value={formData.weight} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" placeholder="57.94" />
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                       <DollarSign className="w-4 h-4 mr-1.5 text-slate-400" /> Valor Ton/Hora (R$) *
                     </label>
-                    <input type="number" step="0.01" name="valuePerHour" value={formData.valuePerHour} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="Ex: 0.80" />
+                    <input type="number" step="0.01" name="valuePerHour" value={formData.valuePerHour} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" placeholder="Ex: 0.80" />
                   </div>
                 </>
               ) : (
@@ -595,7 +595,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
 
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center justify-between">
-                      <span className="flex items-center"><Calendar className="w-4 h-4 mr-1.5 text-indigo-400" /> Qtd. de Diárias</span>
+                      <span className="flex items-center"><Calendar className="w-4 h-4 mr-1.5 text-amber-400" /> Qtd. de Diárias</span>
                       {result?.autoDays !== undefined && (
                         <span className="text-[10px] text-slate-400">Calculado: {result.autoDays} d</span>
                       )}
@@ -607,7 +607,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                       name="daysCount" 
                       value={formData.daysCount} 
                       onChange={handleInputChange} 
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" 
                       placeholder={result?.autoDays ? `${result.autoDays} (automático)` : 'Ex: 1'} 
                     />
                   </div>
@@ -616,7 +616,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                     <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                       <Weight className="w-4 h-4 mr-1.5 text-slate-400" /> Peso da Carga (Opcional p/ Diária)
                     </label>
-                    <input type="number" step="0.01" name="weight" value={formData.weight} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="57.94 (informativo)" />
+                    <input type="number" step="0.01" name="weight" value={formData.weight} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" placeholder="57.94 (informativo)" />
                   </div>
                 </>
               )}
@@ -625,21 +625,21 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                 <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                   <Clock className="w-4 h-4 mr-1.5 text-slate-400" /> Tolerância (Horas)
                 </label>
-                <input type="number" step="0.5" name="tolerance" value={formData.tolerance} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="12" />
+                <input type="number" step="0.5" name="tolerance" value={formData.tolerance} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" placeholder="12" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                   <Clock className="w-4 h-4 mr-1.5 text-slate-400" /> Entrada *
                 </label>
-                <input type="datetime-local" name="entryDate" value={formData.entryDate} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                <input type="datetime-local" name="entryDate" value={formData.entryDate} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                   <Clock className="w-4 h-4 mr-1.5 text-slate-400" /> Saída *
                 </label>
-                <input type="datetime-local" name="exitDate" value={formData.exitDate} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                <input type="datetime-local" name="exitDate" value={formData.exitDate} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" />
               </div>
             </div>
           </div>
@@ -649,10 +649,10 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 overflow-hidden flex flex-col h-full">
             <div className="p-6 border-b border-slate-100 dark:border-gray-700 bg-slate-50/50 dark:bg-gray-900/50 flex justify-between items-center">
               <h2 className="text-lg font-medium flex items-center text-slate-800 dark:text-gray-200">
-                <Calculator className="w-5 h-5 mr-2 text-indigo-500" />
+                <Calculator className="w-5 h-5 mr-2 text-amber-500" />
                 Resumo do Cálculo
               </h2>
-              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${formData.calculationType === 'DAILY_FIXED' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' : 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300'}`}>
+              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${formData.calculationType === 'DAILY_FIXED' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'}`}>
                 {formData.calculationType === 'DAILY_FIXED' ? 'Diária Fixa' : 'Ton / Hora'}
               </span>
             </div>
@@ -668,7 +668,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                     </div>
                     <div className="bg-slate-50 dark:bg-gray-900/50 p-4 rounded-xl border border-slate-100 dark:border-gray-700">
                       <div className="text-xs font-medium text-slate-500 dark:text-gray-400 uppercase mb-1">Horas Cobráveis</div>
-                      <div className="text-xl font-semibold text-indigo-600 dark:text-indigo-400">{formatNumber(result.chargeableHours, 1)}h</div>
+                      <div className="text-xl font-semibold text-amber-600 dark:text-amber-400">{formatNumber(result.chargeableHours, 1)}h</div>
                       <div className="text-xs text-slate-400 mt-1">Desconto de {result.tolerance}h</div>
                     </div>
                   </div>
@@ -695,7 +695,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                       <>
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500 dark:text-gray-400">Qtd. de Diárias</span>
-                          <span className="font-bold text-indigo-600 dark:text-indigo-400">{result.daysCount} diária(s)</span>
+                          <span className="font-bold text-amber-600 dark:text-amber-400">{result.daysCount} diária(s)</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500 dark:text-gray-400">Valor por Diária</span>

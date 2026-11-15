@@ -26,7 +26,6 @@ export class ErrorBoundary extends Component<Props, State> {
 
   private handleReset = () => {
     try {
-      localStorage.removeItem('agromercantil_themeImage');
       localStorage.removeItem('transcunha_themeImage');
       localStorage.removeItem('trancunha_themeImage');
     } catch (e) {
@@ -61,7 +60,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="space-y-3">
               <button
                 onClick={this.handleReset}
-                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl transition-colors shadow-lg shadow-blue-600/25 flex items-center justify-center gap-2 text-sm"
+                className="w-full py-3 px-4 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded-xl transition-colors shadow-lg shadow-amber-600/25 flex items-center justify-center gap-2 text-sm"
               >
                 <LoaderIcon className="w-4 h-4" />
                 Restaurar Tema Padrão e Recarregar

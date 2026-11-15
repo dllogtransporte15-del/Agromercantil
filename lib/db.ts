@@ -1,17 +1,19 @@
 import { supabase } from '../supabase';
 import { extractFiscalDocNumbersFromUrls } from '../utils/fiscalDocParser';
-import { isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate } from '../utils';
+import { isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate, getShipmentCiotNumber } from '../utils';
 import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from '../utils/freightCalculation';
 import type {
-  Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption
+  Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption, LoadingOrderModel, RdoRequestRecord, RdoConfig, SigaConfig, SigaRequestRecord
 } from '../types';
-import { DEFAULT_RISK_QUERY_OPTIONS, FreightCalculationType } from '../types';
+import { DEFAULT_RISK_QUERY_OPTIONS, FreightCalculationType, DEFAULT_LOADING_ORDER_MODELS, TicketStatus } from '../types';
+import { broadcastShipmentChange, broadcastCargoChange, broadcastTicketChange, broadcastRdoChange, broadcastSigaChange } from '../services/realtimeOperationsHub';
+
 
 // ─────────────────────────────────────────────
 // HELPERS: Map DB rows (snake_case) ↔ App types (camelCase)
 // ─────────────────────────────────────────────
 
-const toFreightOffer = (row: any): FreightOffer => {
+export const toFreightOffer = (row: any): FreightOffer => {
   const rawHistory = row.history || [];
   const metaLog = rawHistory.find((h: any) => h.id === 'meta_dest_obs');
   let additionalDestinations = undefined;
@@ -22,6 +24,10 @@ const toFreightOffer = (row: any): FreightOffer => {
   let icmsPercentage: number | undefined = row.icms_percentage !== undefined ? Number(row.icms_percentage) : undefined;
   let clientCnpj: string | undefined = row.client_cnpj || undefined;
   let clientBranchId: string | undefined = row.client_branch_id || undefined;
+  let originCoords: { lat: number; lng: number } | undefined = undefined;
+  let destinationCoords: { lat: number; lng: number } | undefined = undefined;
+  let distanceKm: number | undefined = undefined;
+  let isExactDistance: boolean | undefined = undefined;
 
   if (metaLog) {
     try {
@@ -38,6 +44,10 @@ const toFreightOffer = (row: any): FreightOffer => {
       if (parsed.icmsPercentage !== undefined) icmsPercentage = parsed.icmsPercentage;
       if (parsed.clientCnpj) clientCnpj = parsed.clientCnpj;
       if (parsed.clientBranchId) clientBranchId = parsed.clientBranchId;
+      if (parsed.originCoords) originCoords = parsed.originCoords;
+      if (parsed.destinationCoords) destinationCoords = parsed.destinationCoords;
+      if (parsed.distanceKm !== undefined) distanceKm = Number(parsed.distanceKm);
+      if (parsed.isExactDistance !== undefined) isExactDistance = Boolean(parsed.isExactDistance);
     } catch (e) {
       console.error('Error parsing freight offer metadata:', e);
     }
@@ -70,47 +80,71 @@ const toFreightOffer = (row: any): FreightOffer => {
     icmsPercentage,
     clientCnpj,
     clientBranchId,
+    originCoords,
+    destinationCoords,
+    distanceKm,
+    isExactDistance,
   };
 };
 
 export const fetchFreightOffers = async (): Promise<FreightOffer[]> => {
+  let rawOffers: FreightOffer[] = [];
+  let loadedFromTable = false;
+
   try {
     const data = await fetchAllRows('freight_offers', 'created_at', { ascending: true });
-    const rawOffers = data.map(toFreightOffer);
-
-    let currentSeq = 1;
-    const formattedOffers = rawOffers.map((offer: FreightOffer) => {
-      if (offer.id && /^OFR-\d+$/i.test(offer.id)) {
-        const match = offer.id.match(/^OFR-(\d+)$/i);
-        if (match) {
-          const num = parseInt(match[1], 10);
-          if (!isNaN(num) && num >= currentSeq) {
-            currentSeq = num + 1;
-          }
-        }
-        return { ...offer, displayId: offer.id };
-      } else {
-        const formattedId = `OFR-${String(currentSeq).padStart(2, '0')}`;
-        currentSeq++;
-        return { ...offer, displayId: formattedId };
-      }
-    });
-
-    return formattedOffers.reverse();
+    rawOffers = data.map(toFreightOffer);
+    loadedFromTable = true;
   } catch (error: any) {
-    if (error.code === '42P01') {
-      console.warn('Table freight_offers does not exist yet. Returning empty array.');
-      return [];
+    if (error?.code === '42P01' || error?.code === 'PGRST205' || String(error?.message || '').includes('freight_offers')) {
+      try {
+        const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+        if (Array.isArray(data?.permissions?.freight_offers_list)) {
+          rawOffers = data.permissions.freight_offers_list.map(toFreightOffer);
+        }
+      } catch {}
+      if (rawOffers.length === 0) {
+        try {
+          const cached = localStorage.getItem('transcunha_freight_offers');
+          if (cached) rawOffers = JSON.parse(cached).map(toFreightOffer);
+        } catch {}
+      }
+    } else {
+      console.error('Error fetching freight offers:', error);
     }
-    console.error('Error fetching freight offers:', error);
-    return [];
   }
+
+  let currentSeq = 1;
+  const formattedOffers = rawOffers.map((offer: FreightOffer) => {
+    if (offer.id && /^OFR-\d+$/i.test(offer.id)) {
+      const match = offer.id.match(/^OFR-(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num >= currentSeq) {
+          currentSeq = num + 1;
+        }
+      }
+      return { ...offer, displayId: offer.id };
+    } else {
+      const formattedId = `OFR-${String(currentSeq).padStart(2, '0')}`;
+      currentSeq++;
+      return { ...offer, displayId: formattedId };
+    }
+  });
+
+  if (loadedFromTable) {
+    try {
+      localStorage.setItem('transcunha_freight_offers', JSON.stringify(rawOffers));
+    } catch {}
+  }
+
+  return formattedOffers.reverse();
 };
 
 const fromFreightOffer = (o: FreightOffer | Omit<FreightOffer, 'id'>) => {
   const history = [...(o.history || [])].filter(h => h.id !== 'meta_dest_obs');
   
-  if ((o.additionalDestinations && o.additionalDestinations.length > 0) || o.observations || (o.attachments && o.attachments.length > 0) || o.driverId || o.cargoId || o.requestedEmbarcadorId || o.requestTimestamp || o.freightType || o.hasIcms !== undefined || o.icmsPercentage !== undefined || o.clientCnpj || o.clientBranchId) {
+  if ((o.additionalDestinations && o.additionalDestinations.length > 0) || o.observations || (o.attachments && o.attachments.length > 0) || o.driverId || o.cargoId || o.requestedEmbarcadorId || o.requestTimestamp || o.freightType || o.hasIcms !== undefined || o.icmsPercentage !== undefined || o.clientCnpj || o.clientBranchId || o.originCoords || o.destinationCoords || o.distanceKm !== undefined) {
     history.push({
       id: 'meta_dest_obs',
       userId: 'system',
@@ -128,6 +162,10 @@ const fromFreightOffer = (o: FreightOffer | Omit<FreightOffer, 'id'>) => {
         icmsPercentage: o.icmsPercentage,
         clientCnpj: o.clientCnpj,
         clientBranchId: o.clientBranchId,
+        originCoords: o.originCoords,
+        destinationCoords: o.destinationCoords,
+        distanceKm: o.distanceKm,
+        isExactDistance: o.isExactDistance,
       })
     });
   }
@@ -152,55 +190,85 @@ const fromFreightOffer = (o: FreightOffer | Omit<FreightOffer, 'id'>) => {
 
 export const upsertFreightOffer = async (offer: FreightOffer | Omit<FreightOffer, 'id' | 'createdAt'>): Promise<void> => {
   const isUuid = 'id' in offer && typeof offer.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(offer.id);
-  const offerUuid = isUuid ? (offer as FreightOffer).id : crypto.randomUUID();
+  const hasCustomId = 'id' in offer && typeof offer.id === 'string' && offer.id.trim().length > 0;
+  const offerId = isUuid || hasCustomId ? (offer as FreightOffer).id : crypto.randomUUID();
 
   const row = fromFreightOffer({
     ...offer,
-    id: offerUuid,
+    id: offerId,
     createdAt: ('createdAt' in offer && offer.createdAt) ? offer.createdAt : new Date().toISOString()
   });
-  
+
   const { error } = await supabase.from('freight_offers').upsert(row);
-  if (error) throw error;
+  if (error) {
+    if (error.code === '42P01' || error.code === 'PGRST205' || String(error.message || '').includes('freight_offers')) {
+      try {
+        const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+        const current = data?.permissions || {};
+        const existingList: any[] = Array.isArray(current.freight_offers_list) ? current.freight_offers_list : [];
+        const idx = existingList.findIndex((item: any) => item.id === row.id);
+        const updatedList = idx >= 0
+          ? existingList.map((item: any, i: number) => (i === idx ? row : item))
+          : [...existingList, row];
+        await supabase.from('profile_permissions').upsert({
+          id: 1,
+          permissions: { ...current, freight_offers_list: updatedList }
+        });
+        try {
+          localStorage.setItem('transcunha_freight_offers', JSON.stringify(updatedList));
+        } catch {}
+        return;
+      } catch (fallbackErr) {
+        console.warn('[upsertFreightOffer] Fallback persistence warning:', fallbackErr);
+        return;
+      }
+    }
+    throw error;
+  }
 };
 
-const toClient = (row: any): Client => ({
-  id: row.id,
-  razaoSocial: row.razao_social || '',
-  nomeFantasia: row.nome_fantasia || '',
-  cnpj: row.cnpj || '',
-  phone: row.phone || '',
-  email: row.email || '',
-  address: row.address || '',
-  city: row.city || '',
-  state: row.state || '',
-  paymentMethod: row.payment_method || 'Prazo',
-  paymentTerm: typeof row.payment_term === 'number' ? row.payment_term : (parseInt(row.payment_term, 10) || 0),
-  requiresExternalOrder: !!row.requires_external_order,
-  requiresScheduling: !!row.requires_scheduling,
-  salespersonName: row.salesperson_name || '',
-  salespersonCommissionPerTon: row.salesperson_commission_per_ton !== undefined && row.salesperson_commission_per_ton !== null ? Number(row.salesperson_commission_per_ton) : 0,
-});
+export const toClient = (row: any): Client => {
+  const modelId = row.loading_order_model_id || row.ordem_carregamento_model_id || undefined;
+  return {
+    id: row.id,
+    razaoSocial: row.razao_social || '',
+    nomeFantasia: row.nome_fantasia || '',
+    cnpj: row.cnpj || '',
+    phone: row.phone || '',
+    email: row.email || '',
+    address: row.address || '',
+    city: row.city || '',
+    state: row.state || '',
+    paymentMethod: row.payment_method || 'Prazo',
+    paymentTerm: typeof row.payment_term === 'number' ? row.payment_term : (parseInt(row.payment_term, 10) || 0),
+    requiresExternalOrder: !!row.requires_external_order,
+    requiresScheduling: !!row.requires_scheduling,
+    salespersonName: row.salesperson_name || '',
+    salespersonCommissionPerTon: row.salesperson_commission_per_ton !== undefined && row.salesperson_commission_per_ton !== null ? Number(row.salesperson_commission_per_ton) : 0,
+    loadingOrderModelId: modelId,
+    ordemCarregamentoModelId: modelId,
+  };
+};
 
-const fromClient = (c: Client | Omit<Client, 'id'>) => ({
-  id: (c as Client).id,
-  razao_social: c.razaoSocial,
-  nome_fantasia: c.nomeFantasia,
-  cnpj: c.cnpj,
-  phone: c.phone || '',
-  email: c.email || '',
-  address: c.address || '',
-  city: c.city || '',
-  state: c.state || '',
-  payment_method: c.paymentMethod,
-  payment_term: c.paymentTerm !== undefined && c.paymentTerm !== null ? String(c.paymentTerm) : '0',
-  requires_external_order: c.requiresExternalOrder ?? false,
-  requires_scheduling: c.requiresScheduling ?? false,
-  salesperson_name: c.salespersonName || null,
-  salesperson_commission_per_ton: c.salespersonCommissionPerTon !== undefined && c.salespersonCommissionPerTon !== null ? Number(c.salespersonCommissionPerTon) : 0,
-});
+export const fromClient = (c: Client | Omit<Client, 'id'>) => {
+  return {
+    id: (c as Client).id,
+    razao_social: c.razaoSocial,
+    nome_fantasia: c.nomeFantasia,
+    cnpj: c.cnpj,
+    phone: c.phone || '',
+    email: c.email || '',
+    address: c.address || '',
+    city: c.city || '',
+    state: c.state || '',
+    payment_method: c.paymentMethod,
+    payment_term: c.paymentTerm !== undefined && c.paymentTerm !== null ? String(c.paymentTerm) : '0',
+    requires_external_order: c.requiresExternalOrder ?? false,
+    requires_scheduling: c.requiresScheduling ?? false,
+  };
+};
 
-const toOwner = (row: any): Owner => ({
+export const toOwner = (row: any): Owner => ({
   id: row.id,
   name: row.name,
   cpfCnpj: row.cpf_cnpj,
@@ -209,7 +277,7 @@ const toOwner = (row: any): Owner => ({
   bankDetails: row.bank_details,
 });
 
-const fromOwner = (o: Owner | Omit<Owner, 'id'>) => ({
+export const fromOwner = (o: Owner | Omit<Owner, 'id'>) => ({
   id: (o as Owner).id,
   name: o.name,
   cpf_cnpj: o.cpfCnpj,
@@ -218,7 +286,7 @@ const fromOwner = (o: Owner | Omit<Owner, 'id'>) => ({
   bank_details: o.bankDetails,
 });
 
-const toDriver = (row: any): Driver => ({
+export const toDriver = (row: any): Driver => ({
   id: row.id,
   name: row.name,
   cpf: row.cpf,
@@ -229,9 +297,13 @@ const toDriver = (row: any): Driver => ({
   active: row.active ?? true,
   restrictionReason: row.restriction_reason,
   has_app: row.has_app ?? false,
+  codigoAtua: row.codigo_atua || row.codg_atua || row.codigoAtua || undefined,
+  motherName: row.mother_name || row.nome_da_mae || row.mother || undefined,
+  birthDate: row.birth_date || row.data_nascimento || row.birthdate || undefined,
+  cnhAttachmentUrl: row.cnh_attachment_url || row.cnh_url || row.cnh_file || undefined,
 });
 
-const fromDriver = (d: Driver | Omit<Driver, 'id'>) => ({
+export const fromDriver = (d: Driver | Omit<Driver, 'id'>) => ({
   id: (d as Driver).id,
   name: d.name,
   cpf: d.cpf,
@@ -240,11 +312,10 @@ const fromDriver = (d: Driver | Omit<Driver, 'id'>) => ({
   classification: d.classification,
   owner_id: d.ownerId || null,
   active: d.active !== undefined ? d.active : true,
-  restriction_reason: d.restrictionReason,
-  has_app: (d as Driver).has_app ?? false,
+  restriction_reason: d.restrictionReason || null,
 });
 
-const toVehicle = (row: any): Vehicle => ({
+export const toVehicle = (row: any): Vehicle => ({
   id: row.id,
   plate: row.plate,
   setType: row.set_type,
@@ -254,7 +325,7 @@ const toVehicle = (row: any): Vehicle => ({
   ownerId: row.owner_id,
 });
 
-const fromVehicle = (v: Vehicle | Omit<Vehicle, 'id'>) => ({
+export const fromVehicle = (v: Vehicle | Omit<Vehicle, 'id'>) => ({
   id: (v as Vehicle).id,
   plate: v.plate,
   set_type: v.setType,
@@ -264,7 +335,7 @@ const fromVehicle = (v: Vehicle | Omit<Vehicle, 'id'>) => ({
   owner_id: v.ownerId || null,
 });
 
-const toProduct = (row: any): Product => ({
+export const toProduct = (row: any): Product => ({
   id: row.id,
   name: row.name,
   unit: row.unit,
@@ -310,7 +381,10 @@ export const toCargo = (row: any): Cargo => ({
   status: row.status,
   createdAt: row.created_at,
   createdById: row.created_by_id,
-  history: safeParseJson(row.history, []),
+  history: (() => {
+    const raw = safeParseJson(row.history, []);
+    return Array.isArray(raw) ? raw.filter((h: any) => !String(h?.id || '').startsWith('meta_')) : [];
+  })(),
   loadingDeadline: row.loading_deadline,
   allowedVehicleTypes: safeParseJson(row.allowed_vehicle_types, undefined),
   freightLegs: safeParseJson(row.freight_legs, undefined),
@@ -398,6 +472,69 @@ export const toCargo = (row: any): Cargo => ({
     if (metaLog?.description) return Number(metaLog.description) || 0;
     return safeParseJson(row.freight_legs, undefined)?.[0]?.icmsValue || 0;
   })(),
+  orderNumber: (() => {
+    if (row.order_number) return row.order_number;
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_order_number') : null;
+    if (metaLog?.description) return metaLog.description;
+    return undefined;
+  })(),
+  packaging: (() => {
+    if (row.packaging) return row.packaging;
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_packaging') : null;
+    if (metaLog?.description) return metaLog.description;
+    return undefined;
+  })(),
+  financialCostEnabled: (() => {
+    if (row.financial_cost_enabled !== null && row.financial_cost_enabled !== undefined) return Boolean(row.financial_cost_enabled);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_enabled') : null;
+    if (metaLog) return metaLog.description === 'true';
+    return false;
+  })(),
+  financialCostMonthlyRate: (() => {
+    if (row.financial_cost_monthly_rate !== null && row.financial_cost_monthly_rate !== undefined) return Number(row.financial_cost_monthly_rate);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_monthly_rate') : null;
+    if (metaLog) return Number(metaLog.description) || 0;
+    return undefined;
+  })(),
+  financialCostDaysTerm: (() => {
+    if (row.financial_cost_days_term !== null && row.financial_cost_days_term !== undefined) return Number(row.financial_cost_days_term);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_days_term') : null;
+    if (metaLog) return Number(metaLog.description) || 0;
+    return undefined;
+  })(),
+  financialCostBaseDays: (() => {
+    if (row.financial_cost_base_days !== null && row.financial_cost_base_days !== undefined) return Number(row.financial_cost_base_days);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_base_days') : null;
+    if (metaLog) return Number(metaLog.description) || 0;
+    return undefined;
+  })(),
+  financialCostEffectiveRate: (() => {
+    if (row.financial_cost_effective_rate !== null && row.financial_cost_effective_rate !== undefined) return Number(row.financial_cost_effective_rate);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_effective_rate') : null;
+    if (metaLog) return Number(metaLog.description) || 0;
+    return undefined;
+  })(),
+  financialCostPerTon: (() => {
+    if (row.financial_cost_per_ton !== null && row.financial_cost_per_ton !== undefined) return Number(row.financial_cost_per_ton);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_per_ton') : null;
+    if (metaLog) return Number(metaLog.description) || 0;
+    return undefined;
+  })(),
+  financialCostTotal: (() => {
+    if (row.financial_cost_total !== null && row.financial_cost_total !== undefined) return Number(row.financial_cost_total);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_total') : null;
+    if (metaLog) return Number(metaLog.description) || 0;
+    return undefined;
+  })(),
 });
 
 const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
@@ -480,6 +617,91 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
       description: String(c.icmsValue)
     });
   }
+  if (c.orderNumber !== undefined) {
+    history = history.filter(h => h.id !== 'meta_order_number');
+    if (c.orderNumber) {
+      history.push({
+        id: 'meta_order_number',
+        userId: 'system',
+        timestamp: new Date().toISOString(),
+        description: c.orderNumber
+      });
+    }
+  }
+  if (c.packaging !== undefined) {
+    history = history.filter(h => h.id !== 'meta_packaging');
+    if (c.packaging) {
+      history.push({
+        id: 'meta_packaging',
+        userId: 'system',
+        timestamp: new Date().toISOString(),
+        description: c.packaging
+      });
+    }
+  }
+  if (c.financialCostEnabled !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_enabled');
+    history.push({
+      id: 'meta_financial_cost_enabled',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: c.financialCostEnabled ? 'true' : 'false'
+    });
+  }
+  if (c.financialCostMonthlyRate !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_monthly_rate');
+    history.push({
+      id: 'meta_financial_cost_monthly_rate',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: String(c.financialCostMonthlyRate)
+    });
+  }
+  if (c.financialCostDaysTerm !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_days_term');
+    history.push({
+      id: 'meta_financial_cost_days_term',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: String(c.financialCostDaysTerm)
+    });
+  }
+  if (c.financialCostBaseDays !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_base_days');
+    history.push({
+      id: 'meta_financial_cost_base_days',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: String(c.financialCostBaseDays)
+    });
+  }
+  if (c.financialCostEffectiveRate !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_effective_rate');
+    history.push({
+      id: 'meta_financial_cost_effective_rate',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: String(c.financialCostEffectiveRate)
+    });
+  }
+  if (c.financialCostPerTon !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_per_ton');
+    history.push({
+      id: 'meta_financial_cost_per_ton',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: String(c.financialCostPerTon)
+    });
+  }
+  if (c.financialCostTotal !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_total');
+    history.push({
+      id: 'meta_financial_cost_total',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: String(c.financialCostTotal)
+    });
+  }
 
   const cargoId = (c as Cargo).id;
   const isTempId = !cargoId || (typeof cargoId === 'string' && cargoId.startsWith('TEMP-'));
@@ -529,7 +751,7 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
   return payload;
 };
 
-const toShipment = (row: any): Shipment => {
+export const toShipment = (row: any): Shipment => {
   const docs = (row.documents && typeof row.documents === 'object') ? row.documents : {};
   const realProfit = row.real_profit_data || docs.real_profit_data;
 
@@ -588,7 +810,7 @@ const toShipment = (row: any): Shipment => {
     scheduledTime: row.scheduled_time,
     arrivalTime: row.arrival_time,
     documents: docs,
-    history: row.history || [],
+    history: Array.isArray(row.history) ? row.history.filter((h: any) => !String(h?.id || '').startsWith('meta_')) : [],
     createdAt: row.created_at,
     createdById: row.created_by_id,
     statusHistory: row.status_history || [],
@@ -598,15 +820,21 @@ const toShipment = (row: any): Shipment => {
     bankDetails: row.bank_details,
     advancePercentage: row.advance_percentage !== null && row.advance_percentage !== undefined ? Number(row.advance_percentage) : (docs.advance_percentage !== undefined ? Number(docs.advance_percentage) : undefined),
     advanceValue: row.advance_value !== null ? Number(row.advance_value) : undefined,
-    tollValue: row.toll_value !== null ? Number(row.toll_value) : undefined,
+    tollValue: (row.toll_value !== null && !isNaN(Number(row.toll_value)) && Number(row.toll_value) >= 0 && Number(row.toll_value) <= 25000)
+      ? Number(row.toll_value)
+      : (Number(row.toll_value) > 25000 ? 0 : undefined),
     vehicleTag: row.vehicle_tag,
     companyFreightRateSnapshot: row.company_freight_rate_snapshot !== null ? Number(row.company_freight_rate_snapshot) : undefined,
     driverFreightRateSnapshot: row.driver_freight_rate_snapshot !== null ? Number(row.driver_freight_rate_snapshot) : undefined,
     freightCalculationType: row.freight_calculation_type || docs.freight_calculation_type || undefined,
-    icmsValue: row.icms_value !== null && row.icms_value !== undefined ? Number(row.icms_value) : (docs.icms_value !== undefined && docs.icms_value !== null ? Number(docs.icms_value) : undefined),
+    icmsValue: (docs.is_icms_exempt || realProfit?.isIcmsExempt || docs.icms_value === 0 || row.icms_value === 0)
+      ? 0
+      : (row.icms_value !== null && row.icms_value !== undefined ? Number(row.icms_value) : (docs.icms_value !== undefined && docs.icms_value !== null ? Number(docs.icms_value) : undefined)),
+    isIcmsExempt: Boolean(row.is_icms_exempt || docs.is_icms_exempt || realProfit?.isIcmsExempt || docs.icms_value === 0 || row.icms_value === 0),
     route: row.route,
     cancellationReason: row.cancellation_reason,
     driverReferences: Array.isArray(row.driver_references) ? row.driver_references.join('\n') : (row.driver_references || ''),
+    ownerName: row.owner_name || docs.owner_name || docs.ownerName || undefined,
     ownerContact: row.owner_contact,
     balanceToReceiveValue: row.balance_to_receive_value !== null ? Number(row.balance_to_receive_value) : undefined,
     discountValue: row.discount_value !== null ? Number(row.discount_value) : undefined,
@@ -623,9 +851,26 @@ const toShipment = (row: any): Shipment => {
     driverFreightType: row.driver_freight_type || docs.driver_freight_type || 'PJ',
     cteNumber: row.cte_number || docs.cte_number || (getShipmentCte({ status: row.status, documents: docs }) !== '-' ? getShipmentCte({ status: row.status, documents: docs }) : undefined),
     cteEmissionDate: row.cte_emission_date || docs.cte_emission_date || (getShipmentCteEmissionDate({ status: row.status, documents: docs }) || undefined),
+    ciotNumber: row.ciot_number || docs.ciot_number || docs.ciot || docs.ciotNumber || (row.ciot && row.ciot !== row.id ? row.ciot : (getShipmentCiotNumber({ id: row.id, documents: docs }) !== '-' ? getShipmentCiotNumber({ id: row.id, documents: docs }) : undefined)),
+    ciot: row.ciot || docs.ciot || docs.ciot_number || docs.ciotNumber || (row.ciot_number && row.ciot_number !== row.id ? row.ciot_number : (getShipmentCiotNumber({ id: row.id, documents: docs }) !== '-' ? getShipmentCiotNumber({ id: row.id, documents: docs }) : undefined)),
     nfeNumber: row.nfe_number || docs.nfe_number,
+    nfeValue: row.nfe_value !== null && row.nfe_value !== undefined 
+      ? Number(row.nfe_value) 
+      : (docs.nfe_value !== undefined && docs.nfe_value !== null 
+          ? Number(docs.nfe_value) 
+          : (docs.valor_mercadoria !== undefined && docs.valor_mercadoria !== null 
+              ? Number(docs.valor_mercadoria) 
+              : (realProfit?.invoiceValue !== undefined && realProfit?.invoiceValue !== null 
+                  ? Number(realProfit.invoiceValue) 
+                  : undefined))),
     mdfeNumber: row.mdfe_number || docs.mdfe_number,
-    realProfitData: realProfit,
+    codigoAtua: row.codigo_atua || docs.codigo_atua || docs.codg_atua || docs.codigoAtua || undefined,
+    realProfitData: realProfit ? {
+      ...realProfit,
+      ...(Boolean(row.is_icms_exempt || docs.is_icms_exempt || realProfit?.isIcmsExempt || docs.icms_value === 0 || row.icms_value === 0)
+        ? { isIcmsExempt: true, icmsDifference: 0 }
+        : {})
+    } : realProfit,
     isFederalTaxManual: isFederalTaxManual,
     federalTax: federalTax,
     isGeneratedCreditManual: isGeneratedCreditManual,
@@ -643,6 +888,39 @@ const toShipment = (row: any): Shipment => {
     shipperCommissionEnabled: row.shipper_commission_enabled !== null && row.shipper_commission_enabled !== undefined ? Boolean(row.shipper_commission_enabled) : (docs.shipper_commission_enabled !== undefined ? Boolean(docs.shipper_commission_enabled) : undefined),
     shipperCommissionRatePerTon: row.shipper_commission_rate_per_ton !== null && row.shipper_commission_rate_per_ton !== undefined ? Number(row.shipper_commission_rate_per_ton) : (docs.shipper_commission_rate_per_ton !== undefined ? Number(docs.shipper_commission_rate_per_ton) : undefined),
     shipperCommissionValue: row.shipper_commission_value !== null && row.shipper_commission_value !== undefined ? Number(row.shipper_commission_value) : (docs.shipper_commission_value !== undefined ? Number(docs.shipper_commission_value) : undefined),
+    driverExtraPayments: row.driver_extra_payments || docs.driver_extra_payments || docs.driverExtraPayments || undefined,
+    driverExtraPaymentsTotal: row.driver_extra_payments_total !== null && row.driver_extra_payments_total !== undefined 
+      ? Number(row.driver_extra_payments_total) 
+      : (docs.driver_extra_payments_total !== undefined ? Number(docs.driver_extra_payments_total) : (docs.driverExtraPaymentsTotal !== undefined ? Number(docs.driverExtraPaymentsTotal) : undefined)),
+    financialCostValue: row.financial_cost_value !== null && row.financial_cost_value !== undefined 
+      ? Number(row.financial_cost_value) 
+      : (docs.financial_cost_value !== undefined && docs.financial_cost_value !== null 
+          ? Number(docs.financial_cost_value) 
+          : (realProfit?.financialCost !== undefined && realProfit?.financialCost !== null 
+              ? Number(realProfit.financialCost) 
+              : undefined)),
+    financialCostRate: row.financial_cost_rate !== null && row.financial_cost_rate !== undefined 
+      ? Number(row.financial_cost_rate) 
+      : (docs.financial_cost_rate !== undefined && docs.financial_cost_rate !== null 
+          ? Number(docs.financial_cost_rate) 
+          : (docs.financial_cost_effective_rate !== undefined && docs.financial_cost_effective_rate !== null 
+              ? Number(docs.financial_cost_effective_rate) 
+              : undefined)),
+    financialCostDaysTerm: row.financial_cost_days_term !== null && row.financial_cost_days_term !== undefined 
+      ? Number(row.financial_cost_days_term) 
+      : (docs.financial_cost_days_term !== undefined && docs.financial_cost_days_term !== null 
+          ? Number(docs.financial_cost_days_term) 
+          : undefined),
+    financialCostMonthlyRate: row.financial_cost_monthly_rate !== null && row.financial_cost_monthly_rate !== undefined 
+      ? Number(row.financial_cost_monthly_rate) 
+      : (docs.financial_cost_monthly_rate !== undefined && docs.financial_cost_monthly_rate !== null 
+          ? Number(docs.financial_cost_monthly_rate) 
+          : undefined),
+    statusPendingObservation: row.status_pending_observation || docs.status_pending_observation || docs.statusPendingObservation || undefined,
+    driverCnh: row.driver_cnh || docs.driver_cnh || docs.cnh || undefined,
+    driverRg: row.driver_rg || docs.driver_rg || docs.rg || undefined,
+    driverMotherName: row.driver_mother_name || row.mother_name || docs.driver_mother_name || docs.nome_da_mae || docs.mother_name || undefined,
+    driverBirthDate: row.driver_birth_date || row.birth_date || docs.driver_birth_date || docs.data_de_nascimento || docs.data_nascimento || undefined,
   };
 };
 
@@ -683,20 +961,30 @@ const fromShipment = (s: Shipment) => {
                 ? Number((s.documents as any).credito_gerado)
                 : null)));
 
+  const isIcmsExempt = s.isIcmsExempt !== undefined
+    ? Boolean(s.isIcmsExempt)
+    : ((s.documents as any)?.is_icms_exempt !== undefined
+        ? Boolean((s.documents as any).is_icms_exempt)
+        : (s.realProfitData?.isIcmsExempt !== undefined
+            ? Boolean(s.realProfitData.isIcmsExempt)
+            : (s.icmsValue === 0 || (s.documents as any)?.icms_value === 0 ? true : null)));
+
   const realProfitData = s.realProfitData 
     ? {
         ...s.realProfitData,
         isFederalTaxManual: isFederalTaxManual !== null ? Boolean(isFederalTaxManual) : s.realProfitData.isFederalTaxManual,
         federalTax: federalTax !== null ? Number(federalTax) : s.realProfitData.federalTax,
         isGeneratedCreditManual: isGeneratedCreditManual !== null ? Boolean(isGeneratedCreditManual) : s.realProfitData.isGeneratedCreditManual,
-        generatedCredit: generatedCredit !== null ? Number(generatedCredit) : s.realProfitData.generatedCredit
+        generatedCredit: generatedCredit !== null ? Number(generatedCredit) : s.realProfitData.generatedCredit,
+        ...(isIcmsExempt !== null ? { isIcmsExempt: Boolean(isIcmsExempt), ...(isIcmsExempt ? { icmsDifference: 0 } : {}) } : {})
       } 
-    : (isFederalTaxManual !== null || federalTax !== null || isGeneratedCreditManual !== null || generatedCredit !== null
+    : (isFederalTaxManual !== null || federalTax !== null || isGeneratedCreditManual !== null || generatedCredit !== null || isIcmsExempt !== null
         ? { 
             isFederalTaxManual: Boolean(isFederalTaxManual), 
             federalTax: federalTax !== null ? Number(federalTax) : undefined,
             isGeneratedCreditManual: Boolean(isGeneratedCreditManual),
-            generatedCredit: generatedCredit !== null ? Number(generatedCredit) : undefined
+            generatedCredit: generatedCredit !== null ? Number(generatedCredit) : undefined,
+            ...(isIcmsExempt !== null ? { isIcmsExempt: Boolean(isIcmsExempt), ...(isIcmsExempt ? { icmsDifference: 0 } : {}) } : {})
           }
         : null);
 
@@ -714,17 +1002,30 @@ const fromShipment = (s: Shipment) => {
     driver_freight_type: s.driverFreightType !== undefined ? s.driverFreightType : (s.documents?.driver_freight_type ?? 'PJ'),
     cte_number: s.cteNumber !== undefined ? s.cteNumber : (s.documents?.cte_number ?? null),
     cte_emission_date: s.cteEmissionDate !== undefined ? s.cteEmissionDate : (s.documents?.cte_emission_date ?? null),
+    ciot_number: s.ciotNumber !== undefined ? s.ciotNumber : (s.ciot !== undefined ? s.ciot : (s.documents?.ciot_number ?? s.documents?.ciot ?? null)),
+    ciot: s.ciot !== undefined ? s.ciot : (s.ciotNumber !== undefined ? s.ciotNumber : (s.documents?.ciot ?? s.documents?.ciot_number ?? null)),
     nfe_number: s.nfeNumber !== undefined ? s.nfeNumber : (s.documents?.nfe_number ?? null),
+    driver_cnh: s.driverCnh !== undefined ? s.driverCnh : (s.documents?.driver_cnh ?? null),
+    driver_rg: s.driverRg !== undefined ? s.driverRg : (s.documents?.driver_rg ?? null),
+    driver_mother_name: s.driverMotherName !== undefined ? s.driverMotherName : (s.documents?.driver_mother_name ?? s.documents?.nome_da_mae ?? null),
+    nome_da_mae: s.driverMotherName !== undefined ? s.driverMotherName : (s.documents?.nome_da_mae ?? s.documents?.driver_mother_name ?? null),
+    driver_birth_date: s.driverBirthDate !== undefined ? s.driverBirthDate : (s.documents?.driver_birth_date ?? s.documents?.data_nascimento ?? null),
+    data_nascimento: s.driverBirthDate !== undefined ? s.driverBirthDate : (s.documents?.data_nascimento ?? s.documents?.driver_birth_date ?? null),
+    nfe_value: s.nfeValue !== undefined ? s.nfeValue : (s.documents?.nfe_value ?? s.documents?.valor_mercadoria ?? s.realProfitData?.invoiceValue ?? null),
+    valor_mercadoria: s.nfeValue !== undefined ? s.nfeValue : (s.documents?.valor_mercadoria ?? s.documents?.nfe_value ?? s.realProfitData?.invoiceValue ?? null),
     mdfe_number: s.mdfeNumber !== undefined ? s.mdfeNumber : (s.documents?.mdfe_number ?? null),
+    codigo_atua: s.codigoAtua !== undefined ? s.codigoAtua : (s.documents?.codigo_atua ?? s.documents?.codg_atua ?? null),
     is_federal_tax_manual: isFederalTaxManual,
     federal_tax: federalTax,
     imposto_federal: federalTax,
     is_generated_credit_manual: isGeneratedCreditManual,
     generated_credit: generatedCredit,
     credito_gerado: generatedCredit,
+    is_icms_exempt: isIcmsExempt,
     real_profit_data: realProfitData,
     freight_calculation_type: s.freightCalculationType ?? (s.documents?.freight_calculation_type ?? null),
-    icms_value: s.icmsValue !== undefined ? s.icmsValue : (s.documents?.icms_value ?? null),
+    icms_value: isIcmsExempt ? 0 : (s.icmsValue !== undefined ? s.icmsValue : (s.documents?.icms_value ?? null)),
+    valor_icms: isIcmsExempt ? 0 : (s.documents?.valor_icms ?? null),
     additional_cost: s.additionalCost ?? (s.documents?.additional_cost ?? null),
     additional_cost_value: s.additionalCostValue !== undefined ? s.additionalCostValue : (s.additionalCost?.value ?? s.documents?.additional_cost_value ?? null),
     additional_cost_category: s.additionalCostCategory ?? (s.additionalCost?.category ?? s.documents?.additional_cost_category ?? null),
@@ -736,6 +1037,15 @@ const fromShipment = (s: Shipment) => {
     shipper_commission_enabled: s.shipperCommissionEnabled !== undefined ? s.shipperCommissionEnabled : (s.documents?.shipper_commission_enabled ?? null),
     shipper_commission_rate_per_ton: s.shipperCommissionRatePerTon !== undefined ? s.shipperCommissionRatePerTon : (s.documents?.shipper_commission_rate_per_ton ?? null),
     shipper_commission_value: s.shipperCommissionValue !== undefined ? s.shipperCommissionValue : (s.documents?.shipper_commission_value ?? null),
+    driver_extra_payments: s.driverExtraPayments ?? (s.documents?.driver_extra_payments ?? null),
+    driver_extra_payments_total: s.driverExtraPaymentsTotal !== undefined ? s.driverExtraPaymentsTotal : (s.documents?.driver_extra_payments_total ?? null),
+    financial_cost_value: s.financialCostValue !== undefined ? s.financialCostValue : (s.documents?.financial_cost_value ?? null),
+    financial_cost_rate: s.financialCostRate !== undefined ? s.financialCostRate : (s.documents?.financial_cost_rate ?? null),
+    financial_cost_days_term: s.financialCostDaysTerm !== undefined ? s.financialCostDaysTerm : (s.documents?.financial_cost_days_term ?? null),
+    financial_cost_monthly_rate: s.financialCostMonthlyRate !== undefined ? s.financialCostMonthlyRate : (s.documents?.financial_cost_monthly_rate ?? null),
+    owner_name: s.ownerName !== undefined ? s.ownerName : (s.documents?.owner_name ?? null),
+    owner_contact: s.ownerContact !== undefined ? s.ownerContact : (s.documents?.owner_contact ?? null),
+    status_pending_observation: s.statusPendingObservation !== undefined ? (s.statusPendingObservation || null) : (s.documents?.status_pending_observation ?? null),
   };
 
   return {
@@ -745,7 +1055,7 @@ const fromShipment = (s: Shipment) => {
     driver_name: s.driverName,
     driver_contact: s.driverContact,
     driver_cpf: s.driverCpf,
-    embarcador_id: s.embarcadorId,
+    embarcador_id: s.embarcadorId || null,
     horse_plate: s.horsePlate,
     trailer1_plate: s.trailer1Plate,
     trailer2_plate: s.trailer2Plate,
@@ -759,21 +1069,18 @@ const fromShipment = (s: Shipment) => {
     documents: docs,
     history: s.history,
     created_at: s.createdAt,
-    created_by_id: s.createdById,
+    created_by_id: s.createdById || null,
     status_history: s.statusHistory,
     antt_owner_identifier: s.anttOwnerIdentifier ?? null,
-    antt_modality: s.anttModality ?? null,
-    etc_tax_regime: s.etcTaxRegime ?? null,
-    payment_method: s.paymentMethod ?? null,
-    pix_key: s.pixKey ?? null,
     bank_details: s.bankDetails ?? null,
     advance_percentage: s.advancePercentage ?? null,
     advance_value: s.advanceValue ?? null,
-    toll_value: s.tollValue ?? null,
+    toll_value: (s.tollValue !== undefined && s.tollValue !== null && !isNaN(Number(s.tollValue)) && Number(s.tollValue) >= 0 && Number(s.tollValue) <= 25000)
+      ? Number(s.tollValue)
+      : (Number(s.tollValue) > 25000 ? 0 : null),
     vehicle_tag: s.vehicleTag ?? null,
     company_freight_rate_snapshot: s.companyFreightRateSnapshot ?? null,
     driver_freight_rate_snapshot: s.driverFreightRateSnapshot ?? null,
-    driver_freight_type: s.driverFreightType || 'PJ',
     route: s.route ?? null,
     cancellation_reason: s.cancellationReason ?? null,
     driver_references: s.driverReferences ? (Array.isArray(s.driverReferences) ? s.driverReferences : s.driverReferences.split('\n').filter(Boolean)) : [],
@@ -790,20 +1097,22 @@ const fromShipment = (s: Shipment) => {
 
 export const toUser = (row: any): User => {
   const perms = typeof row.permissions === 'object' && row.permissions ? row.permissions : {};
+  const branchId = row.branch_id || row.filial_id || row.branchId || undefined;
 
   return {
     id: row.id,
     name: row.name,
     email: row.email,
     profile: row.profile,
-    active: row.active,
-    phone: row.phone,
+    active: row.active !== false,
+    phone: row.phone || perms.phone || undefined,
     password: row.password,
-    clientId: row.client_id,
+    clientId: row.client_id || undefined,
     requirePasswordChange: row.require_password_change,
     authId: row.auth_id,
     passwordUpdatedAt: row.password_updated_at,
-    branchId: row.branch_id,
+    branchId: branchId,
+    filialId: branchId,
     customPermissions: row.permissions,
     hasCommercialCommission: perms.hasCommercialCommission ?? row.has_commercial_commission ?? (row.profile === 'Gerente Comercial'),
     commercialFixedSalary: perms.commercialFixedSalary ?? row.commercial_fixed_salary ?? undefined,
@@ -816,17 +1125,19 @@ export const toUser = (row: any): User => {
     availableForDriverRequests: perms.availableForDriverRequests ?? row.available_for_driver_requests ?? true,
     shipperCommissionRatePerTon: perms.shipperCommissionRatePerTon !== undefined ? Number(perms.shipperCommissionRatePerTon) : (row.shipper_commission_rate_per_ton !== undefined ? Number(row.shipper_commission_rate_per_ton) : undefined),
     agencyCommissionPercentage: perms.agencyCommissionPercentage !== undefined ? Number(perms.agencyCommissionPercentage) : (row.agency_commission_percentage !== undefined ? Number(row.agency_commission_percentage) : undefined),
+    operatorCommissionPercentage: perms.operatorCommissionPercentage !== undefined ? Number(perms.operatorCommissionPercentage) : (row.operator_commission_percentage !== undefined ? Number(row.operator_commission_percentage) : undefined),
     agencyRole: perms.agencyRole ?? row.agency_role ?? (row.profile === 'Agenciador' ? 'lider' : undefined),
     agencyLeaderId: perms.agencyLeaderId ?? row.agency_leader_id ?? undefined,
   };
 };
 
-export const fromUser = (u: User | Omit<User, 'id'>) => {
+export const buildUserPermissionsPayload = (u: User | Omit<User, 'id'>) => {
   const currentPerms = typeof (u as any).customPermissions === 'object' && (u as any).customPermissions ? (u as any).customPermissions : {};
   const hasComm = u.hasCommercialCommission ?? false;
 
-  const permissionsPayload = {
+  return {
     ...currentPerms,
+    phone: u.phone || currentPerms.phone || undefined,
     hasCommercialCommission: hasComm,
     commercialFixedSalary: u.commercialFixedSalary,
     commercialMatrizRate: u.commercialMatrizRate,
@@ -838,38 +1149,137 @@ export const fromUser = (u: User | Omit<User, 'id'>) => {
     availableForDriverRequests: u.availableForDriverRequests !== undefined ? u.availableForDriverRequests : true,
     shipperCommissionRatePerTon: u.shipperCommissionRatePerTon,
     agencyCommissionPercentage: u.agencyCommissionPercentage,
+    operatorCommissionPercentage: u.operatorCommissionPercentage,
     agencyRole: u.agencyRole,
     agencyLeaderId: u.agencyLeaderId,
   };
+};
 
-  return {
+export const fromUser = (u: User | Omit<User, 'id'>) => {
+  const resolvedBranchId = u.branchId || (u as any).filialId || null;
+
+  const row: Record<string, any> = {
     id: (u as User).id,
     name: u.name,
     email: u.email,
     profile: u.profile,
-    active: u.active,
-    phone: u.phone,
-    password: u.password,
-    client_id: u.clientId,
-    require_password_change: u.requirePasswordChange,
-    auth_id: u.authId,
-    password_updated_at: u.passwordUpdatedAt,
-    branch_id: u.branchId || null,
-    permissions: permissionsPayload,
+    active: u.active !== false,
+    client_id: u.clientId || null,
+    require_password_change: u.requirePasswordChange ?? false,
+    auth_id: u.authId || null,
+    password_updated_at: u.passwordUpdatedAt || null,
+    branch_id: resolvedBranchId || null,
   };
+
+  if (u.password !== undefined && u.password !== null && String(u.password).trim() !== '') {
+    row.password = u.password;
+  }
+
+  return row;
 };
 
-const toTicket = (row: any): Ticket => {
+export const toTicket = (row: any): Ticket => {
   let cleanDesc = row.description || '';
   const cargoMatch = cleanDesc.match(/\[CARGO_ID:\s*(.*?)\]/);
   const shipmentMatch = cleanDesc.match(/\[SHIPMENT_ID:\s*(.*?)\]/);
+  const attachmentsJsonMatch = cleanDesc.match(/\[ATTACHMENTS_JSON:\s*(.*?)\]/);
+  const attachmentUrlMatch = cleanDesc.match(/\[ATTACHMENT_URL:\s*(.*?)\]/);
+  const attachmentNameMatch = cleanDesc.match(/\[ATTACHMENT_NAME:\s*(.*?)\]/);
+  const audioUrlMatch = cleanDesc.match(/\[AUDIO_URL:\s*(.*?)\]/);
+  const audioDurationMatch = cleanDesc.match(/\[AUDIO_DURATION:\s*(.*?)\]/);
+  const startedAtMatch = cleanDesc.match(/\[STARTED_AT:\s*(.*?)\]/);
+  const startedByIdMatch = cleanDesc.match(/\[STARTED_BY:\s*(.*?)\]/);
+  const resolvedAtMatch = cleanDesc.match(/\[RESOLVED_AT:\s*(.*?)\]/);
+  const resolvedByIdMatch = cleanDesc.match(/\[RESOLVED_BY:\s*(.*?)\]/);
+  const closedAtMatch = cleanDesc.match(/\[CLOSED_AT:\s*(.*?)\]/);
+  const closedByIdMatch = cleanDesc.match(/\[CLOSED_BY:\s*(.*?)\]/);
   
   const cargoId = cargoMatch ? cargoMatch[1] : undefined;
   const shipmentId = shipmentMatch ? shipmentMatch[1] : undefined;
-
-  if (cargoMatch || shipmentMatch) {
-    cleanDesc = cleanDesc.replace(/\[CARGO_ID:\s*.*?\]/g, '').replace(/\[SHIPMENT_ID:\s*.*?\]/g, '').trim();
+  const attachmentUrl = attachmentUrlMatch ? attachmentUrlMatch[1] : (row.attachment_url || undefined);
+  const attachmentName = attachmentNameMatch ? attachmentNameMatch[1] : (row.attachment_name || undefined);
+  let attachments: any[] | undefined = undefined;
+  if (attachmentsJsonMatch) {
+    try {
+      attachments = JSON.parse(attachmentsJsonMatch[1]);
+    } catch {}
+  } else if (attachmentUrl) {
+    attachments = [{ url: attachmentUrl, name: attachmentName || 'Anexo' }];
   }
+
+  const audioUrl = audioUrlMatch ? audioUrlMatch[1] : (row.audio_url || undefined);
+  const audioDurationSeconds = audioDurationMatch ? Number(audioDurationMatch[1]) : (row.audio_duration_seconds ? Number(row.audio_duration_seconds) : undefined);
+
+  let startedAt = startedAtMatch ? startedAtMatch[1] : undefined;
+  let startedById = startedByIdMatch ? startedByIdMatch[1] : undefined;
+  let resolvedAt = resolvedAtMatch ? resolvedAtMatch[1] : undefined;
+  let resolvedById = resolvedByIdMatch ? resolvedByIdMatch[1] : undefined;
+  let closedAt = closedAtMatch ? closedAtMatch[1] : undefined;
+  let closedById = closedByIdMatch ? closedByIdMatch[1] : undefined;
+
+  const history = Array.isArray(row.history) ? row.history : [];
+
+  // Fallback / historical extraction from history logs if tags were not present
+  if (!startedAt) {
+    const attendLog = history.find((h: any) => h.newStatus === TicketStatus.EmAndamento || (h.comment && h.comment.toLowerCase().includes('atendimento')));
+    if (attendLog) {
+      startedAt = attendLog.timestamp;
+      startedById = attendLog.userId;
+    }
+  }
+
+  if (!resolvedAt) {
+    const resolveLog = history.find((h: any) => h.newStatus === TicketStatus.Resolvido || (h.comment && h.comment.toLowerCase().includes('resolvido')));
+    if (resolveLog) {
+      resolvedAt = resolveLog.timestamp;
+      resolvedById = resolveLog.userId;
+    }
+  }
+
+  if (!closedAt) {
+    const closeLog = history.find((h: any) => h.newStatus === TicketStatus.Fechado || (h.comment && h.comment.toLowerCase().includes('fechado')));
+    if (closeLog) {
+      closedAt = closeLog.timestamp;
+      closedById = closeLog.userId;
+    }
+  }
+
+  // Calculate durations (SLA)
+  let timeToAttendMs: number | undefined = undefined;
+  let timeToResolveMs: number | undefined = undefined;
+  const createdAtMs = row.created_at ? new Date(row.created_at).getTime() : undefined;
+
+  if (createdAtMs && startedAt) {
+    const sMs = new Date(startedAt).getTime();
+    if (!isNaN(sMs) && sMs >= createdAtMs) {
+      timeToAttendMs = sMs - createdAtMs;
+    }
+  }
+
+  const endMsStr = resolvedAt || closedAt;
+  if (createdAtMs && endMsStr) {
+    const eMs = new Date(endMsStr).getTime();
+    if (!isNaN(eMs) && eMs >= createdAtMs) {
+      timeToResolveMs = eMs - createdAtMs;
+    }
+  }
+
+  // Clean description from metadata tags
+  cleanDesc = cleanDesc
+    .replace(/\[CARGO_ID:\s*.*?\]/g, '')
+    .replace(/\[SHIPMENT_ID:\s*.*?\]/g, '')
+    .replace(/\[ATTACHMENTS_JSON:\s*.*?\]/g, '')
+    .replace(/\[ATTACHMENT_URL:\s*.*?\]/g, '')
+    .replace(/\[ATTACHMENT_NAME:\s*.*?\]/g, '')
+    .replace(/\[AUDIO_URL:\s*.*?\]/g, '')
+    .replace(/\[AUDIO_DURATION:\s*.*?\]/g, '')
+    .replace(/\[STARTED_AT:\s*.*?\]/g, '')
+    .replace(/\[STARTED_BY:\s*.*?\]/g, '')
+    .replace(/\[RESOLVED_AT:\s*.*?\]/g, '')
+    .replace(/\[RESOLVED_BY:\s*.*?\]/g, '')
+    .replace(/\[CLOSED_AT:\s*.*?\]/g, '')
+    .replace(/\[CLOSED_BY:\s*.*?\]/g, '')
+    .trim();
 
   return {
     id: row.id,
@@ -880,17 +1290,51 @@ const toTicket = (row: any): Ticket => {
     createdById: row.created_by_id,
     assignedToId: row.assigned_to_id,
     createdAt: row.created_at,
-    history: row.history || [],
+    history,
     cargoId,
     shipmentId,
+    attachmentUrl,
+    attachmentName,
+    attachments: (attachments && attachments.length > 0) ? attachments : undefined,
+    audioUrl,
+    audioDurationSeconds,
+    startedAt,
+    startedById,
+    resolvedAt,
+    resolvedById,
+    closedAt,
+    closedById,
+    timeToAttendMs,
+    timeToResolveMs,
   };
 };
 
-const fromTicket = (t: Ticket | Omit<Ticket, 'id' | 'history' | 'createdAt' | 'createdById'>) => {
+export const fromTicket = (t: Ticket | Omit<Ticket, 'id' | 'history' | 'createdAt' | 'createdById'>) => {
   let finalDesc = t.description;
   const ticketObj = t as Ticket;
   if (ticketObj.cargoId) finalDesc += `\n\n[CARGO_ID: ${ticketObj.cargoId}]`;
   if (ticketObj.shipmentId) finalDesc += `\n\n[SHIPMENT_ID: ${ticketObj.shipmentId}]`;
+  if (ticketObj.attachments && ticketObj.attachments.length > 0) {
+    finalDesc += `\n\n[ATTACHMENTS_JSON: ${JSON.stringify(ticketObj.attachments)}]`;
+    if (!ticketObj.attachmentUrl) {
+      finalDesc += `\n\n[ATTACHMENT_URL: ${ticketObj.attachments[0].url}]`;
+      finalDesc += `\n\n[ATTACHMENT_NAME: ${ticketObj.attachments[0].name}]`;
+    }
+  }
+  if (ticketObj.attachmentUrl && (!ticketObj.attachments || ticketObj.attachments.length === 0)) {
+    finalDesc += `\n\n[ATTACHMENT_URL: ${ticketObj.attachmentUrl}]`;
+  }
+  if (ticketObj.attachmentName && (!ticketObj.attachments || ticketObj.attachments.length === 0)) {
+    finalDesc += `\n\n[ATTACHMENT_NAME: ${ticketObj.attachmentName}]`;
+  }
+  if (ticketObj.audioUrl) finalDesc += `\n\n[AUDIO_URL: ${ticketObj.audioUrl}]`;
+  if (ticketObj.audioDurationSeconds) finalDesc += `\n\n[AUDIO_DURATION: ${ticketObj.audioDurationSeconds}]`;
+  if (ticketObj.startedAt) finalDesc += `\n\n[STARTED_AT: ${ticketObj.startedAt}]`;
+  if (ticketObj.startedById) finalDesc += `\n\n[STARTED_BY: ${ticketObj.startedById}]`;
+  if (ticketObj.resolvedAt) finalDesc += `\n\n[RESOLVED_AT: ${ticketObj.resolvedAt}]`;
+  if (ticketObj.resolvedById) finalDesc += `\n\n[RESOLVED_BY: ${ticketObj.resolvedById}]`;
+  if (ticketObj.closedAt) finalDesc += `\n\n[CLOSED_AT: ${ticketObj.closedAt}]`;
+  if (ticketObj.closedById) finalDesc += `\n\n[CLOSED_BY: ${ticketObj.closedById}]`;
 
   return {
     id: ticketObj.id,
@@ -905,7 +1349,7 @@ const fromTicket = (t: Ticket | Omit<Ticket, 'id' | 'history' | 'createdAt' | 'c
   };
 };
 
-const toBranch = (row: any): Branch => ({
+export const toBranch = (row: any): Branch => ({
   id: row.id,
   name: row.name,
   city: row.city,
@@ -913,14 +1357,14 @@ const toBranch = (row: any): Branch => ({
   createdAt: row.created_at,
 });
 
-const fromBranch = (b: Branch | Omit<Branch, 'id' | 'createdAt'>) => ({
+export const fromBranch = (b: Branch | Omit<Branch, 'id' | 'createdAt'>) => ({
   id: (b as Branch).id,
   name: b.name,
   city: b.city,
   state: b.state,
 });
 
-const toRiskQueryOption = (row: any): RiskQueryOption => ({
+export const toRiskQueryOption = (row: any): RiskQueryOption => ({
   id: row.id,
   name: row.name || '',
   cost: Number(row.cost !== undefined && row.cost !== null ? row.cost : 0),
@@ -930,7 +1374,7 @@ const toRiskQueryOption = (row: any): RiskQueryOption => ({
   createdAt: row.created_at || '',
 });
 
-const fromRiskQueryOption = (opt: RiskQueryOption | Omit<RiskQueryOption, 'id'>) => ({
+export const fromRiskQueryOption = (opt: RiskQueryOption | Omit<RiskQueryOption, 'id'>) => ({
   id: (opt as RiskQueryOption).id,
   name: opt.name,
   cost: opt.cost,
@@ -1005,7 +1449,7 @@ export const fetchClientBranches = async (): Promise<Record<string, ClientBranch
     console.warn('[DB] Error loading client branches:', err);
   }
   try {
-    const local = localStorage.getItem('agromercantil_client_branches') || localStorage.getItem('transcunha_client_branches');
+    const local = localStorage.getItem('transcunha_client_branches');
     if (local) return JSON.parse(local);
   } catch {}
   return {};
@@ -1013,7 +1457,7 @@ export const fetchClientBranches = async (): Promise<Record<string, ClientBranch
 
 export const saveClientBranches = async (branchesMap: Record<string, ClientBranchCnpj[]>): Promise<void> => {
   try {
-    localStorage.setItem('agromercantil_client_branches', JSON.stringify(branchesMap));
+    localStorage.setItem('transcunha_client_branches', JSON.stringify(branchesMap));
   } catch {}
 
   try {
@@ -1032,7 +1476,14 @@ export const saveClientBranches = async (branchesMap: Record<string, ClientBranc
   }
 };
 
-export const fetchClientExtraConfig = async (): Promise<Record<string, { salespersonName?: string; salespersonCommissionPerTon?: number }>> => {
+export interface ClientExtraConfig {
+  salespersonName?: string;
+  salespersonCommissionPerTon?: number;
+  loadingOrderModelId?: string;
+  ordemCarregamentoModelId?: string;
+}
+
+export const fetchClientExtraConfig = async (): Promise<Record<string, ClientExtraConfig>> => {
   try {
     const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
     if (data?.permissions?.client_extra_config) {
@@ -1042,13 +1493,13 @@ export const fetchClientExtraConfig = async (): Promise<Record<string, { salespe
     console.warn('[DB] Error loading client extra config:', err);
   }
   try {
-    const local = localStorage.getItem('agromercantil_client_extra_config') || localStorage.getItem('transcunha_client_extra_config');
+    const local = localStorage.getItem('transcunha_client_extra_config');
     if (local) return JSON.parse(local);
   } catch {}
   return {};
 };
 
-export const saveClientExtraConfig = async (configMap: Record<string, { salespersonName?: string; salespersonCommissionPerTon?: number }>): Promise<void> => {
+export const saveClientExtraConfig = async (configMap: Record<string, ClientExtraConfig>): Promise<void> => {
   try {
     const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
     const current = data?.permissions || {};
@@ -1061,8 +1512,133 @@ export const saveClientExtraConfig = async (configMap: Record<string, { salesper
     console.warn('[DB] Error saving client extra config:', err);
   }
   try {
-    localStorage.setItem('agromercantil_client_extra_config', JSON.stringify(configMap));
+    localStorage.setItem('transcunha_client_extra_config', JSON.stringify(configMap));
   } catch {}
+};
+
+export interface UserExtraConfig {
+  phone?: string;
+  permissions?: Record<string, any>;
+}
+
+export const fetchUserExtraConfig = async (): Promise<Record<string, UserExtraConfig>> => {
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    if (data?.permissions?.user_extra_config) {
+      return data.permissions.user_extra_config;
+    }
+  } catch (err) {
+    console.warn('[DB] Error loading user extra config:', err);
+  }
+  try {
+    const local = localStorage.getItem('transcunha_user_extra_config');
+    if (local) return JSON.parse(local);
+  } catch {}
+  return {};
+};
+
+export const saveUserExtraConfig = async (configMap: Record<string, UserExtraConfig>): Promise<void> => {
+  try {
+    localStorage.setItem('transcunha_user_extra_config', JSON.stringify(configMap));
+  } catch {}
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    const current = data?.permissions || {};
+    const updated = {
+      ...current,
+      user_extra_config: {
+        ...(current.user_extra_config || {}),
+        ...configMap,
+      },
+    };
+    await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
+  } catch (err) {
+    console.warn('[DB] Error saving user extra config:', err);
+  }
+};
+
+export interface DriverExtraConfig {
+  has_app?: boolean;
+  codigoAtua?: string;
+  motherName?: string;
+  birthDate?: string;
+  cnhAttachmentUrl?: string;
+}
+
+export const fetchDriverExtraConfig = async (): Promise<Record<string, DriverExtraConfig>> => {
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    if (data?.permissions?.driver_extra_config) {
+      return data.permissions.driver_extra_config;
+    }
+  } catch (err) {
+    console.warn('[DB] Error loading driver extra config:', err);
+  }
+  try {
+    const local = localStorage.getItem('transcunha_driver_extra_config');
+    if (local) return JSON.parse(local);
+  } catch {}
+  return {};
+};
+
+export const saveDriverExtraConfig = async (configMap: Record<string, DriverExtraConfig>): Promise<void> => {
+  try {
+    localStorage.setItem('transcunha_driver_extra_config', JSON.stringify(configMap));
+  } catch {}
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    const current = data?.permissions || {};
+    const updated = {
+      ...current,
+      driver_extra_config: {
+        ...(current.driver_extra_config || {}),
+        ...configMap,
+      },
+    };
+    await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
+  } catch (err) {
+    console.warn('[DB] Error saving driver extra config:', err);
+  }
+};
+
+export interface ProductExtraConfig {
+  requiresRiskManagement?: boolean;
+}
+
+export const fetchProductExtraConfig = async (): Promise<Record<string, ProductExtraConfig>> => {
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    if (data?.permissions?.product_extra_config) {
+      return data.permissions.product_extra_config;
+    }
+  } catch (err) {
+    console.warn('[DB] Error loading product extra config:', err);
+  }
+  try {
+    const local = localStorage.getItem('transcunha_product_extra_config');
+    if (local) return JSON.parse(local);
+  } catch {}
+  return {};
+};
+
+export const saveProductExtraConfig = async (configMap: Record<string, ProductExtraConfig>): Promise<void> => {
+  try {
+    localStorage.setItem('transcunha_product_extra_config', JSON.stringify(configMap));
+  } catch {}
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    const current = data?.permissions || {};
+    const updated = {
+      ...current,
+      product_extra_config: {
+        ...(current.product_extra_config || {}),
+        ...configMap,
+      },
+    };
+    await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
+  } catch (err) {
+    console.warn('[DB] Error saving product extra config:', err);
+  }
 };
 
 export async function fetchClients(): Promise<Client[]> {
@@ -1074,13 +1650,20 @@ export async function fetchClients(): Promise<Client[]> {
     ]);
     return data.map(toClient).map(c => {
       const extra = extraConfigMap[c.id] || {};
+      const modelId = c.loadingOrderModelId || extra.loadingOrderModelId || extra.ordemCarregamentoModelId || undefined;
       return {
         ...c,
         salespersonName: c.salespersonName || extra.salespersonName || '',
         salespersonCommissionPerTon: (c.salespersonCommissionPerTon !== undefined && c.salespersonCommissionPerTon > 0)
           ? c.salespersonCommissionPerTon
           : (extra.salespersonCommissionPerTon || 0),
-        secondaryCnpjs: branchesMap[c.id] || []
+        loadingOrderModelId: modelId,
+        ordemCarregamentoModelId: modelId,
+        secondaryCnpjs: (branchesMap[c.id] || []).map(b => ({
+          ...b,
+          loadingOrderModelId: b.loadingOrderModelId || b.ordemCarregamentoModelId || undefined,
+          ordemCarregamentoModelId: b.loadingOrderModelId || b.ordemCarregamentoModelId || undefined,
+        }))
       };
     });
   } catch (error) {
@@ -1099,8 +1682,21 @@ export async function fetchOwners(): Promise<Owner[]> {
 
 export async function fetchDrivers(): Promise<Driver[]> {
   try {
-    const data = await fetchAllRows('drivers', 'name');
-    return data.map(toDriver);
+    const [data, extraConfigMap] = await Promise.all([
+      fetchAllRows('drivers', 'name'),
+      fetchDriverExtraConfig(),
+    ]);
+    return data.map(row => {
+      const extra = extraConfigMap[row.id] || {};
+      return toDriver({
+        ...row,
+        has_app: row.has_app !== undefined ? row.has_app : (extra.has_app ?? false),
+        codigo_atua: row.codigo_atua || extra.codigoAtua || undefined,
+        mother_name: row.mother_name || extra.motherName || undefined,
+        birth_date: row.birth_date || extra.birthDate || undefined,
+        cnh_attachment_url: row.cnh_attachment_url || extra.cnhAttachmentUrl || undefined,
+      });
+    });
   } catch (error) {
     return handleAuthError(error, []);
   }
@@ -1117,8 +1713,19 @@ export async function fetchVehicles(): Promise<Vehicle[]> {
 
 export async function fetchProducts(): Promise<Product[]> {
   try {
-    const data = await fetchAllRows('products', 'name');
-    return data.map(toProduct);
+    const [data, extraConfigMap] = await Promise.all([
+      fetchAllRows('products', 'name'),
+      fetchProductExtraConfig(),
+    ]);
+    return data.map(row => {
+      const extra = extraConfigMap[row.id] || {};
+      return toProduct({
+        ...row,
+        requires_risk_management: row.requires_risk_management !== undefined
+          ? row.requires_risk_management
+          : (extra.requiresRiskManagement ?? true),
+      });
+    });
   } catch (error) {
     return handleAuthError(error, []);
   }
@@ -1191,6 +1798,17 @@ export async function fetchShipments(): Promise<Shipment[]> {
   }
 }
 
+export async function fetchShipmentById(id: string): Promise<Shipment | null> {
+  try {
+    const { data, error } = await supabase.from('shipments').select('*').eq('id', id).maybeSingle();
+    if (error || !data) return null;
+    return toShipment(data);
+  } catch (error) {
+    console.error('Error fetching shipment by id:', error);
+    return null;
+  }
+}
+
 export async function fetchPaginatedShipments(page: number, limit: number, filters?: { status?: string }): Promise<{ data: Shipment[], count: number }> {
   let query = supabase.from('shipments').select('*', { count: 'exact' });
   
@@ -1213,20 +1831,72 @@ export async function fetchPaginatedShipments(page: number, limit: number, filte
 
 export async function fetchUsers(): Promise<User[]> {
   try {
-    const data = await fetchAllRows('app_users', 'name');
-    return data.map(toUser);
+    const [data, extraConfigMap] = await Promise.all([
+      fetchAllRows('app_users', 'name'),
+      fetchUserExtraConfig(),
+    ]);
+    return data.map(row => {
+      const extra = extraConfigMap[row.id] || {};
+      const mergedPerms = {
+        ...(extra.permissions || {}),
+        ...(typeof row.permissions === 'object' && row.permissions ? row.permissions : {}),
+      };
+      return toUser({
+        ...row,
+        phone: row.phone || extra.phone || mergedPerms.phone || undefined,
+        permissions: Object.keys(mergedPerms).length > 0 ? mergedPerms : undefined,
+      });
+    });
   } catch (error) {
     return handleAuthError(error, []);
   }
 }
 
 export async function fetchTickets(): Promise<Ticket[]> {
+  let dbTickets: Ticket[] = [];
   try {
     const data = await fetchAllRows('tickets', 'created_at', { ascending: false });
-    return data.map(toTicket);
+    dbTickets = data.map(toTicket);
+    // Cacheia tickets do banco localmente
+    try {
+      localStorage.setItem('transcunha_tickets_cache', JSON.stringify(dbTickets));
+    } catch {}
   } catch (error) {
-    return handleAuthError(error, []);
+    console.warn('[fetchTickets] Falha ao consultar Supabase, recuperando do cache local:', error);
+    try {
+      const cached = localStorage.getItem('transcunha_tickets_cache');
+      if (cached) {
+        dbTickets = JSON.parse(cached);
+      }
+    } catch {}
+    if (dbTickets.length === 0) {
+      return handleAuthError(error, []);
+    }
   }
+
+  // AUDITORIA / RECUPERAÇÃO: Verifica se há chamados no cache de emergência que não constam no Supabase
+  try {
+    const emergencyRaw = localStorage.getItem('transcunha_emergency_tickets');
+    if (emergencyRaw) {
+      const emergencyList: Ticket[] = JSON.parse(emergencyRaw);
+      const dbIds = new Set(dbTickets.map(t => t.id));
+      const missingInDb = emergencyList.filter(t => !dbIds.has(t.id));
+
+      if (missingInDb.length > 0) {
+        console.log(`[fetchTickets] Encontrado(s) ${missingInDb.length} chamado(s) no cache de emergência. Sincronizando...`);
+        // Junta os chamados para que nunca sumam da interface do usuário
+        dbTickets = [...missingInDb, ...dbTickets];
+        // Envia para o banco de dados em segundo plano
+        missingInDb.forEach(t => {
+          upsertTicket(t).catch(e => console.warn(`[fetchTickets] Erro ao sincronizar chamado ${t.id}:`, e));
+        });
+      }
+    }
+  } catch (syncErr) {
+    console.warn('[fetchTickets] Erro ao inspecionar cache de emergência:', syncErr);
+  }
+
+  return dbTickets;
 }
 
 export async function fetchBranches(): Promise<Branch[]> {
@@ -1270,7 +1940,7 @@ export async function fetchRiskQueryOptions(): Promise<RiskQueryOption[]> {
     if (!error && data && data.length > 0) {
       const options = data.map(toRiskQueryOption);
       try {
-        localStorage.setItem('agromercantil_risk_query_options', JSON.stringify(options));
+        localStorage.setItem('transcunha_risk_query_options', JSON.stringify(options));
       } catch {}
       return options;
     }
@@ -1292,7 +1962,7 @@ export async function fetchRiskQueryOptions(): Promise<RiskQueryOption[]> {
         createdAt: opt.createdAt || '',
       }));
       try {
-        localStorage.setItem('agromercantil_risk_query_options', JSON.stringify(options));
+        localStorage.setItem('transcunha_risk_query_options', JSON.stringify(options));
       } catch {}
       return options;
     }
@@ -1302,7 +1972,7 @@ export async function fetchRiskQueryOptions(): Promise<RiskQueryOption[]> {
 
   // 3. Fallback to localStorage
   try {
-    const saved = localStorage.getItem('agromercantil_risk_query_options') || localStorage.getItem('transcunha_risk_query_options');
+    const saved = localStorage.getItem('transcunha_risk_query_options');
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -1339,7 +2009,7 @@ export async function saveAllRiskQueryOptions(options: RiskQueryOption[]): Promi
 
   // 3. Save to localStorage
   try {
-    localStorage.setItem('agromercantil_risk_query_options', JSON.stringify(options));
+    localStorage.setItem('transcunha_risk_query_options', JSON.stringify(options));
   } catch {}
 }
 
@@ -1378,6 +2048,191 @@ export async function deleteRiskQueryOption(id: string): Promise<void> {
 }
 
 // ─────────────────────────────────────────────
+// LOADING ORDER MODELS (Modelos de Ordem de Carregamento)
+// ─────────────────────────────────────────────
+
+export async function fetchLoadingOrderModels(): Promise<LoadingOrderModel[]> {
+  // 1. Try fetching from profile_permissions (id: 1)
+  try {
+    const { data, error } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    if (!error && data?.permissions?.loading_order_models && Array.isArray(data.permissions.loading_order_models) && data.permissions.loading_order_models.length > 0) {
+      let models: LoadingOrderModel[] = data.permissions.loading_order_models;
+      // Garante que modelos padrão de sistema (como o Consube) estejam sempre presentes
+      const missingDefaults = DEFAULT_LOADING_ORDER_MODELS.filter(def => !models.some(m => m.id === def.id));
+      if (missingDefaults.length > 0) {
+        models = [...models, ...missingDefaults];
+      }
+      try {
+        localStorage.setItem('transcunha_loading_order_models', JSON.stringify(models));
+      } catch {}
+      return models;
+    }
+  } catch (err) {
+    console.warn('[DB] Could not query loading_order_models from profile_permissions:', err);
+  }
+
+  // 2. Fallback to localStorage
+  try {
+    const saved = localStorage.getItem('transcunha_loading_order_models');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const missingDefaults = DEFAULT_LOADING_ORDER_MODELS.filter(def => !parsed.some((m: any) => m.id === def.id));
+        if (missingDefaults.length > 0) {
+          return [...parsed, ...missingDefaults];
+        }
+        return parsed;
+      }
+    }
+  } catch {}
+
+  // 3. Fallback to DEFAULT_LOADING_ORDER_MODELS
+  return DEFAULT_LOADING_ORDER_MODELS;
+}
+
+export async function saveLoadingOrderModels(models: LoadingOrderModel[]): Promise<void> {
+  // 1. Save to profile_permissions
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    const current = data?.permissions || {};
+    const updated = {
+      ...current,
+      loading_order_models: models,
+    };
+    await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
+  } catch (err) {
+    console.warn('[DB] Error saving loading_order_models to profile_permissions:', err);
+  }
+
+  // 2. Save to localStorage
+  try {
+    localStorage.setItem('transcunha_loading_order_models', JSON.stringify(models));
+  } catch {}
+}
+
+// ─────────────────────────────────────────────
+// RESILIENT TABLE WRITE ENGINE (Auto-Fallback)
+// ─────────────────────────────────────────────
+
+const missingColumnsCache: Record<string, Set<string>> = {};
+
+function stripKnownMissingColumns(tableName: string, payload: any): any {
+  const missing = missingColumnsCache[tableName];
+  if (!missing || missing.size === 0) return payload;
+  if (Array.isArray(payload)) {
+    return payload.map(item => stripKnownMissingColumns(tableName, item));
+  }
+  if (payload && typeof payload === 'object') {
+    const copy = { ...payload };
+    for (const col of missing) {
+      if (col in copy) {
+        if (tableName === 'shipments' && copy.documents && typeof copy.documents === 'object') {
+          copy.documents = { ...copy.documents, [col]: copy[col] };
+        }
+        delete copy[col];
+      }
+    }
+    return copy;
+  }
+  return payload;
+}
+
+export async function executeTableWriteWithFallback<T = any>(
+  tableName: string,
+  operation: (payload: any) => PromiseLike<{ data?: T; error: any }>,
+  initialPayload: any
+): Promise<{ data?: T }> {
+  let currentPayload = stripKnownMissingColumns(
+    tableName,
+    Array.isArray(initialPayload)
+      ? initialPayload.map(item => ({ ...item }))
+      : { ...initialPayload }
+  );
+  let attempts = 0;
+  const maxAttempts = 25;
+
+  while (attempts < maxAttempts) {
+    attempts++;
+    const { data, error } = await operation(currentPayload);
+    if (!error) return { data };
+
+    const msg = error?.message || '';
+    const details = error?.details || '';
+    const code = error?.code || '';
+
+    // 1. Missing column in PostgREST schema cache (PGRST204) or PostgreSQL (42703)
+    const colMatch =
+      msg.match(/Could not find the '([^']+)' column of '([^']+)'/i) ||
+      msg.match(/column "?([^"'\s]+)"? of relation "([^"]+)" does not exist/i);
+
+    if (colMatch && colMatch[1]) {
+      const missingCol = colMatch[1];
+      if (!missingColumnsCache[tableName]) {
+        missingColumnsCache[tableName] = new Set();
+      }
+      missingColumnsCache[tableName].add(missingCol);
+
+      const hasCol = Array.isArray(currentPayload)
+        ? currentPayload.some(item => item && missingCol in item)
+        : currentPayload && missingCol in currentPayload;
+
+      if (hasCol) {
+        console.warn(`[DB Write Fallback] Coluna '${missingCol}' ausente na tabela '${tableName}'. Removendo do payload e tentando novamente...`);
+        currentPayload = stripKnownMissingColumns(tableName, currentPayload);
+        continue;
+      }
+    }
+
+    // 2. Foreign Key violation (23503) on optional reference columns
+    if (code === '23503') {
+      const fkMatch =
+        details.match(/Key \(([^)]+)\)=\([^)]+\) is not present in table/i) ||
+        msg.match(/foreign key constraint "[^"]*_([a-z0-9_]+)_fkey"/i);
+      const fkCol = fkMatch?.[1];
+      if (fkCol && fkCol !== 'id' && fkCol !== 'cargo_id') {
+        const canNullify = Array.isArray(currentPayload)
+          ? currentPayload.some(item => item && item[fkCol] != null)
+          : currentPayload && currentPayload[fkCol] != null;
+        if (canNullify) {
+          console.warn(`[DB Write Fallback] Chave estrangeira inválida na coluna '${fkCol}' da tabela '${tableName}'. Definindo como null e tentando novamente...`);
+          if (Array.isArray(currentPayload)) {
+            currentPayload = currentPayload.map(item => ({ ...item, [fkCol]: null }));
+          } else {
+            currentPayload = { ...currentPayload, [fkCol]: null };
+          }
+          continue;
+        }
+      }
+    }
+
+    // 3. Not-Null violation (23502) on password in app_users
+    if (code === '23502' && tableName === 'app_users' && msg.includes('"password"')) {
+      if (!Array.isArray(currentPayload) && !currentPayload.password) {
+        console.warn(`[DB Write Fallback] Coluna 'password' obrigatória em 'app_users'. Buscando senha existente ou aplicando padrão...`);
+        let resolvedPassword = '123';
+        if (currentPayload.id) {
+          const { data: existingUser } = await supabase
+            .from('app_users')
+            .select('password')
+            .eq('id', currentPayload.id)
+            .maybeSingle();
+          if (existingUser?.password) {
+            resolvedPassword = existingUser.password;
+          }
+        }
+        currentPayload = { ...currentPayload, password: resolvedPassword };
+        continue;
+      }
+    }
+
+    console.error(`[DB Write Error] Tabela '${tableName}':`, error);
+    throw error;
+  }
+
+  throw new Error(`Falha ao gravar na tabela ${tableName} após ${maxAttempts} tentativas.`);
+}
+
+// ─────────────────────────────────────────────
 // UPSERT (insert or update)
 // ─────────────────────────────────────────────
 
@@ -1396,54 +2251,64 @@ export async function upsertClient(client: Client): Promise<void> {
   // 2. Persist extra config fallback
   try {
     const extraConfigMap = await fetchClientExtraConfig();
+    const modelId = client.loadingOrderModelId || client.ordemCarregamentoModelId || '';
     extraConfigMap[client.id] = {
       salespersonName: client.salespersonName || '',
-      salespersonCommissionPerTon: client.salespersonCommissionPerTon || 0
+      salespersonCommissionPerTon: client.salespersonCommissionPerTon || 0,
+      loadingOrderModelId: modelId,
+      ordemCarregamentoModelId: modelId,
     };
     await saveClientExtraConfig(extraConfigMap);
   } catch (err) {
     console.warn('[DB] Error persisting client extra config in upsertClient:', err);
   }
 
-  // 3. Upsert client row in Supabase
+  // 3. Upsert client row in Supabase with automatic fallback
   const payload = fromClient(client);
-  let upsertError: any = null;
-  try {
-    const { error } = await supabase.from('clients').upsert(payload);
-    if (error) {
-      upsertError = error;
-      const safePayload = { ...payload };
-      delete (safePayload as any).salesperson_name;
-      delete (safePayload as any).salesperson_commission_per_ton;
-      const { error: retryError } = await supabase.from('clients').upsert(safePayload);
-      if (retryError) throw retryError;
-    }
-  } catch (err) {
-    if (upsertError) {
-      const safePayload = { ...payload };
-      delete (safePayload as any).salesperson_name;
-      delete (safePayload as any).salesperson_commission_per_ton;
-      const { error: retryError } = await supabase.from('clients').upsert(safePayload);
-      if (retryError) throw retryError;
-    } else {
-      throw err;
-    }
-  }
+  await executeTableWriteWithFallback(
+    'clients',
+    (p) => supabase.from('clients').upsert(p),
+    payload
+  );
 }
 
 export async function upsertOwner(owner: Owner): Promise<void> {
-  const { error } = await supabase.from('owners').upsert(fromOwner(owner));
-  if (error) throw error;
+  await executeTableWriteWithFallback(
+    'owners',
+    (p) => supabase.from('owners').upsert(p),
+    fromOwner(owner)
+  );
 }
 
 export async function upsertDriver(driver: Driver): Promise<void> {
-  const { error } = await supabase.from('drivers').upsert(fromDriver(driver));
-  if (error) throw error;
+  try {
+    const extraConfigMap = await fetchDriverExtraConfig();
+    extraConfigMap[driver.id] = {
+      ...(extraConfigMap[driver.id] || {}),
+      has_app: driver.has_app ?? extraConfigMap[driver.id]?.has_app ?? false,
+      codigoAtua: driver.codigoAtua || extraConfigMap[driver.id]?.codigoAtua,
+      motherName: driver.motherName || extraConfigMap[driver.id]?.motherName,
+      birthDate: driver.birthDate || extraConfigMap[driver.id]?.birthDate,
+      cnhAttachmentUrl: driver.cnhAttachmentUrl || extraConfigMap[driver.id]?.cnhAttachmentUrl,
+    };
+    await saveDriverExtraConfig(extraConfigMap);
+  } catch (err) {
+    console.warn('[DB] Error persisting driver extra config in upsertDriver:', err);
+  }
+
+  await executeTableWriteWithFallback(
+    'drivers',
+    (p) => supabase.from('drivers').upsert(p),
+    fromDriver(driver)
+  );
 }
 
 export async function upsertVehicle(vehicle: Vehicle): Promise<void> {
-  const { error } = await supabase.from('vehicles').upsert(fromVehicle(vehicle));
-  if (error) throw error;
+  await executeTableWriteWithFallback(
+    'vehicles',
+    (p) => supabase.from('vehicles').upsert(p),
+    fromVehicle(vehicle)
+  );
 }
 
 export async function upsertCargo(cargo: Cargo): Promise<void> {
@@ -1453,50 +2318,24 @@ export async function upsertCargo(cargo: Cargo): Promise<void> {
   }
   const payload = fromCargo(cargo);
   console.log('[upsertCargo] Saving cargo:', cargo.id, payload);
-  const result = await supabase.from('cargos').update(payload).eq('id', cargo.id);
-  if (result.error) {
-    console.error('[upsertCargo] Error:', result.error);
-    throw result.error;
-  }
+  await executeTableWriteWithFallback(
+    'cargos',
+    (p) => supabase.from('cargos').update(p).eq('id', cargo.id),
+    payload
+  );
   console.log('[upsertCargo] Success for cargo:', cargo.id);
+  broadcastCargoChange({
+    action: 'update',
+    cargoId: cargo.id,
+    cargo
+  });
 }
 
 async function executeShipmentOperationWithFallback(
   operation: (payload: any) => PromiseLike<{ error: any }>,
   initialPayload: any
 ): Promise<void> {
-  let currentPayload = { ...initialPayload };
-  let attempts = 0;
-  const maxAttempts = 25;
-
-  while (attempts < maxAttempts) {
-    attempts++;
-    const { error } = await operation(currentPayload);
-    if (!error) return;
-
-    const msg = error?.message || '';
-    // Catch "Could not find the 'xyz' column of 'shipments' in the schema cache"
-    const match = msg.match(/Could not find the '([^']+)' column of 'shipments'/i) ||
-                  msg.match(/column "?([^"'\s]+)"? of relation "shipments" does not exist/i);
-
-    if (match && match[1] && currentPayload[match[1]] !== undefined) {
-      const missingCol = match[1];
-      console.warn(`[upsertShipment fallback] Coluna '${missingCol}' ausente no schema de shipments. Movendo para documents e tentando novamente...`);
-      currentPayload = { ...currentPayload };
-      if (currentPayload.documents && typeof currentPayload.documents === 'object') {
-        currentPayload.documents = {
-          ...currentPayload.documents,
-          [missingCol]: currentPayload[missingCol]
-        };
-      }
-      delete currentPayload[missingCol];
-      continue;
-    }
-
-    // If it's a different error or column not found in payload
-    console.error('[Shipment operation] Error:', error);
-    throw error;
-  }
+  await executeTableWriteWithFallback('shipments', operation, initialPayload);
 }
 
 export async function upsertShipment(shipment: Shipment): Promise<void> {
@@ -1506,11 +2345,25 @@ export async function upsertShipment(shipment: Shipment): Promise<void> {
       (p) => supabase.from('shipments').update(p).eq('id', shipment.id),
       payload
     );
+    broadcastShipmentChange({
+      action: 'update',
+      shipmentId: shipment.id,
+      status: shipment.status,
+      shipment
+    });
   } else {
     await executeShipmentOperationWithFallback(
       (p) => supabase.from('shipments').insert(p),
       payload
     );
+    if (shipment.id) {
+      broadcastShipmentChange({
+        action: 'create',
+        shipmentId: shipment.id,
+        status: shipment.status,
+        shipment
+      });
+    }
   }
 }
 
@@ -1568,7 +2421,7 @@ export async function backfillShipmentFiscalNumbers(
         delete extracted.cteNumber;
         delete extracted.cteEmissionDate;
       }
-      const hasAny = extracted.cteNumber || extracted.cteEmissionDate || extracted.nfeNumber || extracted.mdfeNumber;
+      const hasAny = extracted.cteNumber || extracted.cteEmissionDate || extracted.nfeNumber || extracted.mdfeNumber || extracted.ciotNumber;
 
       if (hasAny) {
         const updatedDocs = {
@@ -1577,15 +2430,18 @@ export async function backfillShipmentFiscalNumbers(
           ...(extracted.cteEmissionDate ? { cte_emission_date: extracted.cteEmissionDate } : {}),
           ...(extracted.nfeNumber ? { nfe_number: extracted.nfeNumber } : {}),
           ...(extracted.mdfeNumber ? { mdfe_number: extracted.mdfeNumber } : {}),
+          ...(extracted.ciotNumber ? { ciot_number: extracted.ciotNumber, ciot: extracted.ciotNumber } : {}),
         };
+
+        const updatePayload: any = { documents: updatedDocs };
 
         const { error: updateError } = await supabase
           .from('shipments')
-          .update({ documents: updatedDocs })
+          .update(updatePayload)
           .eq('id', row.id);
 
         if (!updateError) {
-          console.log(`[backfill] ✅ ${row.id}: CT-e=${extracted.cteNumber || '-'}, Emissão=${extracted.cteEmissionDate || '-'}`);
+          console.log(`[backfill] ✅ ${row.id}: CT-e=${extracted.cteNumber || '-'}, CIOT=${extracted.ciotNumber || '-'}, Emissão=${extracted.cteEmissionDate || '-'}`);
           updated++;
         } else {
           console.warn(`[backfill] ⚠️ Falha ao atualizar ${row.id}:`, updateError.message);
@@ -1681,30 +2537,205 @@ export async function backfillAdvanceAndBalanceCalculations(): Promise<{ updated
 
 
 export async function upsertUser(user: User): Promise<void> {
-  const { error } = await supabase.from('app_users').upsert(fromUser(user));
-  if (error) throw error;
+  // 1. Persist extra config (phone, customPermissions, commissions, agency config) in profile_permissions + localStorage
+  try {
+    const extraConfigMap = await fetchUserExtraConfig();
+    extraConfigMap[user.id] = {
+      phone: user.phone || extraConfigMap[user.id]?.phone || undefined,
+      permissions: buildUserPermissionsPayload(user),
+    };
+    await saveUserExtraConfig(extraConfigMap);
+  } catch (err) {
+    console.warn('[DB] Error persisting user extra config in upsertUser:', err);
+  }
+
+  // 2. Build clean SQL payload for app_users
+  const payload = fromUser(user);
+
+  // 3. Ensure password is never null/missing for app_users (NOT NULL constraint in Postgres)
+  if (!payload.password && user.id) {
+    try {
+      const { data: existing } = await supabase
+        .from('app_users')
+        .select('id, password')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (existing?.password) {
+        payload.password = existing.password;
+      } else {
+        payload.password = '123';
+      }
+    } catch {
+      payload.password = '123';
+    }
+  } else if (!payload.password) {
+    payload.password = '123';
+  }
+
+  await executeTableWriteWithFallback(
+    'app_users',
+    (p) => supabase.from('app_users').upsert(p),
+    payload
+  );
 }
 
 export async function upsertBranch(branch: Branch): Promise<void> {
-  const { error } = await supabase.from('branches').upsert(fromBranch(branch));
-  if (error) throw error;
+  await executeTableWriteWithFallback(
+    'branches',
+    (p) => supabase.from('branches').upsert(p),
+    fromBranch(branch)
+  );
+}
+
+export async function insertUniqueTicket(ticketData: Omit<Ticket, 'id' | 'history' | 'createdAt'> & { id?: string; createdAt?: string; history?: any[] }): Promise<Ticket> {
+  // 1. Inspeciona tickets existentes no Supabase para garantir sequência única absoluta
+  let maxSeq = 0;
+  try {
+    const { data: dbTickets } = await supabase.from('tickets').select('id');
+    if (dbTickets && Array.isArray(dbTickets)) {
+      dbTickets.forEach(r => {
+        const num = parseInt(String(r.id).replace(/\D/g, ''), 10);
+        if (!isNaN(num) && num > maxSeq) maxSeq = num;
+      });
+    }
+  } catch (err) {
+    console.warn('[insertUniqueTicket] Aviso ao consultar tickets existentes no banco:', err);
+  }
+
+  // Também verifica cache de emergência local
+  try {
+    const cachedStr = localStorage.getItem('transcunha_emergency_tickets');
+    if (cachedStr) {
+      const cached = JSON.parse(cachedStr);
+      if (Array.isArray(cached)) {
+        cached.forEach((t: any) => {
+          const num = parseInt(String(t.id).replace(/\D/g, ''), 10);
+          if (!isNaN(num) && num > maxSeq) maxSeq = num;
+        });
+      }
+    }
+  } catch {}
+
+  let candidateSeq = Math.max(maxSeq + 1, 1);
+  const nowIso = ticketData.createdAt || new Date().toISOString();
+
+  // Retry com incremento progressivo para garantir que NENHUM chamado sobrescreva outro
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const generatedId = `TCK-${String(candidateSeq).padStart(3, '0')}`;
+    const newTicket: Ticket = {
+      ...ticketData,
+      id: generatedId,
+      createdAt: nowIso,
+      history: ticketData.history && ticketData.history.length > 0 ? ticketData.history : [{
+        userId: ticketData.createdById,
+        timestamp: nowIso,
+        comment: 'Chamado aberto e registrado na auditoria.'
+      }]
+    };
+
+    const payload = fromTicket(newTicket);
+
+    // Salva cópia de emergência local ANTES da chamada de rede
+    try {
+      const emergencyRaw = localStorage.getItem('transcunha_emergency_tickets');
+      const emergencyList: Ticket[] = emergencyRaw ? JSON.parse(emergencyRaw) : [];
+      const updatedEmergency = [newTicket, ...emergencyList.filter(e => e.id !== newTicket.id)];
+      localStorage.setItem('transcunha_emergency_tickets', JSON.stringify(updatedEmergency));
+    } catch {}
+
+    try {
+      await executeTableWriteWithFallback(
+        'tickets',
+        (p) => supabase.from('tickets').insert(p),
+        payload
+      );
+      console.log(`[insertUniqueTicket] Chamado ${generatedId} gravado com sucesso no Supabase.`);
+      // Atualiza também o cache geral
+      try {
+        const cacheRaw = localStorage.getItem('transcunha_tickets_cache');
+        const list: Ticket[] = cacheRaw ? JSON.parse(cacheRaw) : [];
+        localStorage.setItem('transcunha_tickets_cache', JSON.stringify([newTicket, ...list.filter(t => t.id !== newTicket.id)]));
+      } catch {}
+
+      // Dispara broadcast instantâneo WebSocket para todos os usuários
+      broadcastTicketChange({
+        action: 'create',
+        ticketId: generatedId,
+        ticket: newTicket
+      });
+
+      return newTicket;
+    } catch (error: any) {
+      // Se houve conflito de ID (já existente), tenta próximo número
+      if (error?.code === '23505' || error?.message?.includes('duplicate key') || error?.message?.includes('already exists')) {
+        console.warn(`[insertUniqueTicket] Conflito de ID ${generatedId}. Incrementando número para tentativa ${attempt + 1}...`);
+        candidateSeq++;
+        continue;
+      }
+
+      console.error('[insertUniqueTicket] Erro crítico ao inserir chamado:', error);
+      throw error;
+    }
+  }
+
+  throw new Error('Não foi possível gerar um identificador único para o chamado após 5 tentativas.');
 }
 
 export async function upsertTicket(ticket: Ticket): Promise<void> {
   const payload = fromTicket(ticket);
-  const { error } = await supabase.from('tickets').upsert(payload);
-  if (error) {
-    console.error('[upsertTicket] Error details:', error);
-    throw error;
-  }
+  
+  // Atualiza cache de emergência local imediatamente
+  try {
+    const emergencyRaw = localStorage.getItem('transcunha_emergency_tickets');
+    const emergencyList: Ticket[] = emergencyRaw ? JSON.parse(emergencyRaw) : [];
+    const updatedEmergency = [ticket, ...emergencyList.filter(e => e.id !== ticket.id)];
+    localStorage.setItem('transcunha_emergency_tickets', JSON.stringify(updatedEmergency));
+
+    const cacheRaw = localStorage.getItem('transcunha_tickets_cache');
+    const list: Ticket[] = cacheRaw ? JSON.parse(cacheRaw) : [];
+    localStorage.setItem('transcunha_tickets_cache', JSON.stringify([ticket, ...list.filter(t => t.id !== ticket.id)]));
+  } catch {}
+
+  await executeTableWriteWithFallback(
+    'tickets',
+    (p) => supabase.from('tickets').upsert(p),
+    payload
+  );
+
+  // Notifica instantaneamente todos os usuários e abas abertas
+  broadcastTicketChange({
+    action: 'update',
+    ticketId: ticket.id,
+    status: ticket.status,
+    ticket
+  });
 }
 
 export async function deleteTicket(id: string): Promise<void> {
+  try {
+    // Remove do cache local
+    const emergencyRaw = localStorage.getItem('transcunha_emergency_tickets');
+    if (emergencyRaw) {
+      const emergencyList: Ticket[] = JSON.parse(emergencyRaw);
+      localStorage.setItem('transcunha_emergency_tickets', JSON.stringify(emergencyList.filter(e => e.id !== id)));
+    }
+    const cacheRaw = localStorage.getItem('transcunha_tickets_cache');
+    if (cacheRaw) {
+      const list: Ticket[] = JSON.parse(cacheRaw);
+      localStorage.setItem('transcunha_tickets_cache', JSON.stringify(list.filter(t => t.id !== id)));
+    }
+  } catch {}
+
   const { error } = await supabase.from('tickets').delete().eq('id', id);
   if (error) {
     console.error('[deleteTicket] Error details:', error);
     throw error;
   }
+
+  broadcastTicketChange({
+    action: 'delete',
+    ticketId: id
+  });
 }
 
 export async function insertCargo(cargo: Cargo | Omit<Cargo, 'id'>): Promise<Cargo> {
@@ -1742,13 +2773,19 @@ export async function insertCargo(cargo: Cargo | Omit<Cargo, 'id'>): Promise<Car
   payload.sequence_id = sequenceId;
 
   console.log('[insertCargo] Upserting new cargo:', payload.id, 'sequence_id:', payload.sequence_id);
-  const { data, error } = await supabase.from('cargos').upsert(payload, { onConflict: 'id' }).select().single();
-  if (error) {
-    console.error('[insertCargo] Error:', error);
-    throw error;
-  }
-  console.log('[insertCargo] Success for cargo:', data.id);
-  return toCargo(data);
+  const { data } = await executeTableWriteWithFallback(
+    'cargos',
+    (p) => supabase.from('cargos').upsert(p, { onConflict: 'id' }).select().single(),
+    payload
+  );
+  const createdCargo = data ? toCargo(data) : cargoWithId;
+  console.log('[insertCargo] Success for cargo:', createdCargo.id);
+  broadcastCargoChange({
+    action: 'create',
+    cargoId: createdCargo.id,
+    cargo: createdCargo
+  });
+  return createdCargo;
 }
 
 export async function insertShipment(shipment: Shipment): Promise<void> {
@@ -1757,6 +2794,14 @@ export async function insertShipment(shipment: Shipment): Promise<void> {
     (p) => supabase.from('shipments').insert(p),
     payload
   );
+  if (shipment.id) {
+    broadcastShipmentChange({
+      action: 'create',
+      shipmentId: shipment.id,
+      status: shipment.status,
+      shipment
+    });
+  }
 }
 
 export async function saveProfilePermissions(permissions: ProfilePermissions): Promise<void> {
@@ -1775,26 +2820,64 @@ export async function saveAppSettings(settings: { company_logo?: string | null; 
 
 export async function upsertManyDrivers(drivers: Driver[]): Promise<void> {
   if (drivers.length === 0) return;
-  const { error } = await supabase.from('drivers').upsert(drivers.map(fromDriver));
-  if (error) throw error;
+  try {
+    const extraConfigMap = await fetchDriverExtraConfig();
+    for (const d of drivers) {
+      if (!d.id) continue;
+      extraConfigMap[d.id] = {
+        ...(extraConfigMap[d.id] || {}),
+        has_app: d.has_app ?? extraConfigMap[d.id]?.has_app ?? false,
+        codigoAtua: d.codigoAtua || extraConfigMap[d.id]?.codigoAtua,
+        motherName: d.motherName || extraConfigMap[d.id]?.motherName,
+        birthDate: d.birthDate || extraConfigMap[d.id]?.birthDate,
+        cnhAttachmentUrl: d.cnhAttachmentUrl || extraConfigMap[d.id]?.cnhAttachmentUrl,
+      };
+    }
+    await saveDriverExtraConfig(extraConfigMap);
+  } catch (err) {
+    console.warn('[DB] Error persisting driver extra config in upsertManyDrivers:', err);
+  }
+
+  await executeTableWriteWithFallback(
+    'drivers',
+    (p) => supabase.from('drivers').upsert(p),
+    drivers.map(fromDriver)
+  );
 }
 
 export async function upsertManyVehicles(vehicles: Vehicle[]): Promise<void> {
   if (vehicles.length === 0) return;
-  const { error } = await supabase.from('vehicles').upsert(vehicles.map(fromVehicle));
-  if (error) throw error;
+  await executeTableWriteWithFallback(
+    'vehicles',
+    (p) => supabase.from('vehicles').upsert(p),
+    vehicles.map(fromVehicle)
+  );
 }
 
 export async function upsertManyShipments(shipments: Shipment[]): Promise<void> {
   if (shipments.length === 0) return;
-  const { error } = await supabase.from('shipments').upsert(shipments.map(fromShipment));
-  if (error) throw error;
+  await executeTableWriteWithFallback(
+    'shipments',
+    (p) => supabase.from('shipments').upsert(p),
+    shipments.map(fromShipment)
+  );
+  for (const s of shipments) {
+    broadcastShipmentChange({
+      action: 'update',
+      shipmentId: s.id,
+      status: s.status,
+      shipment: s
+    });
+  }
 }
 
 export async function upsertManyCargos(cargos: Cargo[]): Promise<void> {
   if (cargos.length === 0) return;
-  const { error } = await supabase.from('cargos').upsert(cargos.map(fromCargo));
-  if (error) throw error;
+  await executeTableWriteWithFallback(
+    'cargos',
+    (p) => supabase.from('cargos').upsert(p),
+    cargos.map(fromCargo)
+  );
 }
 
 // ─────────────────────────────────────────────
@@ -1860,16 +2943,33 @@ export async function deleteShipmentAttachmentFromStorage(url: string): Promise<
 export async function deleteCargo(id: string): Promise<void> {
   const { error } = await supabase.from('cargos').delete().eq('id', id);
   if (error) throw error;
+  broadcastCargoChange({
+    action: 'delete',
+    cargoId: id
+  });
 }
 
 export async function deleteShipment(id: string): Promise<void> {
   const { error } = await supabase.from('shipments').delete().eq('id', id);
   if (error) throw error;
+  broadcastShipmentChange({
+    action: 'delete',
+    shipmentId: id
+  });
 }
 
 export async function deleteUser(id: string): Promise<void> {
   const { error } = await supabase.from('app_users').delete().eq('id', id);
   if (error) throw error;
+  try {
+    const extraConfigMap = await fetchUserExtraConfig();
+    if (extraConfigMap[id]) {
+      delete extraConfigMap[id];
+      await saveUserExtraConfig(extraConfigMap);
+    }
+  } catch (err) {
+    console.warn('[DB] Error removing user extra config in deleteUser:', err);
+  }
 }
 
 export async function deleteBranch(id: string): Promise<void> {
@@ -1878,13 +2978,25 @@ export async function deleteBranch(id: string): Promise<void> {
 }
 
 export async function upsertProduct(product: Product): Promise<void> {
-  const { error } = await supabase.from('products').upsert({
-    id: product.id,
-    name: product.name,
-    unit: product.unit,
-    requires_risk_management: product.requiresRiskManagement !== false, // default true
-  });
-  if (error) throw error;
+  try {
+    const extraConfigMap = await fetchProductExtraConfig();
+    extraConfigMap[product.id] = {
+      requiresRiskManagement: product.requiresRiskManagement !== false,
+    };
+    await saveProductExtraConfig(extraConfigMap);
+  } catch (err) {
+    console.warn('[DB] Error persisting product extra config in upsertProduct:', err);
+  }
+
+  await executeTableWriteWithFallback(
+    'products',
+    (p) => supabase.from('products').upsert(p),
+    {
+      id: product.id,
+      name: product.name,
+      unit: product.unit,
+    }
+  );
 }
 
 export async function deleteClient(id: string): Promise<void> {
@@ -2044,11 +3156,49 @@ export async function mergeClients(
 export async function deleteProduct(id: string): Promise<void> {
   const { error } = await supabase.from('products').delete().eq('id', id);
   if (error) throw error;
+  try {
+    const extraConfigMap = await fetchProductExtraConfig();
+    if (extraConfigMap[id]) {
+      delete extraConfigMap[id];
+      await saveProductExtraConfig(extraConfigMap);
+    }
+  } catch (err) {
+    console.warn('[DB] Error removing product extra config in deleteProduct:', err);
+  }
 }
 
 export async function deleteFreightOffer(id: string): Promise<void> {
-  const { error } = await supabase.from('freight_offers').delete().eq('id', id);
-  if (error) throw error;
+  try {
+    const { error } = await supabase.from('freight_offers').delete().eq('id', id);
+    if (error && error.code !== '42P01' && error.code !== 'PGRST205' && !error.message?.includes('Could not find the table')) {
+      throw error;
+    }
+  } catch (err: any) {
+    if (err?.code !== '42P01' && err?.code !== 'PGRST205' && !err?.message?.includes('Could not find the table')) {
+      throw err;
+    }
+  }
+
+  try {
+    const saved = localStorage.getItem('transcunha_freight_offers');
+    if (saved) {
+      const list = JSON.parse(saved);
+      if (Array.isArray(list)) {
+        localStorage.setItem('transcunha_freight_offers', JSON.stringify(list.filter((o: any) => o.id !== id)));
+      }
+    }
+  } catch {}
+
+  try {
+    const { data: permRow } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    if (permRow?.permissions?.freight_offers_list && Array.isArray(permRow.permissions.freight_offers_list)) {
+      const updated = {
+        ...permRow.permissions,
+        freight_offers_list: permRow.permissions.freight_offers_list.filter((o: any) => o.id !== id),
+      };
+      await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
+    }
+  } catch {}
 }
 
 // ─────────────────────────────────────────────
@@ -2085,4 +3235,413 @@ export async function releaseShipmentLock(shipmentId: string, userId: string): P
     throw error;
   }
 }
+
+// ─────────────────────────────────────────────
+// RDO NACIONAL: ANÁLISE CADASTRAL & PARECERES
+// ─────────────────────────────────────────────
+
+export const toRdoRequest = (row: any): RdoRequestRecord => ({
+  id: row.id,
+  codigo: Number(row.codigo || 0),
+  shipmentId: row.shipment_id || undefined,
+  driverId: row.driver_id || undefined,
+  cpf: row.cpf || '',
+  nome: row.nome || '',
+  nomeDaMae: row.nome_da_mae || undefined,
+  dataDeNascimento: row.data_nascimento || undefined,
+  documentoDoProprietario: row.documento_proprietario || undefined,
+  nomeDoProprietario: row.nome_proprietario || undefined,
+  placaDoCavalo: row.placa_cavalo || undefined,
+  status: (row.status as any) || 'pendente',
+  parecer: row.parecer !== null && row.parecer !== undefined ? Number(row.parecer) : undefined,
+  observacao: row.observacao || undefined,
+  cnhUrl: row.cnh_url || undefined,
+  createdAt: row.created_at || new Date().toISOString(),
+  updatedAt: row.updated_at || undefined,
+  concludedAt: row.concluded_at || undefined,
+  createdById: row.created_by || undefined,
+  createdByName: row.created_by_name || undefined,
+  rawResponse: row.raw_response || undefined,
+  rawWebhookPayload: row.raw_webhook_payload || undefined,
+});
+
+export const fromRdoRequest = (req: RdoRequestRecord): any => ({
+  id: req.id,
+  codigo: req.codigo,
+  shipment_id: req.shipmentId || null,
+  driver_id: req.driverId || null,
+  cpf: req.cpf,
+  nome: req.nome,
+  nome_da_mae: req.nomeDaMae || null,
+  data_nascimento: req.dataDeNascimento || null,
+  documento_proprietario: req.documentoDoProprietario || null,
+  nome_proprietario: req.nomeDoProprietario || null,
+  placa_cavalo: req.placaDoCavalo || null,
+  status: req.status,
+  parecer: req.parecer !== undefined && req.parecer !== null ? req.parecer : null,
+  observacao: req.observacao || null,
+  cnh_url: req.cnhUrl || null,
+  created_at: req.createdAt,
+  updated_at: req.updatedAt || new Date().toISOString(),
+  concluded_at: req.concludedAt || null,
+  created_by: req.createdById || null,
+  created_by_name: req.createdByName || null,
+  raw_response: req.rawResponse || null,
+  raw_webhook_payload: req.rawWebhookPayload || null,
+});
+
+const DEFAULT_RDO_CONFIG: RdoConfig = {
+  apiToken: '',
+  callbackToken: '',
+  apiUrl: 'https://painel.mrbsolucoes.com.br',
+  clientName: 'DLLOG TRANSPORTES',
+  enabled: true,
+  autoApproveInRisk: true,
+};
+
+export async function fetchRdoConfig(): Promise<RdoConfig> {
+  // 1. Try profile_permissions (id: 1)
+  try {
+    const { data, error } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    if (!error && data?.permissions?.rdo_config) {
+      const config = { ...DEFAULT_RDO_CONFIG, ...data.permissions.rdo_config };
+      try {
+        localStorage.setItem('transcunha_rdo_config', JSON.stringify(config));
+      } catch {}
+      return config;
+    }
+  } catch (err) {
+    console.warn('[DB] Could not fetch rdo_config from profile_permissions:', err);
+  }
+
+  // 2. Fallback to localStorage
+  try {
+    const saved = localStorage.getItem('transcunha_rdo_config');
+    if (saved) {
+      return { ...DEFAULT_RDO_CONFIG, ...JSON.parse(saved) };
+    }
+  } catch {}
+
+  return DEFAULT_RDO_CONFIG;
+}
+
+export async function saveRdoConfig(config: RdoConfig): Promise<void> {
+  // 1. Save to profile_permissions (id: 1)
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    const current = data?.permissions || {};
+    const updated = {
+      ...current,
+      rdo_config: config,
+    };
+    await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
+  } catch (err) {
+    console.warn('[DB] Error saving rdo_config to profile_permissions:', err);
+  }
+
+  // 2. Save to localStorage
+  try {
+    localStorage.setItem('transcunha_rdo_config', JSON.stringify(config));
+  } catch {}
+}
+
+export async function fetchRdoRequests(): Promise<RdoRequestRecord[]> {
+  try {
+    const { data, error } = await supabase
+      .from('rdo_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      const records = data.map(toRdoRequest);
+      try {
+        localStorage.setItem('transcunha_rdo_requests', JSON.stringify(records));
+      } catch {}
+      return records;
+    }
+  } catch (err) {
+    console.warn('[DB] Could not fetch rdo_requests table:', err);
+  }
+
+  // Fallback to localStorage
+  try {
+    const saved = localStorage.getItem('transcunha_rdo_requests');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch {}
+
+  return [];
+}
+
+export async function upsertRdoRequest(record: RdoRequestRecord): Promise<void> {
+  try {
+    const payload = fromRdoRequest(record);
+    const { error } = await supabase.from('rdo_requests').upsert(payload);
+    if (error) {
+      console.warn('[DB] Warning upserting rdo_requests:', error);
+    }
+  } catch (err) {
+    console.warn('[DB] Exception upserting rdo_requests:', err);
+  }
+
+  // Update local storage
+  try {
+    const current = await fetchRdoRequests();
+    const idx = current.findIndex(r => r.id === record.id);
+    let nextList: RdoRequestRecord[];
+    if (idx >= 0) {
+      nextList = [...current];
+      nextList[idx] = record;
+    } else {
+      nextList = [record, ...current];
+    }
+    localStorage.setItem('transcunha_rdo_requests', JSON.stringify(nextList));
+  } catch {}
+
+  // Broadcast realtime update
+  broadcastRdoChange({
+    action: record.parecer !== undefined ? 'parecer_received' : 'update',
+    idSolicitacao: record.id,
+    codigo: record.codigo,
+    cpf: record.cpf,
+    status: record.status,
+    parecer: record.parecer,
+    observacao: record.observacao,
+    shipmentId: record.shipmentId,
+  });
+}
+
+export async function updateRdoRequestParecer(
+  idSolicitacao: string, 
+  parecer: 0 | 1, 
+  observacao?: string | null, 
+  rawPayload?: any
+): Promise<RdoRequestRecord | null> {
+  const currentRequests = await fetchRdoRequests();
+  const existing = currentRequests.find(r => r.id === idSolicitacao || (rawPayload?.cpf && r.cpf.replace(/\D/g, '') === String(rawPayload.cpf).replace(/\D/g, '')));
+
+  const updatedRecord: RdoRequestRecord = existing ? {
+    ...existing,
+    parecer,
+    status: parecer === 0 ? 'aprovado' : 'consta_informacao',
+    observacao: observacao || undefined,
+    concludedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    rawWebhookPayload: rawPayload,
+  } : {
+    id: idSolicitacao,
+    codigo: 0,
+    cpf: rawPayload?.cpf || '',
+    nome: rawPayload?.nome || '',
+    documentoDoProprietario: rawPayload?.documentoDoProprietario,
+    nomeDoProprietario: rawPayload?.nomeDoProprietario,
+    placaDoCavalo: rawPayload?.placa,
+    status: parecer === 0 ? 'aprovado' : 'consta_informacao',
+    parecer,
+    observacao: observacao || undefined,
+    createdAt: new Date().toISOString(),
+    concludedAt: new Date().toISOString(),
+    rawWebhookPayload: rawPayload,
+  };
+
+  await upsertRdoRequest(updatedRecord);
+  return updatedRecord;
+}
+
+// ─────────────────────────────────────────────
+// SIGA GR (Gerenciadora de Risco REST/JSON v1)
+// ─────────────────────────────────────────────
+
+export const DEFAULT_SIGA_CONFIG: SigaConfig = {
+  environment: 'staging',
+  apiUrl: 'https://api.staging.sigagr.com.br',
+  email: '',
+  password: '',
+  requesterEmail: '',
+  businessUnit: '',
+  customerBranch: '',
+  enabled: true,
+  autoApproveInRisk: true,
+};
+
+export async function fetchSigaConfig(): Promise<SigaConfig> {
+  // 1. Tenta carregar de profile_permissions (id: 1)
+  try {
+    const { data, error } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    if (!error && data?.permissions?.siga_config) {
+      const config = { ...DEFAULT_SIGA_CONFIG, ...data.permissions.siga_config };
+      try {
+        localStorage.setItem('transcunha_siga_config', JSON.stringify(config));
+      } catch {}
+      return config;
+    }
+  } catch (err) {
+    console.warn('[DB] Could not fetch siga_config from profile_permissions:', err);
+  }
+
+  // 2. Fallback para localStorage
+  try {
+    const saved = localStorage.getItem('transcunha_siga_config');
+    if (saved) {
+      return { ...DEFAULT_SIGA_CONFIG, ...JSON.parse(saved) };
+    }
+  } catch {}
+
+  return DEFAULT_SIGA_CONFIG;
+}
+
+export async function saveSigaConfig(config: SigaConfig): Promise<void> {
+  // 1. Salva em profile_permissions (id: 1)
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    const current = data?.permissions || {};
+    const updated = {
+      ...current,
+      siga_config: config,
+    };
+    await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
+  } catch (err) {
+    console.warn('[DB] Error saving siga_config to profile_permissions:', err);
+  }
+
+  // 2. Salva em localStorage
+  try {
+    localStorage.setItem('transcunha_siga_config', JSON.stringify(config));
+  } catch {}
+}
+
+export async function fetchSigaRequests(): Promise<SigaRequestRecord[]> {
+  try {
+    const { data, error } = await supabase
+      .from('siga_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      const records = data.map((r: any): SigaRequestRecord => ({
+        id: r.id,
+        processNumber: r.process_number,
+        state: r.state,
+        productName: r.product_name,
+        shipmentId: r.shipment_id || undefined,
+        driverId: r.driver_id || undefined,
+        driverName: r.driver_name,
+        driverCpf: r.driver_cpf,
+        truckPlate: r.truck_plate,
+        vehicleType: r.vehicle_type,
+        origin: r.origin || undefined,
+        destination: r.destination || undefined,
+        loadCost: r.load_cost !== null && r.load_cost !== undefined ? Number(r.load_cost) : undefined,
+        denialReason: r.denial_reason || undefined,
+        issuesCount: r.issues_count || 0,
+        unsolvedIssuesCount: r.unsolved_issues_count || 0,
+        commentsCount: r.comments_count || 0,
+        expiresAt: r.expires_at || undefined,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at || r.created_at,
+        concludedAt: r.concluded_at || undefined,
+        createdById: r.created_by_id || undefined,
+        createdByName: r.created_by_name || undefined,
+        rawAnalysis: r.raw_analysis || undefined,
+      }));
+      try {
+        localStorage.setItem('transcunha_siga_requests', JSON.stringify(records));
+      } catch {}
+      return records;
+    }
+  } catch (err) {
+    console.warn('[DB] Could not fetch siga_requests table, falling back to localStorage:', err);
+  }
+
+  // Fallback para localStorage
+  try {
+    const saved = localStorage.getItem('transcunha_siga_requests');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch {}
+
+  return [];
+}
+
+export async function upsertSigaRequest(record: SigaRequestRecord): Promise<void> {
+  try {
+    const payload = {
+      id: record.id,
+      process_number: record.processNumber,
+      state: record.state,
+      product_name: record.productName,
+      shipment_id: record.shipmentId || null,
+      driver_id: record.driverId || null,
+      driver_name: record.driverName,
+      driver_cpf: record.driverCpf,
+      truck_plate: record.truckPlate,
+      vehicle_type: record.vehicleType,
+      origin: record.origin || null,
+      destination: record.destination || null,
+      load_cost: record.loadCost ?? null,
+      denial_reason: record.denialReason || null,
+      issues_count: record.issuesCount || 0,
+      unsolved_issues_count: record.unsolvedIssuesCount || 0,
+      comments_count: record.commentsCount || 0,
+      expires_at: record.expiresAt || null,
+      created_at: record.createdAt,
+      updated_at: record.updatedAt || new Date().toISOString(),
+      concluded_at: record.concludedAt || null,
+      created_by_id: record.createdById || null,
+      created_by_name: record.createdByName || null,
+      raw_analysis: record.rawAnalysis || null,
+    };
+    const { error } = await supabase.from('siga_requests').upsert(payload);
+    if (error) {
+      console.warn('[DB] Note: Could not upsert into siga_requests table (using local/state storage):', error.message);
+    }
+  } catch (err) {
+    console.warn('[DB] Exception upserting siga_requests:', err);
+  }
+
+  // Atualiza local storage
+  try {
+    const current = await fetchSigaRequests();
+    const idx = current.findIndex(r => r.id === record.id || r.processNumber === record.processNumber);
+    let nextList: SigaRequestRecord[];
+    if (idx >= 0) {
+      nextList = [...current];
+      nextList[idx] = record;
+    } else {
+      nextList = [record, ...current];
+    }
+    localStorage.setItem('transcunha_siga_requests', JSON.stringify(nextList));
+  } catch {}
+
+  // Broadcast realtime update
+  broadcastSigaChange({
+    action: record.state === 'approved' || record.state === 'denied' || record.state === 'authorized_by_manager' ? 'status_change' : 'update',
+    processNumber: record.processNumber,
+    state: record.state,
+    driverCpf: record.driverCpf,
+    truckPlate: record.truckPlate,
+    shipmentId: record.shipmentId,
+    driverId: record.driverId,
+  });
+}
+
+export async function deleteSigaRequest(idOrProcessNumber: string): Promise<void> {
+  try {
+    await supabase.from('siga_requests').delete().or(`id.eq.${idOrProcessNumber},process_number.eq.${idOrProcessNumber}`);
+  } catch {}
+
+  try {
+    const current = await fetchSigaRequests();
+    const filtered = current.filter(r => r.id !== idOrProcessNumber && r.processNumber !== idOrProcessNumber);
+    localStorage.setItem('transcunha_siga_requests', JSON.stringify(filtered));
+  } catch {}
+
+  broadcastSigaChange({
+    action: 'delete',
+    processNumber: idOrProcessNumber
+  });
+}
+
 

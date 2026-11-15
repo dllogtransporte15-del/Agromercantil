@@ -5,6 +5,7 @@ import { ShipmentStatus } from '../../types';
 import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { PackageIcon } from '../icons/PackageIcon';
 import { UsersIcon } from '../icons/UsersIcon';
+import { hasCteAttached, COMMISSION_ELIGIBLE_STATUSES, isShipmentEligibleForCommission } from '../../utils';
 
 interface ExternalSalespersonReportProps {
   shipments: Shipment[];
@@ -43,19 +44,12 @@ const ExternalSalespersonReport: React.FC<ExternalSalespersonReportProps> = ({ s
   const statsList = useMemo<ExternalSalespersonStats[]>(() => {
     const cargoMap: Map<string, Cargo> = new Map(cargos.map(c => [c.id, c]));
     const clientMap: Map<string, Client> = new Map(clients.map(cl => [cl.id, cl]));
-    const loadedStatuses = [
-        ShipmentStatus.AguardandoNota,
-        ShipmentStatus.AguardandoAdiantamento,
-        ShipmentStatus.AguardandoAgendamento,
-        ShipmentStatus.AguardandoDescarga,
-        ShipmentStatus.AguardandoPagamentoSaldo,
-        ShipmentStatus.Finalizado
-    ];
+    const loadedStatuses = COMMISSION_ELIGIBLE_STATUSES;
 
     const statsMap = new Map<string, ExternalSalespersonStats>();
 
     shipments.forEach(shipment => {
-        if (!loadedStatuses.includes(shipment.status)) return;
+        if (!isShipmentEligibleForCommission(shipment) || !hasCteAttached(shipment)) return;
         
         const cargo = cargoMap.get(shipment.cargoId);
         if (!cargo) return;
@@ -113,7 +107,7 @@ const ExternalSalespersonReport: React.FC<ExternalSalespersonReportProps> = ({ s
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-primary/5 dark:bg-primary/10 p-4 rounded-lg border border-primary/20">
-              <p className="text-xs font-bold text-primary dark:text-blue-400 uppercase tracking-wider mb-1">Total em Comissões</p>
+              <p className="text-xs font-bold text-primary dark:text-amber-400 uppercase tracking-wider mb-1">Total em Comissões</p>
               <p className="text-2xl font-black text-gray-900 dark:text-white">{totals.commission.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
           </div>
           <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -147,7 +141,7 @@ const ExternalSalespersonReport: React.FC<ExternalSalespersonReportProps> = ({ s
                 <StatCard 
                     title="Volume Carregado" 
                     value={`${stats.totalTonnage.toLocaleString('pt-BR')} ton`} 
-                    icon={<PackageIcon className="w-6 h-6 text-blue-500"/>} 
+                    icon={<PackageIcon className="w-6 h-6 text-amber-500"/>} 
                 />
                 <StatCard 
                     title="Embarques" 

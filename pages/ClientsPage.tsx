@@ -4,7 +4,7 @@ import ClientTable from '../components/ClientTable';
 import ClientFormModal from '../components/ClientFormModal';
 import MergeClientsModal from '../components/MergeClientsModal';
 import ClientFilter, { ClientFilters } from '../components/ClientFilter';
-import type { Client, User, ProfilePermissions } from '../types';
+import type { Client, User, ProfilePermissions, LoadingOrderModel } from '../types';
 import { PaymentMethod } from '../types';
 import { can } from '../auth';
 import { Merge, Plus, Upload, Download } from 'lucide-react';
@@ -17,6 +17,7 @@ interface ClientsPageProps {
   onMergeClients?: (targetClientId: string, sourceClientIds: string[]) => Promise<void>;
   currentUser: User;
   profilePermissions: ProfilePermissions;
+  loadingOrderModels?: LoadingOrderModel[];
 }
 
 const ClientsPage: React.FC<ClientsPageProps> = ({
@@ -27,6 +28,7 @@ const ClientsPage: React.FC<ClientsPageProps> = ({
   onMergeClients,
   currentUser,
   profilePermissions,
+  loadingOrderModels,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
@@ -182,7 +184,7 @@ const ClientsPage: React.FC<ClientsPageProps> = ({
             {onMergeClients && (
               <button
                 onClick={() => setIsMergeModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
                 title="Unir múltiplos cadastros de clientes em um só com filiais"
               >
                 <Merge className="w-4 h-4" />
@@ -231,6 +233,7 @@ const ClientsPage: React.FC<ClientsPageProps> = ({
         clients={filteredClients} 
         onEdit={canUpdate ? handleEditClient : undefined} 
         onDelete={canDelete ? handleDeleteClient : undefined} 
+        loadingOrderModels={loadingOrderModels}
       />
 
       <ClientFormModal
@@ -238,6 +241,7 @@ const ClientsPage: React.FC<ClientsPageProps> = ({
         onClose={handleCloseModal}
         onSave={handleSaveClient}
         clientToEdit={clientToEdit}
+        loadingOrderModels={loadingOrderModels}
       />
 
       {onMergeClients && (

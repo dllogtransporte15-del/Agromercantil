@@ -20,7 +20,7 @@ import RealProfitReport from '../components/reports/RealProfitReport';
 import OthersReport from '../components/reports/OthersReport';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import { getAllToolStays, getToolStays, StayRecord } from '../utils/toolStorage';
-import { getShipmentCte, getShipmentEffectiveDate, getStayEffectiveDate, isCteApplicableForStatus, isStayForShipment, parseDateToYmd } from '../utils';
+import { getShipmentCte, getShipmentEffectiveDate, getShipmentCteEmissionDate, getStayEffectiveDate, isCteApplicableForStatus, isStayForShipment, parseDateToYmd, hasCteAttached } from '../utils';
 import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
 
 interface ReportsPageProps {
@@ -39,13 +39,14 @@ interface ReportsPageProps {
   onSaveUser?: (userData: User | Omit<User, 'id'>) => void;
   onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
   onBatchUpdateShipments?: (updatedShipments: Shipment[]) => Promise<void> | void;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void>;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => Promise<void>;
 }
 
 type ActiveReport = 'comercial' | 'embarcadores' | 'clientes' | 'vendedores' | 'tempo-operacao' | 'filiais' | 'estadias' | 'previsao-demandas' | 'lucro-real' | 'outros';
 
 const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, cargos, users, currentUser, clients, branches, stays = [], drivers = [], vehicles = [], products = [], companyLogo, onSaveUser, onUpdateAttachment, onBatchUpdateShipments, onUpdateShipmentData }) => {
-  const [activeReport, setActiveReport] = useState<ActiveReport>('comercial');
+  const isEmbarcador = currentUser?.profile === UserProfile.Embarcador || (currentUser?.profile as string) === 'Embarcador';
+  const [activeReport, setActiveReport] = useState<ActiveReport>(() => isEmbarcador ? 'embarcadores' : 'comercial');
   const [loadingStays, setLoadingStays] = useState(false);
   
   // Date range defaults to current month
@@ -132,15 +133,39 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
     return getShipmentEffectiveDate(s) || s.scheduledDate;
   };
 
+  // O faturamento e os relatórios de embarques com CT-e emitido devem SEMPRE
+  // ser contabilizados estritamente para o dia/período em que o CT-e foi emitido.
+  // Embarques agendados na virada de mês (ex: 30/09) cujo CT-e foi emitido em 01/10
+  // pertencem exclusivamente a outubro (Mês 10), nunca a setembro (Mês 9).
+  const isShipmentInPeriod = (s: Shipment, start: string, end: string): boolean => {
+    const inRange = (d: string | null) => d != null && d >= start && d <= end;
+
+    const cteDate = getShipmentCteEmissionDate(s);
+    const cteDateYmd = cteDate ? parseDateToYmd(cteDate) : null;
+
+    // Se possui CT-e com data de emissão: contabiliza SEMPRE e EXCLUSIVAMENTE pela data de emissão do CT-e
+    if (cteDateYmd) {
+      return inRange(cteDateYmd);
+    }
+
+    // Se possui CT-e anexado/emitido mas sem data de emissão específica extraída,
+    // utiliza a data efetiva vinculada ao CT-e / histórico de emissão
+    if (hasCteAttached(s)) {
+      const effDate = getEffectiveDate(s);
+      return Boolean(effDate && inRange(effDate));
+    }
+
+    // Sem CT-e (embarques programados / aguardando): contabiliza pela data efetiva/agendada
+    const effDate = getEffectiveDate(s);
+    return Boolean(effDate && inRange(effDate));
+  };
+
   const userBranchMap = useMemo(() => new Map(users.map(u => [u.id, u.branchId])), [users]);
 
   const filteredShipments = useMemo(() => {
     return shipments.filter(s => {
-       // Filter by effective date (the moment CT-e was emitted or it was loaded/became effective)
-       const effDate = getEffectiveDate(s);
-       if (!effDate) return false; // Not effective yet
-
-       if (effDate < startDate || effDate > endDate) return false;
+       // Filtro de período: critério inteligente (emissão CT-e OU data agendada)
+       if (!isShipmentInPeriod(s, startDate, endDate)) return false;
 
        if (filterStatus.length > 0 && !filterStatus.includes(s.status)) return false;
 
@@ -254,6 +279,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         ShipmentStatus.AguardandoAdiantamento,
         ShipmentStatus.AguardandoAgendamento,
         ShipmentStatus.AguardandoDescarga,
+        ShipmentStatus.ValidacaoTicket,
         ShipmentStatus.AguardandoPagamentoSaldo,
         ShipmentStatus.Finalizado
     ];
@@ -264,17 +290,30 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         ShipmentStatus.AguardandoAdiantamento,
         ShipmentStatus.AguardandoAgendamento,
         ShipmentStatus.AguardandoDescarga,
+        ShipmentStatus.ValidacaoTicket,
         ShipmentStatus.AguardandoPagamentoSaldo,
         ShipmentStatus.Finalizado
     ];
+
+    let effectiveCount = 0;
+    let programmedCount = 0;
+    let cancelledCount = 0;
 
     filteredShipments.forEach(s => {
        const cargo = cargoMap.get(s.cargoId);
        const cteVal = getShipmentCte(s);
        const hasCte = isCteApplicableForStatus(s.status) && cteVal !== '-' && cteVal.trim() !== '' && s.status !== ShipmentStatus.Cancelado;
 
+       if (hasCte) {
+         effectiveCount += 1;
+       } else if (s.status === ShipmentStatus.Cancelado) {
+         cancelledCount += 1;
+       } else {
+         programmedCount += 1;
+       }
+
        if (profitMarginStatuses.includes(s.status)) {
-           const expenses = calculateShipmentExpenses(s, cargo);
+           const expenses = calculateShipmentExpenses(s, cargo, undefined, stays);
            
            const shipmentStays = stays.filter(stay => isStayForShipment(stay, s));
            const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
@@ -306,13 +345,17 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         totalProfitMargin, 
         percentageMargin,
         effectivePercentageMargin,
-        count: filteredShipments.length 
+        count: filteredShipments.length,
+        effectiveCount,
+        programmedCount,
+        cancelledCount
     };
   }, [filteredShipments, cargoMap, stays]);
 
   const canViewCommercialReport = useMemo(() => {
     if (!currentUser) return false;
     return [
+      UserProfile.Desenvolvedor,
       UserProfile.Comercial, 
       UserProfile.GerenteComercial, 
       UserProfile.Admin, 
@@ -322,10 +365,57 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
     ].includes(currentUser.profile);
   }, [currentUser]);
 
+  const isCliente = currentUser?.profile === UserProfile.Cliente;
+  const isAgenciador = currentUser?.profile === UserProfile.Agenciador;
+  const isAgenciadorEmbarque = isAgenciador && currentUser?.agencyRole === 'embarque';
+
   const renderReport = () => {
+    if (isEmbarcador) {
+      return (
+        <ShipperReport 
+          shipments={filteredShipments} 
+          cargos={cargos} 
+          clients={clients} 
+          users={users} 
+          currentUser={currentUser} 
+          companyLogo={companyLogo} 
+        />
+      );
+    }
+    if (isAgenciadorEmbarque && activeReport !== 'comercial') {
+      return (
+        <SupervisorReport 
+          shipments={filteredShipments} 
+          cargos={cargos} 
+          users={users} 
+          branches={branches} 
+          stays={stays} 
+          clients={clients}
+          companyLogo={companyLogo}
+          startDate={startDate}
+          endDate={endDate}
+          onSaveUser={onSaveUser as any} 
+          currentUser={currentUser} 
+        />
+      );
+    }
     switch(activeReport) {
       case 'comercial':
-        return <SupervisorReport shipments={filteredShipments} cargos={cargos} users={users} branches={branches} stays={stays} onSaveUser={onSaveUser as any} currentUser={currentUser} />;
+        return (
+          <SupervisorReport 
+            shipments={filteredShipments} 
+            cargos={cargos} 
+            users={users} 
+            branches={branches} 
+            stays={stays} 
+            clients={clients}
+            companyLogo={companyLogo}
+            startDate={startDate}
+            endDate={endDate}
+            onSaveUser={onSaveUser as any} 
+            currentUser={currentUser} 
+          />
+        );
       case 'embarcadores':
         return <ShipperReport shipments={filteredShipments} cargos={cargos} clients={clients} users={users} currentUser={currentUser} companyLogo={companyLogo} />;
       case 'clientes':
@@ -349,7 +439,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       case 'previsao-demandas':
         return <DemandForecastReport cargos={cargos} clients={clients} shipments={shipments} companyLogo={companyLogo} />;
       case 'lucro-real':
-        if (isCliente) return null;
+        if (isCliente || isAgenciadorEmbarque) return null;
         return (
           <RealProfitReport
             shipments={shipments}
@@ -370,6 +460,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
           />
         );
       case 'outros':
+        if (isAgenciadorEmbarque) return null;
         return (
           <OthersReport
             shipments={shipments}
@@ -388,37 +479,54 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         return null;
     }
   };
-  
-  const isEmbarcador = currentUser?.profile === UserProfile.Embarcador;
-  const isCliente = currentUser?.profile === UserProfile.Cliente;
 
-  const navItems = [
-      ...(canViewCommercialReport ? [{ id: 'comercial', label: 'Relatório Comercial', icon: BriefcaseIcon }] : []),
-      ...(!isCliente ? [
-        { id: 'lucro-real', label: 'Lucro Real da Operação', icon: Receipt },
+  const navItems = isEmbarcador 
+    ? [
         { id: 'embarcadores', label: 'Embarcadores', icon: ShipIcon }
-      ] : []),
-      ...(!isEmbarcador ? [
-        { id: 'clientes', label: isCliente ? 'Histórico & Desempenho por CNPJ' : 'Clientes', icon: UsersIcon },
-        ...(!isCliente ? [{ id: 'vendedores', label: 'Vendedores', icon: UsersIcon }] : []),
-      ] : []),
-      { id: 'tempo-operacao', label: 'Tempo de Operação', icon: ClockIcon },
-      ...(!isCliente ? [
-        { id: 'filiais', label: 'Filiais', icon: Building2 },
-        { id: 'estadias', label: 'Financeiro Estadias', icon: DollarSign },
-        { id: 'previsao-demandas', label: 'Previsão de Demandas', icon: TrendingUp },
-        { id: 'outros', label: 'Outros', icon: Layers },
-      ] : []),
-  ];
+      ]
+    : [
+        ...(canViewCommercialReport ? [{ 
+          id: 'comercial', 
+          label: isAgenciadorEmbarque 
+            ? 'Meu Relatório de Agenciamento' 
+            : (isAgenciador ? 'Relatório da Agência' : 'Relatório Comercial'), 
+          icon: BriefcaseIcon 
+        }] : []),
+        ...(!isCliente && !isAgenciadorEmbarque ? [
+          { id: 'lucro-real', label: 'Lucro Real da Operação', icon: Receipt },
+          { id: 'embarcadores', label: 'Embarcadores', icon: ShipIcon }
+        ] : []),
+        ...(!isCliente && !isAgenciadorEmbarque ? [
+          { id: 'clientes', label: isCliente ? 'Histórico & Desempenho por CNPJ' : 'Clientes', icon: UsersIcon },
+          ...(!isCliente ? [{ id: 'vendedores', label: 'Vendedores', icon: UsersIcon }] : []),
+        ] : []),
+        ...(!isCliente && !isAgenciadorEmbarque ? [{ id: 'tempo-operacao', label: 'Tempo de Operação', icon: ClockIcon }] : []),
+        ...(!isCliente && !isAgenciadorEmbarque ? [
+          { id: 'filiais', label: 'Filiais', icon: Building2 },
+          { id: 'estadias', label: 'Financeiro Estadias', icon: DollarSign },
+          { id: 'previsao-demandas', label: 'Previsão de Demandas', icon: TrendingUp },
+          { id: 'outros', label: 'Outros', icon: Layers },
+        ] : []),
+    ];
 
-  /* Ensure initial tab is permissible */
-  useState(() => {
-    if (isCliente) {
-      setActiveReport('clientes');
+  /* Ensure initial and active tab is permissible */
+  React.useEffect(() => {
+    if (isEmbarcador) {
+      if (activeReport !== 'embarcadores') {
+        setActiveReport('embarcadores');
+      }
+    } else if (isCliente) {
+      if (activeReport !== 'clientes' && activeReport !== 'tempo-operacao') {
+        setActiveReport('clientes');
+      }
+    } else if (isAgenciadorEmbarque) {
+      if (activeReport !== 'comercial') {
+        setActiveReport('comercial');
+      }
     } else if (!canViewCommercialReport && activeReport === 'comercial') {
       setActiveReport('embarcadores');
     }
-  });
+  }, [isEmbarcador, isCliente, isAgenciadorEmbarque, canViewCommercialReport, activeReport]);
 
   const activeFiltersCount = (filterStatus.length > 0 ? 1 : 0) + 
     (filterExport.length > 0 ? 1 : 0) + 
@@ -492,14 +600,14 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
                     <MultiSelectDropdown label="Status do Embarque" options={statusOptions} selectedValues={filterStatus} onChange={setFilterStatus} placeholder="Todos..." />
                     <MultiSelectDropdown label="Destinação Carga" options={exportOptions} selectedValues={filterExport} onChange={setFilterExport} placeholder="Todas..." />
                     <MultiSelectDropdown label="Regime Tributário" options={driverRegimeOptions} selectedValues={filterDriverRegime} onChange={setFilterDriverRegime} placeholder="Todos..." />
-                    {!isCliente && (
+                    {!isCliente && !isAgenciadorEmbarque && (
                       <MultiSelectDropdown label="Cliente (Empresa)" options={clientOptions} selectedValues={filterClient} onChange={setFilterClient} placeholder="Todos..." />
                     )}
                     <MultiSelectDropdown label="CNPJ / Filial" options={cnpjOptions} selectedValues={filterClientCnpj} onChange={setFilterClientCnpj} placeholder="Todos os CNPJs..." />
                     <MultiSelectDropdown label="Origem" options={originOptions} selectedValues={filterOrigin} onChange={setFilterOrigin} placeholder="Todas..." />
                     <MultiSelectDropdown label="Destino" options={destOptions} selectedValues={filterDest} onChange={setFilterDest} placeholder="Todos..." />
-                    {!isCliente && (
-                      <MultiSelectDropdown label="Filial Agromercantil" options={branchOptions} selectedValues={filterBranch} onChange={setFilterBranch} placeholder="Todas..." />
+                    {!isCliente && !isAgenciadorEmbarque && (
+                      <MultiSelectDropdown label="Filial DLLOG Transportes" options={branchOptions} selectedValues={filterBranch} onChange={setFilterBranch} placeholder="Todas..." />
                     )}
                 </div>
                 {activeFiltersCount > 0 && (
@@ -514,38 +622,38 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       </div>
 
       {/* GLOBAL KPIs SECTION (para relatórios gerais) */}
-      {activeReport !== 'lucro-real' && activeReport !== 'outros' && (
+      {activeReport !== 'lucro-real' && activeReport !== 'outros' && !isAgenciadorEmbarque && (
         isCliente ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-                 <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/60 flex flex-shrink-0 items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/50"><ShipIcon className="w-5 h-5" /></div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-amber-100/80 dark:bg-amber-950/60 flex flex-shrink-0 items-center justify-center text-amber-800 dark:text-amber-400 border border-amber-300/80 dark:border-amber-800/50"><ShipIcon className="w-5 h-5" /></div>
                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5">Embarques Totais</p>
+                    <p className="text-[10px] text-gray-700 dark:text-gray-300 uppercase font-extrabold tracking-wider truncate mb-0.5">Embarques Totais</p>
                     <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{kpis.count}</p>
                  </div>
              </div>
-             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-                 <div className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700/60 flex flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600/50"><Package className="w-5 h-5" /></div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700/60 flex flex-shrink-0 items-center justify-center text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600/50"><Package className="w-5 h-5" /></div>
                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Programado">Total Programado</p>
+                    <p className="text-[10px] text-gray-700 dark:text-gray-300 uppercase font-extrabold tracking-wider truncate mb-0.5" title="Total Programado">Total Programado</p>
                     <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
-                       {filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
+                       {filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-semibold text-gray-600 dark:text-gray-400">ton</span>
                     </p>
                  </div>
              </div>
-             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-                 <div className="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 flex flex-shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/50"><CheckCircle className="w-5 h-5" /></div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-emerald-100/80 dark:bg-emerald-950/60 flex flex-shrink-0 items-center justify-center text-emerald-700 dark:text-emerald-400 border border-emerald-300/80 dark:border-emerald-800/50"><CheckCircle className="w-5 h-5" /></div>
                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Efetivado">Total Efetivado</p>
+                    <p className="text-[10px] text-gray-700 dark:text-gray-300 uppercase font-extrabold tracking-wider truncate mb-0.5" title="Total Efetivado">Total Efetivado</p>
                     <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
-                       {filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
+                       {filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-semibold text-gray-600 dark:text-gray-400">ton</span>
                     </p>
                  </div>
              </div>
-             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-                 <div className="w-9 h-9 rounded-lg bg-green-50 dark:bg-green-950/60 flex flex-shrink-0 items-center justify-center text-green-600 dark:text-green-400 border border-green-100 dark:border-green-800/50"><DollarSign className="w-5 h-5" /></div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-green-100/80 dark:bg-green-950/60 flex flex-shrink-0 items-center justify-center text-green-700 dark:text-green-400 border border-green-300/80 dark:border-green-800/50"><DollarSign className="w-5 h-5" /></div>
                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total em Frete">Total em Frete</p>
+                    <p className="text-[10px] text-gray-700 dark:text-gray-300 uppercase font-extrabold tracking-wider truncate mb-0.5" title="Total em Frete">Total em Frete</p>
                     <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.grossBilled)}>
                        R$ {(kpis.grossBilled / 1000).toFixed(1)}k
                     </p>
@@ -554,65 +662,79 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 mb-6">
-             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-                 <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/60 flex flex-shrink-0 items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/50"><ShipIcon className="w-5 h-5" /></div>
+             <div 
+               className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm"
+               title={`Total: ${kpis.count} | Com CT-e (efetivados): ${kpis.effectiveCount} | Sem CT-e (programados/ag.): ${kpis.programmedCount} | Cancelados: ${kpis.cancelledCount}`}
+             >
+                 <div className="w-9 h-9 rounded-lg bg-amber-100/80 dark:bg-amber-950/60 flex flex-shrink-0 items-center justify-center text-amber-800 dark:text-amber-400 border border-amber-300/80 dark:border-amber-800/50"><ShipIcon className="w-5 h-5" /></div>
                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5">Embarques</p>
-                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{kpis.count}</p>
+                    <p className="text-[10px] text-gray-700 dark:text-gray-300 uppercase font-extrabold tracking-wider truncate mb-0.5">Embarques</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-none">{kpis.count}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">✓ {kpis.effectiveCount} c/CT-e</span>
+                      <span className="text-[10px] text-gray-500">·</span>
+                      <span className="text-[10px] font-bold text-amber-800 dark:text-amber-400">{kpis.programmedCount} prog.</span>
+                      {kpis.cancelledCount > 0 && (
+                        <>
+                          <span className="text-[10px] text-gray-500">·</span>
+                          <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">{kpis.cancelledCount} canc.</span>
+                        </>
+                      )}
+                    </div>
                  </div>
              </div>
-             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-                 <div className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700/60 flex flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600/50"><Package className="w-5 h-5" /></div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700/60 flex flex-shrink-0 items-center justify-center text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600/50"><Package className="w-5 h-5" /></div>
                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Programado">Total Prog.</p>
+                    <p className="text-[10px] text-gray-700 dark:text-gray-300 uppercase font-extrabold tracking-wider truncate mb-0.5" title="Total Programado">Total Prog.</p>
                     <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
-                       {filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
+                       {filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-semibold text-gray-600 dark:text-gray-400">ton</span>
                     </p>
                  </div>
              </div>
-             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-                 <div className="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 flex flex-shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/50"><CheckCircle className="w-5 h-5" /></div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-emerald-100/80 dark:bg-emerald-950/60 flex flex-shrink-0 items-center justify-center text-emerald-700 dark:text-emerald-400 border border-emerald-300/80 dark:border-emerald-800/50"><CheckCircle className="w-5 h-5" /></div>
                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Efetivado">Total Efetiv.</p>
+                    <p className="text-[10px] text-gray-700 dark:text-gray-300 uppercase font-extrabold tracking-wider truncate mb-0.5" title="Total Efetivado">Total Efetiv.</p>
                     <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
-                       {filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
+                       {filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-semibold text-gray-600 dark:text-gray-400">ton</span>
                     </p>
                  </div>
              </div>
-             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-                 <div className="w-9 h-9 rounded-lg bg-green-50 dark:bg-green-950/60 flex flex-shrink-0 items-center justify-center text-green-600 dark:text-green-400 border border-green-100 dark:border-green-800/50"><DollarSign className="w-5 h-5" /></div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-green-100/80 dark:bg-green-950/60 flex flex-shrink-0 items-center justify-center text-green-700 dark:text-green-400 border border-green-300/80 dark:border-green-800/50"><DollarSign className="w-5 h-5" /></div>
                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Faturamento Bruto">Fat. Bruto</p>
+                    <p className="text-[10px] text-gray-700 dark:text-gray-300 uppercase font-extrabold tracking-wider truncate mb-0.5" title="Faturamento Bruto">Fat. Bruto</p>
                     <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.grossBilled)}>
                        R$ {(kpis.grossBilled / 1000).toFixed(1)}k
                     </p>
                  </div>
              </div>
 
-             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-                 <div className="w-9 h-9 rounded-lg bg-teal-50 dark:bg-teal-950/60 flex flex-shrink-0 items-center justify-center text-teal-600 dark:text-teal-400 border border-teal-100 dark:border-teal-800/50"><DollarSign className="w-5 h-5" /></div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-teal-100/80 dark:bg-teal-950/60 flex flex-shrink-0 items-center justify-center text-teal-700 dark:text-teal-400 border border-teal-300/80 dark:border-teal-800/50"><DollarSign className="w-5 h-5" /></div>
                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Lucro Estimado">Lucro Est.</p>
+                    <p className="text-[10px] text-gray-700 dark:text-gray-300 uppercase font-extrabold tracking-wider truncate mb-0.5" title="Lucro Estimado">Lucro Est.</p>
                     <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.profitMargin)}>
                        R$ {(kpis.profitMargin / 1000).toFixed(1)}k
                     </p>
                  </div>
              </div>
 
-             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-                 <div className="w-9 h-9 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 flex flex-shrink-0 items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50"><DollarSign className="w-5 h-5" /></div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-amber-100/80 dark:bg-amber-950/60 flex flex-shrink-0 items-center justify-center text-amber-800 dark:text-amber-400 border border-amber-300/80 dark:border-amber-800/50"><DollarSign className="w-5 h-5" /></div>
                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Lucro Efetivado">Lucro Efe.</p>
+                    <p className="text-[10px] text-gray-700 dark:text-gray-300 uppercase font-extrabold tracking-wider truncate mb-0.5" title="Lucro Efetivado">Lucro Efe.</p>
                     <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.totalProfitMargin)}>
                        R$ {(kpis.totalProfitMargin / 1000).toFixed(1)}k
                     </p>
                  </div>
              </div>
 
-             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-                 <div className="w-9 h-9 rounded-lg bg-purple-50 dark:bg-purple-950/60 flex flex-shrink-0 items-center justify-center text-purple-600 dark:text-purple-400 border border-purple-100 dark:border-purple-800/50"><TrendingUp className="w-5 h-5" /></div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-purple-100/80 dark:bg-purple-950/60 flex flex-shrink-0 items-center justify-center text-purple-800 dark:text-purple-400 border border-purple-300/80 dark:border-purple-800/50"><TrendingUp className="w-5 h-5" /></div>
                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Margem de Lucro Total">Margem</p>
+                    <p className="text-[10px] text-gray-700 dark:text-gray-300 uppercase font-extrabold tracking-wider truncate mb-0.5" title="Margem de Lucro Total">Margem</p>
                     <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${kpis.percentageMargin.toFixed(2)}% (Efetivado: ${kpis.effectivePercentageMargin.toFixed(2)}%)`}>
                        {kpis.percentageMargin.toFixed(1)}%
                     </p>

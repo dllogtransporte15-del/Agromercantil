@@ -12,7 +12,8 @@ import { getMatchedCargo } from '../utils';
 import FreightOfferModal from './FreightOfferModal';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
-import { isDemoUser } from '../auth';
+import { isDemoUser, isDeveloperUser } from '../auth';
+import { calculateOfferRoute, type ResolvedWaypoint } from '../services/routeDistanceService';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -21,14 +22,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-interface Waypoint {
-  label: string;
-  subLabel?: string;
-  lat: number;
-  lng: number;
-  isExact: boolean;
-  type: 'origin' | 'destination' | 'via';
-}
+type Waypoint = ResolvedWaypoint;
 
 interface RouteData {
   distanceKm: number;
@@ -36,6 +30,7 @@ interface RouteData {
   coordinates: [number, number][];
   bounds: L.LatLngBounds | null;
   waypoints: Waypoint[];
+  isExact?: boolean;
 }
 
 class MapErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
@@ -78,216 +73,6 @@ function MapUpdater({ bounds }: { bounds: L.LatLngBounds | null }) {
 
 const DEFAULT_CENTER: [number, number] = [-15.7801, -47.9292];
 
-const parseCoordinatesFromText = (str: string | undefined): { lat: number; lng: number } | null => {
-  if (!str) return null;
-  const trimmed = str.trim();
-  
-  // 1. Direct "lat, lng" e.g. -16.2341, -47.9123 or -16.2341 -47.9123
-  const directCoordMatch = trimmed.match(/^(-?\d{1,2}\.\d+)\s*[\s,]\s*(-?\d{1,3}\.\d+)$/);
-  if (directCoordMatch) {
-    const lat = parseFloat(directCoordMatch[1]);
-    const lng = parseFloat(directCoordMatch[2]);
-    if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-      return { lat, lng };
-    }
-  }
-
-  // 2. Google Maps @lat,lng e.g. maps.google.com/maps/@-16.2341,-47.9123,17z
-  const atCoordMatch = trimmed.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-  if (atCoordMatch) {
-    const lat = parseFloat(atCoordMatch[1]);
-    const lng = parseFloat(atCoordMatch[2]);
-    if (!isNaN(lat) && !isNaN(lng)) {
-      return { lat, lng };
-    }
-  }
-
-  // 3. Google Maps 3d/4d params e.g. !3d-16.2341!4d-47.9123 or 3d-16.2341!4d-47.9123
-  const d3d4Match = trimmed.match(/!?3d(-?\d+\.\d+)!?4d(-?\d+\.\d+)/);
-  if (d3d4Match) {
-    const lat = parseFloat(d3d4Match[1]);
-    const lng = parseFloat(d3d4Match[2]);
-    if (!isNaN(lat) && !isNaN(lng)) {
-      return { lat, lng };
-    }
-  }
-
-  // 4. Google Maps query/ll params e.g. ?q=-16.2341,-47.9123 or &ll=-16.2341,-47.9123
-  const paramMatch = trimmed.match(/[?&](?:q|ll|destination|origin|center)=(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/i);
-  if (paramMatch) {
-    const lat = parseFloat(paramMatch[1]);
-    const lng = parseFloat(paramMatch[2]);
-    if (!isNaN(lat) && !isNaN(lng)) {
-      return { lat, lng };
-    }
-  }
-
-  // 5. Google Maps /place/lat,lng/ or /dir/lat,lng/
-  const pathMatch = trimmed.match(/\/(?:place|dir|search)\/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/i);
-  if (pathMatch) {
-    const lat = parseFloat(pathMatch[1]);
-    const lng = parseFloat(pathMatch[2]);
-    if (!isNaN(lat) && !isNaN(lng)) {
-      return { lat, lng };
-    }
-  }
-
-  return null;
-};
-
-const extractPlaceNameFromUrl = (url: string): string | null => {
-  const match = url.match(/\/place\/([^\/@?]+)/);
-  if (match && match[1]) {
-    try {
-      const decoded = decodeURIComponent(match[1].replace(/\+/g, ' ')).trim();
-      if (decoded && !/^-?\d+\.\d+/.test(decoded)) {
-        return decoded;
-      }
-    } catch (e) {
-      return match[1].replace(/\+/g, ' ').trim();
-    }
-  }
-  return null;
-};
-
-const resolveLocationToWaypoint = async (
-  locationStr: string | undefined,
-  cityStr: string,
-  type: 'origin' | 'destination' | 'via'
-): Promise<Waypoint | null> => {
-  let targetLocation = locationStr?.trim() || '';
-  let extractedCoords = parseCoordinatesFromText(targetLocation);
-  let extractedPlaceName: string | null = null;
-
-  const urlMatch = targetLocation.match(/(https?:\/\/[^\s]+)/i);
-  const url = urlMatch ? urlMatch[0] : null;
-
-  if (url && !extractedCoords) {
-    extractedPlaceName = extractPlaceNameFromUrl(url);
-
-    if (url.includes('goo.gl') || url.includes('maps.app') || url.includes('shorturl') || url.includes('bit.ly') || url.includes('t.co')) {
-      try {
-        const proxyResp = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
-        if (proxyResp.ok) {
-          const data = await proxyResp.json();
-          const finalUrl = data.status?.url || data.contents || '';
-          extractedCoords = parseCoordinatesFromText(finalUrl);
-          if (!extractedPlaceName) {
-            extractedPlaceName = extractPlaceNameFromUrl(finalUrl);
-          }
-        }
-      } catch (e) {
-        console.warn('Could not unshorten URL via proxy:', e);
-      }
-    }
-  }
-
-  if (extractedCoords) {
-    const cleanLabel = targetLocation.replace(/https?:\/\/[^\s]+/g, '').trim();
-    const label = cleanLabel && cleanLabel.length > 2 && !cleanLabel.startsWith('-')
-      ? cleanLabel 
-      : (extractedPlaceName || (type === 'origin' ? 'Origem' : type === 'destination' ? 'Destino' : 'Ponto de Apoio'));
-
-    return {
-      label,
-      subLabel: cityStr ? `Localização Exata (${cityStr})` : `Coordenadas: ${extractedCoords.lat.toFixed(4)}, ${extractedCoords.lng.toFixed(4)}`,
-      lat: extractedCoords.lat,
-      lng: extractedCoords.lng,
-      isExact: true,
-      type
-    };
-  }
-
-  const cityCoords = parseCoordinatesFromText(cityStr);
-  if (cityCoords) {
-    return {
-      label: `Coordenadas: ${cityCoords.lat.toFixed(4)}, ${cityCoords.lng.toFixed(4)}`,
-      lat: cityCoords.lat,
-      lng: cityCoords.lng,
-      isExact: true,
-      type
-    };
-  }
-
-  const cleanStr = (s: string) => s.replace(/https?:\/\/[^\s]+/g, '').replace(/[\\/]/g, ' ').trim();
-  const cleanLoc = cleanStr(targetLocation);
-  const cleanCity = cleanStr(cityStr);
-
-  if (extractedPlaceName && cleanCity) {
-    try {
-      const query = `${extractedPlaceName}, ${cleanCity}, Brasil`;
-      const resp = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=pt-br&countrycodes=br`
-      );
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data && data.length > 0) {
-          return {
-            label: extractedPlaceName,
-            subLabel: cleanCity,
-            lat: parseFloat(data[0].lat),
-            lng: parseFloat(data[0].lon),
-            isExact: true,
-            type
-          };
-        }
-      }
-    } catch (e) {
-      console.warn('Geocoding extracted place name failed:', e);
-    }
-  }
-
-  if (cleanLoc && cleanLoc.length > 2) {
-    try {
-      const query = `${cleanLoc}, ${cleanCity}, Brasil`;
-      const resp = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=pt-br&countrycodes=br`
-      );
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data && data.length > 0) {
-          return {
-            label: cleanLoc,
-            subLabel: cleanCity,
-            lat: parseFloat(data[0].lat),
-            lng: parseFloat(data[0].lon),
-            isExact: true,
-            type
-          };
-        }
-      }
-    } catch (e) {
-      console.warn('Geocoding exact location text failed:', e);
-    }
-  }
-
-  if (cleanCity && cleanCity.length > 2) {
-    try {
-      const query = `${cleanCity}, Brasil`;
-      const resp = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=pt-br&countrycodes=br`
-      );
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data && data.length > 0) {
-          return {
-            label: cleanCity,
-            subLabel: (cleanLoc || extractedPlaceName) ? `Local: "${cleanLoc || extractedPlaceName}" (não mapeado exatamente)` : undefined,
-            lat: parseFloat(data[0].lat),
-            lng: parseFloat(data[0].lon),
-            isExact: false,
-            type
-          };
-        }
-      }
-    } catch (e) {
-      console.warn('Geocoding city failed:', e);
-    }
-  }
-
-  return null;
-};
-
 const OfferRoutePreview: React.FC<{ offer: FreightOffer }> = ({ offer }) => {
   const [routeData, setRouteData] = useState<RouteData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -307,58 +92,33 @@ const OfferRoutePreview: React.FC<{ offer: FreightOffer }> = ({ offer }) => {
     }
 
     try {
-      const originRes = await resolveLocationToWaypoint(offer.originLocation, offer.origin, 'origin');
-      if (!originRes) {
-        setError(`Não foi possível localizar a Origem "${offer.origin}".`);
-        setIsLoading(false);
-        return;
+      const result = await calculateOfferRoute({
+        origin: offer.origin,
+        originLocation: offer.originLocation,
+        destination: offer.destination,
+        destinationLocation: offer.destinationLocation,
+        additionalDestinations: offer.additionalDestinations
+      });
+
+      if (!result) {
+        throw new Error('Não foi possível calcular a rota para as localizações.');
       }
 
-      const resolvedVias: Waypoint[] = [];
-      if (offer.additionalDestinations && offer.additionalDestinations.length > 0) {
-        for (const via of offer.additionalDestinations) {
-          if (via.city && via.city.trim().length >= 3) {
-            const viaRes = await resolveLocationToWaypoint(via.location, via.city, 'via');
-            if (viaRes) resolvedVias.push(viaRes);
-          }
-        }
-      }
-
-      const destRes = await resolveLocationToWaypoint(offer.destinationLocation, offer.destination, 'destination');
-      if (!destRes) {
-        setError(`Não foi possível localizar o Destino "${offer.destination}".`);
-        setIsLoading(false);
-        return;
-      }
-
-      const allWaypoints = [originRes, ...resolvedVias, destRes];
-
-      const waypointsParam = allWaypoints.map(w => `${w.lng},${w.lat}`).join(';');
-      const osrmResp = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${waypointsParam}?overview=full&geometries=geojson`
-      );
-
-      if (!osrmResp.ok) throw new Error('Falha no serviço de rotas OSRM.');
-
-      const osrmData = await osrmResp.json();
-      if (osrmData.code !== 'Ok' || !osrmData.routes || osrmData.routes.length === 0) {
-        throw new Error('Rota não encontrada entre as localizações.');
-      }
-
-      const route = osrmData.routes[0];
-      const distanceKm = route.distance / 1000;
-      const durationMin = Math.round(route.duration / 60);
-      const coordinates: [number, number][] = route.geometry.coordinates.map(
-        (c: [number, number]) => [c[1], c[0]]
-      );
+      const coordinates: [number, number][] = result.coordinates && result.coordinates.length > 0
+        ? result.coordinates
+        : [
+            [result.originCoords.lat, result.originCoords.lng],
+            [result.destinationCoords.lat, result.destinationCoords.lng]
+          ];
       const bounds = L.latLngBounds(coordinates);
 
       setRouteData({
-        distanceKm,
-        durationMin,
+        distanceKm: result.distanceKm,
+        durationMin: result.durationMin,
         coordinates,
         bounds,
-        waypoints: allWaypoints
+        waypoints: [result.originWaypoint, result.destinationWaypoint],
+        isExact: result.isExact
       });
     } catch (err: any) {
       console.error('Error fetching route in OfferRoutePreview:', err);
@@ -383,7 +143,7 @@ const OfferRoutePreview: React.FC<{ offer: FreightOffer }> = ({ offer }) => {
     <div className="bg-gray-50 dark:bg-gray-700/40 p-4 rounded-xl border border-gray-200/80 dark:border-gray-600 flex flex-col space-y-3 h-full">
       <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-gray-200 dark:border-gray-600">
         <div className="flex items-center gap-2">
-          <RouteIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+          <RouteIcon className="w-5 h-5 text-amber-600 dark:text-amber-400" />
           <h4 className="text-sm font-bold text-gray-800 dark:text-white">Roteiro da Oferta</h4>
         </div>
 
@@ -392,7 +152,7 @@ const OfferRoutePreview: React.FC<{ offer: FreightOffer }> = ({ offer }) => {
             type="button"
             onClick={loadRoute}
             disabled={isLoading}
-            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-sm transition-all disabled:opacity-50"
+            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-sm transition-all disabled:opacity-50"
             title="Recalcular rota com base nas localizações"
           >
             <Navigation className="w-3 h-3 text-white" />
@@ -400,20 +160,20 @@ const OfferRoutePreview: React.FC<{ offer: FreightOffer }> = ({ offer }) => {
           </button>
 
           {isLoading && (
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 rounded-full text-xs font-semibold animate-pulse">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 rounded-full text-xs font-semibold animate-pulse">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600 dark:text-amber-400" />
               Carregando...
             </div>
           )}
 
           {routeData && !isLoading && (
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 px-2.5 py-1 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-800 dark:text-indigo-200 rounded-full text-xs font-bold">
-                <RouteIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <div className="flex items-center gap-1 px-2.5 py-1 bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 rounded-full text-xs font-bold">
+                <RouteIcon className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                 {routeData.distanceKm.toFixed(0)} km
               </div>
-              <div className="flex items-center gap-1 px-2.5 py-1 bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded-full text-xs font-bold">
-                <Clock className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <div className="flex items-center gap-1 px-2.5 py-1 bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 rounded-full text-xs font-bold">
+                <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                 {formatDurationText(routeData.durationMin)}
               </div>
             </div>
@@ -446,7 +206,7 @@ const OfferRoutePreview: React.FC<{ offer: FreightOffer }> = ({ offer }) => {
             {routeData?.coordinates && routeData.coordinates.length > 0 && (
               <Polyline
                 positions={routeData.coordinates}
-                color="#4f46e5"
+                color="#A67142"
                 weight={5}
                 opacity={0.85}
               />
@@ -456,7 +216,7 @@ const OfferRoutePreview: React.FC<{ offer: FreightOffer }> = ({ offer }) => {
               <Marker key={idx} position={[wp.lat, wp.lng]}>
                 <Popup>
                   <div className="text-xs">
-                    <strong className="block text-indigo-700 font-bold mb-1">
+                    <strong className="block text-amber-700 font-bold mb-1">
                       {wp.type === 'origin' ? '📍 Origem' : wp.type === 'destination' ? '🏁 Destino' : `Via ${idx}`}
                     </strong>
                     <div className="font-semibold text-gray-800">{wp.label}</div>
@@ -480,7 +240,7 @@ const OfferRoutePreview: React.FC<{ offer: FreightOffer }> = ({ offer }) => {
             {routeData.waypoints.map((wp, i) => (
               <div key={i} className="flex items-center justify-between bg-white dark:bg-gray-800 p-2 rounded-lg border border-gray-200/80 dark:border-gray-700">
                 <div className="flex items-center gap-2 overflow-hidden">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white shrink-0 ${wp.type === 'origin' ? 'bg-emerald-600' : wp.type === 'destination' ? 'bg-red-600' : 'bg-indigo-600'}`}>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white shrink-0 ${wp.type === 'origin' ? 'bg-emerald-600' : wp.type === 'destination' ? 'bg-red-600' : 'bg-amber-600'}`}>
                     {wp.type === 'origin' ? 'Origem' : wp.type === 'destination' ? 'Destino' : `Via ${i}`}
                   </span>
                   <span className="font-semibold text-gray-800 dark:text-gray-200 truncate">{wp.label}</span>
@@ -497,6 +257,100 @@ const OfferRoutePreview: React.FC<{ offer: FreightOffer }> = ({ offer }) => {
   );
 };
 
+const OfferPercursoCell: React.FC<{
+  offer: FreightOffer;
+  onUpdateOffer?: (updated: FreightOffer) => void;
+}> = ({ offer, onUpdateOffer }) => {
+  const [distanceKm, setDistanceKm] = useState<number | null>(offer.distanceKm ?? null);
+  const [isExact, setIsExact] = useState<boolean>(offer.isExactDistance ?? Boolean(offer.originCoords && offer.destinationCoords));
+  const [loading, setLoading] = useState<boolean>(!offer.distanceKm && Boolean(offer.origin && offer.destination));
+
+  useEffect(() => {
+    if (offer.distanceKm) {
+      setDistanceKm(offer.distanceKm);
+      setIsExact(offer.isExactDistance ?? Boolean(offer.originCoords && offer.destinationCoords));
+      setLoading(false);
+      return;
+    }
+
+    if (!offer.origin || !offer.destination) {
+      setLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    setLoading(true);
+
+    calculateOfferRoute({
+      origin: offer.origin,
+      originLocation: offer.originLocation,
+      destination: offer.destination,
+      destinationLocation: offer.destinationLocation,
+      additionalDestinations: offer.additionalDestinations
+    }).then(res => {
+      if (!isMounted) return;
+      if (res) {
+        setDistanceKm(res.distanceKm);
+        setIsExact(res.isExact);
+        if (!offer.distanceKm && onUpdateOffer) {
+          onUpdateOffer({
+            ...offer,
+            distanceKm: res.distanceKm,
+            isExactDistance: res.isExact,
+            originCoords: res.originCoords,
+            destinationCoords: res.destinationCoords
+          });
+        }
+      }
+      setLoading(false);
+    }).catch(() => {
+      if (isMounted) setLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [offer.id, offer.distanceKm, offer.origin, offer.originLocation, offer.destination, offer.destinationLocation]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-gray-400 animate-pulse">
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+        <span>Calculando...</span>
+      </div>
+    );
+  }
+
+  if (distanceKm === null || distanceKm === 0) {
+    return <span className="text-xs text-gray-400">-</span>;
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-0.5">
+      <span
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition-all ${
+          isExact
+            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 shadow-xs'
+            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700'
+        }`}
+        title={isExact ? 'Distância rodoviária calculada via link exato de localização' : 'Distância estimada entre cidades'}
+      >
+        <RouteIcon className={`w-3.5 h-3.5 ${isExact ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500'}`} />
+        {isExact ? `${distanceKm} km` : `~${distanceKm} km`}
+      </span>
+      <span className="text-[10px] font-medium flex items-center gap-1">
+        {isExact ? (
+          <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+            Pontos exatos
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">Entre cidades</span>
+        )}
+      </span>
+    </div>
+  );
+};
 
 interface FreightOffersListProps {
   offers: FreightOffer[];
@@ -617,10 +471,10 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
             href={url} 
             target="_blank" 
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 hover:text-blue-800 transition-colors dark:bg-blue-900/30 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/50"
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md hover:bg-amber-100 hover:text-amber-800 transition-colors dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/50"
             title={url}
           >
-            <MapPinIcon className="w-3 h-3 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+            <MapPinIcon className="w-3 h-3 flex-shrink-0 text-amber-600 dark:text-amber-400" />
             Ver Localização
           </a>
         </div>
@@ -637,7 +491,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
       case FreightOfferStatus.Pendente: return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400';
       case FreightOfferStatus.Aceita: return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400';
       case FreightOfferStatus.Recusada: return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400';
-      case FreightOfferStatus.Contraproposta: return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400';
+      case FreightOfferStatus.Contraproposta: return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400';
       case FreightOfferStatus.ContrapropostaAceita: return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400';
       case FreightOfferStatus.AguardandoFechamento: return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400';
       case FreightOfferStatus.SolicitadoExclusao: return 'bg-red-100 text-red-800 border border-red-300 dark:bg-red-900/40 dark:text-red-300 animate-pulse';
@@ -657,7 +511,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
       <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 flex items-center gap-2">
-        <PackageIcon className="w-5 h-5 text-indigo-500" />
+        <PackageIcon className="w-5 h-5 text-amber-500" />
         <h3 className="font-semibold text-gray-800 dark:text-white">
           {title || (isClientProfile ? 'Minhas Ofertas de Frete' : 'Ofertas de Frete Pendentes')}
         </h3>
@@ -671,6 +525,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
               {!isClientProfile && <th className="px-4 py-3 font-medium">Cliente</th>}
               <th className="px-4 py-3 font-medium">Origem</th>
               <th className="px-4 py-3 font-medium">Destino</th>
+              <th className="px-4 py-3 font-medium">Percurso</th>
               <th className="px-4 py-3 font-medium">Produto</th>
               <th className="px-4 py-3 font-medium">Total (Ton)</th>
               <th className="px-4 py-3 font-medium">Valor (R$/Ton)</th>
@@ -685,8 +540,8 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
 
               return (
               <tr key={offer.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                <td className="px-4 py-3 text-xs font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
-                  <span className="inline-block px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-800 rounded-md">
+                <td className="px-4 py-3 text-xs font-bold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                  <span className="inline-block px-2 py-0.5 bg-amber-50 dark:bg-amber-900/40 border border-amber-200 dark:border-amber-800 rounded-md">
                     {offer.displayId || offer.id}
                   </span>
                 </td>
@@ -732,7 +587,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                       {offer.additionalDestinations && offer.additionalDestinations.length > 0 && (
                         <button 
                           onClick={() => setDetailsModal(offer)}
-                          className="px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 bg-indigo-100 hover:bg-indigo-200 border border-indigo-200 rounded-full transition-colors flex items-center justify-center min-w-[20px]"
+                          className="px-1.5 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 border border-amber-200 rounded-full transition-colors flex items-center justify-center min-w-[20px]"
                           title="Ver oferta para mais destinos"
                         >
                           +{offer.additionalDestinations.length}
@@ -742,12 +597,15 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                     {renderLocationValue(offer.destinationLocation, "block text-xs text-gray-500 mt-1")}
                   </div>
                 </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <OfferPercursoCell offer={offer} onUpdateOffer={onSaveFreightOffer} />
+                </td>
                 <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
                   <div>{getProductName(offer.productId)}</div>
                   {(offer.freightType || offer.hasIcms !== undefined) && (
                     <div className="flex items-center gap-1 mt-1 flex-wrap">
                       {offer.freightType && (
-                        <span className="px-1.5 py-0.5 text-[10px] font-bold text-blue-700 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded">
+                        <span className="px-1.5 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded">
                           {offer.freightType}
                         </span>
                       )}
@@ -785,7 +643,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                     <>
                       <div>{offer.freightValuePerTon ? `R$ ${offer.freightValuePerTon.toFixed(2)}` : 'Aguardando Preço'}</div>
                       {offer.counterOfferValue && (
-                        <div className="text-xs text-blue-500 font-medium mt-0.5">
+                        <div className="text-xs text-amber-500 font-medium mt-0.5">
                           Contraproposta: R$ {offer.counterOfferValue.toFixed(2)}
                         </div>
                       )}
@@ -866,7 +724,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                           <button onClick={() => {
                             setCounterOfferModal(offer);
                             setCounterValue('');
-                          }} title="Enviar Preço" className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
+                          }} title="Enviar Preço" className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors">
                             <MessageCircleIcon className="w-4 h-4" />
                           </button>
                         )}
@@ -880,7 +738,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                             }} 
                             disabled={offer.status === FreightOfferStatus.AguardandoFechamento}
                             title={offer.status === FreightOfferStatus.AguardandoFechamento ? "Edição desabilitada - Aguardando Fechamento" : "Editar Preço Enviado"} 
-                            className={`p-1.5 rounded-lg transition-colors ${offer.status === FreightOfferStatus.AguardandoFechamento ? 'text-gray-400 bg-gray-100 cursor-not-allowed dark:bg-gray-700/50 dark:text-gray-500' : 'text-blue-600 bg-blue-50 hover:bg-blue-100'}`}
+                            className={`p-1.5 rounded-lg transition-colors ${offer.status === FreightOfferStatus.AguardandoFechamento ? 'text-gray-400 bg-gray-100 cursor-not-allowed dark:bg-gray-700/50 dark:text-gray-500' : 'text-amber-600 bg-amber-50 hover:bg-amber-100'}`}
                           >
                             <Edit className="w-4 h-4" />
                           </button>
@@ -900,7 +758,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                             <button onClick={() => onAccept(offer)} title="Aceitar Oferta" className="p-1.5 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
                               <CheckIcon className="w-4 h-4" />
                             </button>
-                            <button onClick={() => setCounterOfferModal(offer)} title="Fazer Contraproposta" className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
+                            <button onClick={() => setCounterOfferModal(offer)} title="Fazer Contraproposta" className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors">
                               <MessageCircleIcon className="w-4 h-4" />
                             </button>
                             <button onClick={() => onRefuse(offer)} title="Recusar Oferta" className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">
@@ -909,7 +767,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                           </>
                         )}
                         {offer.status === FreightOfferStatus.Aceita && onConvertToCargo && !matchedCargo && (
-                          <button onClick={() => onConvertToCargo(offer)} title="Gerar Carga a partir desta oferta" className="p-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors flex items-center gap-1">
+                          <button onClick={() => onConvertToCargo(offer)} title="Gerar Carga a partir desta oferta" className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors flex items-center gap-1">
                             <PackageIcon className="w-4 h-4" />
                           </button>
                         )}
@@ -928,7 +786,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                               <button
                                 onClick={() => setEditingOfferModal(offer)}
                                 title="Editar Oferta de Frete"
-                                className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
+                                className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50"
                               >
                                 <Edit className="w-4 h-4" />
                               </button>
@@ -988,7 +846,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                             }} title="Aceitar Preço" className="p-1.5 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
                               <CheckIcon className="w-4 h-4" />
                             </button>
-                            <button onClick={() => setCounterOfferModal(offer)} title="Fazer Contraproposta" className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
+                            <button onClick={() => setCounterOfferModal(offer)} title="Fazer Contraproposta" className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors">
                               <MessageCircleIcon className="w-4 h-4" />
                             </button>
                             <button onClick={() => onRefuse(offer)} title="Recusar Preço" className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">
@@ -1024,7 +882,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                     <button
                       onClick={() => setDetailsModal(offer)}
                       title="Visualizar Solicitação"
-                      className={`transition-colors rounded-lg flex items-center gap-1.5 ${offer.driverId && !isClientProfile ? 'px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200' : 'p-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100'}`}
+                      className={`transition-colors rounded-lg flex items-center gap-1.5 ${offer.driverId && !isClientProfile ? 'px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200' : 'p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100'}`}
                     >
                       <EyeIcon className="w-4 h-4" />
                       {offer.driverId && !isClientProfile && <span>Visualizar</span>}
@@ -1033,7 +891,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                       <HistoryIcon className="w-4 h-4" />
                     </button>
                     {/* Botão de Excluir (Apenas Admin) */}
-                    {onDelete && currentUser?.profile === UserProfile.Admin && !isDemo && (
+                    {onDelete && (currentUser?.profile === UserProfile.Admin || isDeveloperUser(currentUser)) && !isDemo && (
                       <button onClick={() => onDelete(offer)} title="Excluir Oferta" className="p-1.5 text-red-600 bg-red-50 hover:bg-red-200 rounded-lg transition-colors">
                         <TrashIcon className="w-4 h-4" />
                       </button>
@@ -1049,7 +907,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
         <div className="p-3 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 text-center">
           <button 
             onClick={() => setIsExpanded(!isExpanded)}
-            className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors"
+            className="text-sm font-medium text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors"
           >
             {isExpanded ? 'Exibir Menos' : `Exibir Mais (${offers.length - 2})`}
           </button>
@@ -1094,7 +952,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                   <button type="button" onClick={() => setCounterOfferModal(null)} className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
                     Cancelar
                   </button>
-                  <button type="submit" className="px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">
+                  <button type="submit" className="px-3 py-1.5 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors">
                     {counterOfferModal.status === FreightOfferStatus.AguardandoPreco 
                       ? 'Enviar Preço' 
                       : counterOfferModal.status === FreightOfferStatus.AnaliseCliente 
@@ -1113,7 +971,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]">
             <div className="flex justify-between items-center p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
               <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                <HistoryIcon className="w-5 h-5 text-indigo-500" />
+                <HistoryIcon className="w-5 h-5 text-amber-500" />
                 Histórico da Negociação
               </h3>
               <button onClick={() => setHistoryModal(null)} className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full">
@@ -1125,7 +983,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                 <div className="relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 dark:before:via-gray-600 before:to-transparent">
                   {historyModal.history.map((log, i) => (
                     <div key={log.id || i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active mb-4 last:mb-0">
-                      <div className="flex items-center justify-center w-10 h-10 rounded-full border border-white dark:border-gray-800 bg-indigo-50 dark:bg-indigo-900/50 text-indigo-500 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 relative z-10">
+                      <div className="flex items-center justify-center w-10 h-10 rounded-full border border-white dark:border-gray-800 bg-amber-50 dark:bg-amber-900/50 text-amber-500 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 relative z-10">
                         <HistoryIcon className="w-4 h-4" />
                       </div>
                       <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
@@ -1155,9 +1013,9 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="flex justify-between items-center p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 shrink-0">
               <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                <PackageIcon className="w-5 h-5 text-indigo-500" />
+                <PackageIcon className="w-5 h-5 text-amber-500" />
                 Detalhes da Oferta
-                <span className="text-xs font-semibold px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-md">
+                <span className="text-xs font-semibold px-2 py-0.5 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded-md">
                   {detailsModal.displayId || detailsModal.id}
                 </span>
               </h3>
@@ -1223,6 +1081,27 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                     </div>
                   </div>
 
+                  <div>
+                    <span className="font-semibold block text-gray-500 dark:text-gray-400 mb-1">Percurso Rodoviário:</span>
+                    <div className="bg-amber-50/70 dark:bg-amber-950/40 p-3 rounded-lg border border-amber-100 dark:border-amber-800/60 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <RouteIcon className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                        <span className="text-sm font-bold text-gray-900 dark:text-white">
+                          {detailsModal.distanceKm ? `${detailsModal.distanceKm} km` : 'Calculando...'}
+                        </span>
+                      </div>
+                      {detailsModal.isExactDistance ? (
+                        <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                          ✓ Pontos exatos do link
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                          Entre cidades
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-600">
                       <span className="font-semibold block text-gray-500 dark:text-gray-400 mb-1">Produto:</span>
@@ -1269,14 +1148,14 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                           return (
                           <li key={i} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-600 text-sm font-medium text-gray-900 dark:text-gray-100">
                             <div className="flex items-center gap-2 overflow-hidden truncate">
-                              <PaperclipIcon className="w-4 h-4 text-indigo-500 shrink-0" />
+                              <PaperclipIcon className="w-4 h-4 text-amber-500 shrink-0" />
                               <span className="truncate">{displayName}</span>
                             </div>
                             {isUrl ? (
                               <button 
                                 type="button"
                                 onClick={() => openDocumentInNewTab(fileUrlOrName, displayName)}
-                                className="px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50 rounded-lg transition-colors ml-2 shrink-0 flex items-center gap-1.5 cursor-pointer"
+                                className="px-2.5 py-1 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50 rounded-lg transition-colors ml-2 shrink-0 flex items-center gap-1.5 cursor-pointer"
                                 title="Abrir documento em nova janela"
                               >
                                 <EyeIcon className="w-3.5 h-3.5" />
@@ -1469,6 +1348,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
             setEditingOfferModal(null);
           }}
           editingOffer={editingOfferModal}
+          currentUser={currentUser}
         />
       )}
 

@@ -65,7 +65,7 @@ const ChangeDailyScheduleModal: React.FC<ChangeDailyScheduleModalProps> = ({ isO
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status da Demanda</label>
             <div className="space-y-2">
                 {Object.values(DailyScheduleType).map(type => (
-                    <label key={type} className="flex items-center p-3 border rounded-lg dark:border-gray-600 has-[:checked]:bg-blue-50 dark:has-[:checked]:bg-blue-900/50 has-[:checked]:border-primary dark:has-[:checked]:border-blue-500 cursor-pointer">
+                    <label key={type} className="flex items-center p-3 border rounded-lg dark:border-gray-600 has-[:checked]:bg-amber-50 dark:has-[:checked]:bg-amber-900/50 has-[:checked]:border-primary dark:has-[:checked]:border-amber-500 cursor-pointer">
                         <input
                             type="radio"
                             name="scheduleType"

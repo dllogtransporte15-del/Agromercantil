@@ -46,7 +46,7 @@ const EmbarcadorTable: React.FC<EmbarcadorTableProps> = ({ embarcadores, onEdit,
                 {(onEdit || onDelete) && (
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     {onEdit && (
-                      <button onClick={() => onEdit(embarcador)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">
+                      <button onClick={() => onEdit(embarcador)} className="text-amber-600 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-300">
                         Editar
                       </button>
                     )}

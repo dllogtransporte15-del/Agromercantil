@@ -11,13 +11,14 @@ import RecommendedDriversModal from '../components/RecommendedDriversModal';
 import AttachmentModal from '../components/AttachmentModal';
 import BulkCargoImportModal from '../components/BulkCargoImportModal';
 import { REQUIRED_DOCUMENT_MAP } from '../types';
-import type { Cargo, Client, Product, Driver, Shipment, Vehicle, User, ProfilePermissions, VehicleSetType, VehicleBodyType, Branch, RiskQueryOption } from '../types';
+import type { Cargo, Client, Product, Driver, Shipment, Vehicle, User, ProfilePermissions, VehicleSetType, VehicleBodyType, Branch, RiskQueryOption, Owner } from '../types';
 import { can, isDemoUser } from '../auth';
 import { CopyIcon } from '../components/icons/CopyIcon';
 import { CargoStatus, UserProfile, ShipmentStatus } from '../types';
 import ShipmentTable from '../components/ShipmentTable';
 import { StayRecord } from '../utils/toolStorage';
 import { formatFretebrasVehicleTypes } from '../utils/formatters';
+import { findCargoById, findProductForCargo, checkRequiresRiskManagement } from '../utils';
 import type { Ticket } from '../types';
 
 interface OperationalLoadsPageProps {
@@ -25,6 +26,7 @@ interface OperationalLoadsPageProps {
   clients: Client[];
   products: Product[];
   drivers: Driver[];
+  owners?: Owner[];
   vehicles: Vehicle[];
   shipments: Shipment[];
   allShipments: Shipment[];
@@ -48,6 +50,8 @@ interface OperationalLoadsPageProps {
     filesToAttach: { [key: string]: File[] }, 
     bankDetails?: string, 
     loadedTonnage?: number, 
+    driverFreightValue?: number,
+    icmsValue?: number,
     advancePercentage?: number, 
     advanceValue?: number,
     tollValue?: number, 
@@ -61,9 +65,11 @@ interface OperationalLoadsPageProps {
     riskReleaseCode?: string,
     riskQueryType?: string,
     riskQueryCost?: number,
+    realProfitData?: any,
+    codigoAtua?: string,
   }) => Promise<void>;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => void;
   riskQueryOptions?: RiskQueryOption[];
   onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
 }
@@ -87,6 +93,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   clients,
   products,
   drivers,
+  owners = [],
   vehicles,
   shipments,
   allShipments,
@@ -121,20 +128,9 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   const isDemo = isDemoUser(currentUser);
   const canCreateShipment = !isDemo && can('create', currentUser, 'shipments', profilePermissions);
   const canUpdateLoad = !isDemo && can('update', currentUser, 'loads', profilePermissions);
-  const canCreateLoad = !isDemo && can('create', currentUser, 'loads', profilePermissions);
-
-  const [isDuplicate, setIsDuplicate] = useState(false);
 
   const handleEditLoad = (load: Cargo) => {
     setLoadToEdit(load);
-    setIsDuplicate(false);
-    setInitialModalStep(1);
-    setIsLoadFormModalOpen(true);
-  };
-
-  const handleDuplicateLoad = (cargo: Cargo) => {
-    setLoadToEdit(cargo);
-    setIsDuplicate(true);
     setInitialModalStep(1);
     setIsLoadFormModalOpen(true);
   };
@@ -143,9 +139,16 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   const operationalLoads = React.useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
     return loads.filter(load => {
-      // Oculta cargas suspensas ou fechadas
-      if (load.status === CargoStatus.Suspensa || load.status === CargoStatus.Fechada) {
-        return false;
+      // Regra para perfil Motorista: exibir estritamente as cargas cujo status/etapa seja "Cargas em Operação" (CargoStatus.EmAndamento)
+      if (currentUser.profile === UserProfile.Motorista) {
+        if (load.status !== CargoStatus.EmAndamento) {
+          return false;
+        }
+      } else {
+        // Oculta cargas suspensas ou fechadas para os demais perfis
+        if (load.status === CargoStatus.Suspensa || load.status === CargoStatus.Fechada) {
+          return false;
+        }
       }
       // Oculta cargas sem programação ativa a partir de hoje
       const hasActiveSchedule = Array.isArray(load.dailySchedule) && load.dailySchedule.some(ds => ds.date >= today);
@@ -154,7 +157,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       }
       return true;
     });
-  }, [loads]);
+  }, [loads, currentUser.profile]);
 
   const handleFilteredLoadsChange = useCallback((filteredLoads: Cargo[]) => {
     setDisplayedLoads(filteredLoads);
@@ -236,7 +239,6 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   const handleCloseLoadFormModal = () => {
     setIsLoadFormModalOpen(false);
     setLoadToEdit(null);
-    setIsDuplicate(false);
   };
 
   const handleShowHistory = (load: Cargo) => {
@@ -249,14 +251,14 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
     handleCloseLoadFormModal();
   };
 
-  const handleSaveShipment = (shipmentData: any) => {
-    if (selectedCargo) {
-      onCreateShipment({
-        cargoId: selectedCargo.id,
+  const handleSaveShipment = async (shipmentData: any) => {
+    const cargoId = selectedCargo?.id || shipmentData.cargoId;
+    if (cargoId && onCreateShipment) {
+      await onCreateShipment({
         ...shipmentData,
+        cargoId,
       });
     }
-    handleCloseShipmentModal();
   };
   
   const handleShareLoads = () => {
@@ -266,52 +268,28 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       return;
     }
 
-    const header = '🌽 *LIBERADOS AGROMERCANTIL* 🌽\n';
+    const header = '🌐 *LIBERADOS DLLOG TRANSPORTES* 🌐\n';
 
     const loadsText = loadsToShare.map(load => {
       const product = products.find(p => p.id === load.productId)?.name?.toUpperCase() || 'N/A';
       const origin = load.origin.toUpperCase();
       const destination = load.destination.toUpperCase();
-      
-      const pjVal = load.freightLegs && load.freightLegs.length > 0 
-        ? load.freightLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTon || 0), 0)
-        : (load.driverFreightValuePerTon || 0);
-
-      const hasPjToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
-      const pjTollText = hasPjToll ? ' + Ped' : '';
-      const pjFormatted = `R$ ${pjVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${pjTollText} PJ`;
-
-      const allPfDisabled = load.freightLegs && load.freightLegs.length > 0 && load.freightLegs.every(l => l.disablePfFreight);
-      
-      let priceText = pjFormatted;
-      if (!allPfDisabled) {
-        const pfVal = load.freightLegs && load.freightLegs.length > 0
-          ? load.freightLegs.reduce((sum, leg) => sum + (leg.disablePfFreight ? 0 : (leg.driverFreightValuePerTonPf ?? leg.driverFreightValuePerTon ?? 0)), 0)
-          : (load.driverFreightValuePerTon || 0);
-        
-        const hasPfToll = load.driverFreightPfHasToll || load.freightLegs?.some(l => l.driverFreightPfHasToll);
-        const pfTollText = hasPfToll ? ' + Ped' : '';
-        const pfFormatted = `R$ ${pfVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${pfTollText} PF`;
-        priceText = `${pjFormatted} - ${pfFormatted}`;
-      }
-
+      const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
+      const tollText = hasToll ? ' + Ped' : '';
+      const priceText = (load.driverFreightValuePerTon && load.driverFreightValuePerTon > 0)
+        ? `R$ ${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`
+        : 'A combinar';
       const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
 
-      const lines = [
-        `📍 ${origin} x ${destination} `,
-        `🌾 ${product} - `,
-        `💲 ${priceText}\t`,
-        `🚛 ${bodyTypes} 🚛`
-      ];
-
+      let text = `📍 ${origin} x ${destination} \n🌾 ${product} - 💲 ${priceText}\t\n🚛 ${bodyTypes} 🚛`;
+      
       if (load.originMapLink) {
-        lines.push(`📍Coleta - ${load.originMapLink}`);
+        text += `\n📍Coleta - ${load.originMapLink}`;
       }
       if (load.destinationMapLink) {
-        lines.push(`📍Entrega - ${load.destinationMapLink}`);
+        text += `\n📍Entrega - ${load.destinationMapLink}`;
       }
-
-      return lines.join('\n');
+      return text;
     }).join('\n\n');
 
     const textToCopy = header + '\n' + loadsText;
@@ -338,7 +316,9 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       const destination = load.destination;
       const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
       const tollText = hasToll ? ' + Ped' : '';
-      const price = `R$ ${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`;
+      const price = (load.driverFreightValuePerTon && load.driverFreightValuePerTon > 0)
+        ? `R$ ${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`
+        : 'A combinar';
       
       const allowed = load.allowedVehicleTypes || [];
       const vehicleTypes = formatFretebrasVehicleTypes(load.allowedVehicleTypes);
@@ -351,12 +331,12 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         `ORIGEM: ${origin}`,
         `DESTINO: ${destination}`,
         `PRODUTO: ${product}`,
-        `VALOR: A combinar`,
+        `VALOR: ${price}`,
         `VEÍCULO: ${vehicleTypes}`,
         `CARROCERIA: ${bodyTypes}`,
         `RASTREADA: ${rastreada}`,
         `LONA: Sim`,
-        `FORMA DE PAGAMENTO: Pix, Outro*`,
+        `FORMA DE PAGAMENTO: Pix, Cartão`,
         `OBSERVAÇÕES:`,
       ].join('\n');
     }).join('\n\n---\n\n');
@@ -403,7 +383,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
             </button>
             <button
               onClick={handleShareFretebras}
-              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200"
+              className="flex items-center px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 transition-all duration-200"
             >
               <CopyIcon className="w-5 h-5 mr-2" />
               {fretebrasButtonText}
@@ -414,7 +394,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       
       {currentUser.profile === UserProfile.Motorista && driverActiveShipments.length > 0 && (
         <div className="mb-8">
-          <h2 className="text-2xl font-semibold text-primary dark:text-blue-400 mb-4 border-b-2 border-primary pb-2">Meu Embarque em Andamento</h2>
+          <h2 className="text-2xl font-semibold text-primary dark:text-amber-400 mb-4 border-b-2 border-primary pb-2">Meu Embarque em Andamento</h2>
           <ShipmentTable
             shipments={driverActiveShipments}
             cargos={loads}
@@ -443,7 +423,6 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         onDailyBalanceDateChange={setDailyBalanceDate}
         onCreateShipment={!isDemo && canCreateShipment ? handleOpenNewShipmentModal : undefined} 
         onEdit={!isDemo && canUpdateLoad ? handleEditLoad : undefined}
-        onDuplicate={!isDemo && canCreateLoad ? handleDuplicateLoad : undefined}
         onShowHistory={handleShowHistory}
         onReactivate={!isDemo && (currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onReactivateLoad : undefined}
         onSuspend={!isDemo && (currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onSuspendLoad : undefined}
@@ -465,6 +444,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         onSave={handleSaveShipment}
         cargo={selectedCargo}
         drivers={drivers}
+        owners={owners}
         clients={clients}
         vehicles={vehicles}
         currentUser={currentUser}
@@ -484,7 +464,6 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         loads={loads}
         branches={branches}
         initialStep={initialModalStep}
-        isDuplicate={isDuplicate}
       />
       
       {selectedLoadForHistory && (
@@ -507,7 +486,6 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         stays={stays}
         shipments={shipments}
         currentUser={currentUser}
-        onDuplicate={!isDemo && canCreateLoad ? handleDuplicateLoad : undefined}
       />
 
       <CargoShipmentsSidePanel
@@ -545,16 +523,19 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
           shipment={allShipments.find(s => s.id === selectedShipment.id) || selectedShipment}
           documentName={REQUIRED_DOCUMENT_MAP[selectedShipment.status] || 'Documento'}
           currentUser={currentUser}
-          cargo={loads.find(c => c.id === selectedShipment.cargoId)}
+          cargo={findCargoById(loads, selectedShipment.cargoId)}
           requiresRiskManagement={
-            products.find(p => p.id === loads.find(c => c.id === selectedShipment.cargoId)?.productId)
-              ?.requiresRiskManagement !== false
+            checkRequiresRiskManagement(
+              findCargoById(loads, selectedShipment.cargoId),
+              findProductForCargo(products, findCargoById(loads, selectedShipment.cargoId))
+            )
           }
           products={products}
           clients={clients}
           users={users}
           riskQueryOptions={riskQueryOptions}
           onUpdateShipmentData={onUpdateShipmentData}
+          onDeleteAttachment={onDeleteAttachment}
         />
       )}
 

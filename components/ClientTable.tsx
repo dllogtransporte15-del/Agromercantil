@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, ArrowUpDown, Building2, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
-import type { Client } from '../types';
+import { ChevronLeft, ChevronRight, ArrowUpDown, Building2, ChevronDown, ChevronUp, MapPin, FileText } from 'lucide-react';
+import type { Client, LoadingOrderModel } from '../types';
+import { getLoadingOrderModelName } from '../types';
 
 interface ClientTableProps {
   clients: Client[];
   onEdit?: (client: Client) => void;
   onDelete?: (clientId: string) => void;
+  loadingOrderModels?: LoadingOrderModel[];
 }
 
-const ClientTable: React.FC<ClientTableProps> = ({ clients, onEdit, onDelete }) => {
+const ClientTable: React.FC<ClientTableProps> = ({ clients, onEdit, onDelete, loadingOrderModels }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50;
 
@@ -107,7 +109,7 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, onEdit, onDelete }) 
                 <React.Fragment key={client.id}>
                   <tr className="hover:bg-gray-50/80 dark:hover:bg-gray-700/60 transition-colors">
                     <td className="px-3 py-3.5 align-middle">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-md font-mono font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[11px]">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md font-mono font-bold bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[11px]">
                         {client.id}
                       </span>
                     </td>
@@ -124,6 +126,14 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, onEdit, onDelete }) 
                         <div className="mt-1 flex items-center gap-1">
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                             👤 {client.salespersonName} {client.salespersonCommissionPerTon ? `• R$ ${Number(client.salespersonCommissionPerTon).toFixed(2)}/t` : ''}
+                          </span>
+                        </div>
+                      )}
+                      {(client.loadingOrderModelId || client.ordemCarregamentoModelId) && (
+                        <div className="mt-1 flex items-center gap-1">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800" title="Modelo de Ordem de Carregamento vinculado">
+                            <FileText className="w-3 h-3 text-amber-500" />
+                            {getLoadingOrderModelName(client.loadingOrderModelId || client.ordemCarregamentoModelId, loadingOrderModels)}
                           </span>
                         </div>
                       )}
@@ -162,7 +172,7 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, onEdit, onDelete }) 
                         {onEdit && (
                           <button
                             onClick={() => onEdit(client)}
-                            className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 font-semibold"
+                            className="text-amber-600 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-300 font-semibold"
                           >
                             Editar
                           </button>
@@ -190,14 +200,18 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, onEdit, onDelete }) 
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 pt-1">
                             {/* Matriz card */}
-                            <div className="p-2.5 bg-blue-50/50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg text-xs">
-                              <div className="flex items-center justify-between font-bold text-blue-800 dark:text-blue-300 gap-1">
+                            <div className="p-2.5 bg-amber-50/50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-lg text-xs">
+                              <div className="flex items-center justify-between font-bold text-amber-800 dark:text-amber-300 gap-1">
                                 <span className="truncate">Matriz (Principal)</span>
                                 <span className="font-mono text-[11px] shrink-0">{client.cnpj}</span>
                               </div>
                               <div className="text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1 text-[11px] truncate">
                                 <MapPin className="w-3 h-3 shrink-0" />
                                 <span className="truncate">{client.city}/{client.state} {client.address ? `— ${client.address}` : ''}</span>
+                              </div>
+                              <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                                <FileText className="w-3 h-3 text-amber-500 shrink-0" />
+                                <span className="truncate">Mod. Ordem: {getLoadingOrderModelName(client.loadingOrderModelId || client.ordemCarregamentoModelId, loadingOrderModels)}</span>
                               </div>
                             </div>
 
@@ -215,6 +229,10 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, onEdit, onDelete }) 
                                   <span className="truncate" title={`${b.city || '-'}/${b.state || '-'} ${b.address ? `— ${b.address}` : ''}`}>
                                     {b.city || '-'}/{b.state || '-'} {b.address ? `— ${b.address}` : ''}
                                   </span>
+                                </div>
+                                <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                                  <FileText className="w-3 h-3 text-amber-500 shrink-0" />
+                                  <span className="truncate">Mod. Ordem: {getLoadingOrderModelName(b.loadingOrderModelId || b.ordemCarregamentoModelId || client.loadingOrderModelId || client.ordemCarregamentoModelId, loadingOrderModels)}</span>
                                 </div>
                               </div>
                             ))}

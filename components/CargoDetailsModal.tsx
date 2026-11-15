@@ -7,7 +7,8 @@ import { PaperclipIcon } from './icons/PaperclipIcon';
 import { StayRecord } from '../utils/toolStorage';
 import { DocumentAttachmentCard } from './ImageLightboxModal';
 import FormattedObservations from './FormattedObservations';
-import { Globe2, Copy } from 'lucide-react';
+import { Globe2 } from 'lucide-react';
+import { calculateCargoBalance } from '../utils/cargoBalance';
 
 interface CargoDetailsModalProps {
   isOpen: boolean;
@@ -19,7 +20,6 @@ interface CargoDetailsModalProps {
   stays?: StayRecord[];
   shipments?: Shipment[];
   currentUser?: User;
-  onDuplicate?: (cargo: Cargo) => void;
 }
 
 const DetailItem: React.FC<{ label: string; value?: string | number | null; children?: React.ReactNode }> = ({ label, value, children }) => (
@@ -36,7 +36,7 @@ const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number; hideSensitive
             {!isMotorista && (
                 <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
                     calculationType === FreightCalculationType.PerTonPlusIcms || leg.hasIcms
-                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300'
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300'
                         : 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200'
                 }`}>
                     {calculationType === FreightCalculationType.PerTonPlusIcms
@@ -60,8 +60,10 @@ const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number; hideSensitive
                     <div>
                         <p className="text-xs text-gray-500">{isMotorista ? 'Valor do Frete' : 'Frete Motorista PJ'}</p>
                         <p className="font-medium text-gray-800 dark:text-gray-200">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.driverFreightValuePerTon)}
-                            {leg.driverFreightHasToll && <span className="ml-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
+                            {leg.driverFreightValuePerTon > 0 
+                                ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.driverFreightValuePerTon)
+                                : 'A combinar'}
+                            {leg.driverFreightValuePerTon > 0 && leg.driverFreightHasToll && <span className="ml-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
                         </p>
                     </div>
                     <div>
@@ -70,8 +72,10 @@ const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number; hideSensitive
                             <p className="font-medium text-gray-400 dark:text-gray-500 italic">Desabilitado</p>
                         ) : (
                             <p className="font-medium text-gray-800 dark:text-gray-200">
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.driverFreightValuePerTonPf ?? leg.driverFreightValuePerTon)}
-                                {leg.driverFreightPfHasToll && <span className="ml-1 text-xs font-bold text-orange-600 dark:text-orange-400">+ Ped</span>}
+                                {(leg.driverFreightValuePerTonPf ?? leg.driverFreightValuePerTon) > 0
+                                    ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.driverFreightValuePerTonPf ?? leg.driverFreightValuePerTon)
+                                    : 'A combinar'}
+                                {(leg.driverFreightValuePerTonPf ?? leg.driverFreightValuePerTon) > 0 && leg.driverFreightPfHasToll && <span className="ml-1 text-xs font-bold text-orange-600 dark:text-orange-400">+ Ped</span>}
                             </p>
                         )}
                     </div>
@@ -82,14 +86,15 @@ const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number; hideSensitive
 );
 
 
-const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, cargo, client, product, commercialUser, stays = [], shipments = [], currentUser, onDuplicate }) => {
+const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, cargo, client, product, commercialUser, stays = [], shipments = [], currentUser }) => {
   if (!isOpen || !cargo) return null;
   const isClient = currentUser?.profile === 'Cliente';
 
-  const loadedVol = Number(cargo.loadedVolume) || 0;
+  const balance = calculateCargoBalance(cargo, shipments);
+  const loadedVol = balance.loadedVolume;
   const totalVol = Number(cargo.totalVolume) || 0;
-  const scheduledVol = Number(cargo.scheduledVolume) || 0;
-  const scheduledButNotLoaded = Math.max(0, scheduledVol - loadedVol);
+  const scheduledButNotLoaded = balance.scheduledPendingVolume;
+  const availableVol = balance.availableVolume;
   
   const formatCurrency = (value?: number | null) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value) || 0);
   const formatDate = (dateString?: string | null) => {
@@ -111,7 +116,7 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
         icmsPercentage: Number(cargo.icmsPercentage) || 0,
       }];
       
-  const { totalCompanyFreight, totalDriverFreight, netMarginPercentage } = useMemo(() => {
+  const { totalCompanyFreight, totalDriverFreight, netMarginPercentage, financialCostPerTon } = useMemo(() => {
     const activeLegs = freightLegsToDisplay;
 
     const totalCompanyFreight = activeLegs.reduce((sum, leg) => sum + (Number(leg.companyFreightValuePerTon) || 0), 0);
@@ -140,7 +145,13 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
     const demurrageProfitPerTon = loadedTonnage > 0 ? (totalDemurrageProfit / loadedTonnage) : 0;
     const demurrageRevenuePerTon = loadedTonnage > 0 ? (totalDemurrageRevenue / loadedTonnage) : 0;
 
-    const netProfit = totalNetCompanyValue - totalDriverFreight - totalCommission + demurrageProfitPerTon;
+    const financialCostPerTon = (cargo.financialCostPerTon !== undefined && cargo.financialCostPerTon > 0)
+      ? cargo.financialCostPerTon
+      : (cargo.financialCostEnabled && (cargo.financialCostEffectiveRate || 0) > 0)
+        ? (totalNetCompanyValue * ((cargo.financialCostEffectiveRate || 0) / 100))
+        : 0;
+
+    const netProfit = totalNetCompanyValue - totalDriverFreight - totalCommission - financialCostPerTon + demurrageProfitPerTon;
     const totalCompanyFreightWithEstadias = totalNetCompanyValue + demurrageRevenuePerTon;
 
     const margin = (totalCompanyFreightWithEstadias > 0) ? (netProfit / totalCompanyFreightWithEstadias) * 100 : 0;
@@ -149,13 +160,13 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
         ? '0,00%'
         : `${margin.toFixed(2).replace('.', ',')}%`;
 
-    return { totalCompanyFreight, totalDriverFreight, netMarginPercentage };
-  }, [freightLegsToDisplay, cargo.salespersonCommissionPerTon, stays, shipments, cargo.id]);
+    return { totalCompanyFreight, totalDriverFreight, netMarginPercentage, financialCostPerTon };
+  }, [freightLegsToDisplay, cargo.salespersonCommissionPerTon, cargo.financialCostPerTon, cargo.financialCostEnabled, cargo.financialCostEffectiveRate, stays, shipments, cargo.id]);
 
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] flex flex-col">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-4xl w-full max-h-[90vh] flex flex-col">
         <div className="flex justify-between items-start mb-4">
             <div>
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Detalhes da Carga: {cargo.sequenceId}</h2>
@@ -181,7 +192,7 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                   if (branch) {
                     return (
                       <DetailItem label="CNPJ / Filial Pagadora">
-                        <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">
+                        <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
                           {branch.nomeFantasia || branch.razaoSocial || 'Filial'}
                           <span className="font-mono text-xs text-gray-600 dark:text-gray-400 ml-1.5 font-normal">({branch.cnpj})</span>
                           {branch.city && <span className="text-xs text-gray-500 ml-1 font-normal">[{branch.city}/{branch.state}]</span>}
@@ -204,7 +215,18 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                     <DetailItem label="CNPJ Principal" value={client?.cnpj} />
                   );
                 })()}
-                <DetailItem label="Produto" value={product?.name} />
+                <DetailItem label="Produto" value={product?.name || (cargo as any)?.productName || 'GRÃOS'} />
+                <DetailItem label="Embalagem (Tipo)" value={cargo.packaging || 'Granel'} />
+                <DetailItem label="Nº do Pedido">
+                    {cargo.orderNumber ? (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-amber-600 text-white shadow-sm text-[10px]">✓</span>
+                            <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">{cargo.orderNumber}</span>
+                        </div>
+                    ) : (
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Não informado</span>
+                    )}
+                </DetailItem>
                 <DetailItem label="Origem" value={cargo.origin} />
                 <DetailItem label="Destino" value={cargo.destination} />
                 <DetailItem label="Lote TMS">
@@ -223,7 +245,7 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                 <DetailItem label="Tipo de Operação">
                     {cargo.isExport ? (
                         <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                                 <Globe2 className="w-3.5 h-3.5" />
                                 <span>Exportação</span>
                             </span>
@@ -236,8 +258,8 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                         </div>
                     )}
                 </DetailItem>
-                {cargo.originMapLink && <DetailItem label="Link Mapa (Origem)"><a href={cargo.originMapLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 underline truncate">Abrir link</a></DetailItem>}
-                {cargo.destinationMapLink && <DetailItem label="Link Mapa (Destino)"><a href={cargo.destinationMapLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 underline truncate">Abrir link</a></DetailItem>}
+                {cargo.originMapLink && <DetailItem label="Link Mapa (Origem)"><a href={cargo.originMapLink} target="_blank" rel="noopener noreferrer" className="text-sm text-amber-600 dark:text-amber-400 underline truncate">Abrir link</a></DetailItem>}
+                {cargo.destinationMapLink && <DetailItem label="Link Mapa (Destino)"><a href={cargo.destinationMapLink} target="_blank" rel="noopener noreferrer" className="text-sm text-amber-600 dark:text-amber-400 underline truncate">Abrir link</a></DetailItem>}
             </div>
 
             <div className="border-t dark:border-gray-700 pt-4">
@@ -247,18 +269,22 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                     scheduled={scheduledButNotLoaded}
                     total={totalVol}
                 />
-                <div className="grid grid-cols-3 gap-2 mt-2 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-center">
                     <div className="p-2 bg-green-100/50 dark:bg-green-900/20 rounded">
-                        <p className="text-xs text-green-700 dark:text-green-300">Carregado</p>
-                        <p className="font-bold text-green-800 dark:text-green-200">{loadedVol.toLocaleString('pt-BR')}</p>
+                        <p className="text-xs text-green-700 dark:text-green-300">Volume Carregado</p>
+                        <p className="font-bold text-green-800 dark:text-green-200">{loadedVol.toLocaleString('pt-BR')} t</p>
                     </div>
                      <div className="p-2 bg-orange-100/50 dark:bg-orange-900/20 rounded">
-                        <p className="text-xs text-orange-700 dark:text-orange-300">Agendado</p>
-                        <p className="font-bold text-orange-800 dark:text-orange-200">{scheduledButNotLoaded.toLocaleString('pt-BR')}</p>
+                        <p className="text-xs text-orange-700 dark:text-orange-300">Volume Programado</p>
+                        <p className="font-bold text-orange-800 dark:text-orange-200">{scheduledButNotLoaded.toLocaleString('pt-BR')} t</p>
+                    </div>
+                     <div className="p-2 bg-emerald-100/50 dark:bg-emerald-900/20 rounded">
+                        <p className="text-xs text-emerald-700 dark:text-emerald-300">Disponível</p>
+                        <p className="font-bold text-emerald-800 dark:text-emerald-200">{availableVol.toLocaleString('pt-BR')} t</p>
                     </div>
                      <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded">
-                        <p className="text-xs text-gray-500">Total</p>
-                        <p className="font-bold text-gray-800 dark:text-gray-200">{totalVol.toLocaleString('pt-BR')}</p>
+                        <p className="text-xs text-gray-500">Volume Total Contratado</p>
+                        <p className="font-bold text-gray-800 dark:text-gray-200">{totalVol.toLocaleString('pt-BR')} t</p>
                     </div>
                 </div>
             </div>
@@ -279,7 +305,7 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                         />
                     ))}
                 </div>
-                 <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                 <div className={`mt-4 grid grid-cols-1 ${financialCostPerTon > 0 ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-3'} gap-4`}>
                     {currentUser?.profile === 'Motorista' ? (
                         <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md col-span-3">
                             <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Valor do Frete (Final)</label>
@@ -306,9 +332,18 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                                             {(freightLegsToDisplay.some(leg => leg.driverFreightHasToll) || cargo.driverFreightHasToll) && <span className="ml-1 text-sm font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
                                         </p>
                                     </div>
-                                    <div className="p-3 bg-blue-50 dark:bg-blue-900/50 rounded-md border border-blue-200 dark:border-blue-800">
-                                        <label className="text-xs font-medium text-blue-500 dark:text-blue-400">Margem Líquida (%)</label>
-                                        <p className="text-lg font-bold text-primary dark:text-blue-300">{netMarginPercentage}</p>
+                                    {financialCostPerTon > 0 && (
+                                        <div className="p-3 bg-purple-50 dark:bg-purple-900/30 rounded-md border border-purple-200 dark:border-purple-800">
+                                            <label className="text-xs font-medium text-purple-600 dark:text-purple-400">Custo Financeiro ({cargo.financialCostEffectiveRate || 0}%)</label>
+                                            <p className="text-lg font-bold text-purple-700 dark:text-purple-300">
+                                                - {formatCurrency(financialCostPerTon)}
+                                                <span className="text-xs font-normal text-gray-500 ml-1">/ ton</span>
+                                            </p>
+                                        </div>
+                                    )}
+                                    <div className="p-3 bg-amber-50 dark:bg-amber-900/50 rounded-md border border-amber-200 dark:border-amber-800">
+                                        <label className="text-xs font-medium text-amber-500 dark:text-amber-400">Margem Líquida (%)</label>
+                                        <p className="text-lg font-bold text-primary dark:text-amber-300">{netMarginPercentage}</p>
                                     </div>
                                 </>
                             )}
@@ -357,7 +392,7 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                     <DetailItem label="Tipos de Veículos Permitidos">
                         <div className="flex flex-wrap gap-2 mt-1">
                             {cargo.allowedVehicleTypes.map((vt, idx) => (
-                                <span key={idx} className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50">
+                                <span key={idx} className="px-2 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50">
                                     {vt.setType} ({vt.bodyTypes.join('/')})
                                 </span>
                             ))}
@@ -371,20 +406,8 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
 
         </div>
         
-        <div className="mt-6 flex justify-end items-center gap-3 border-t dark:border-gray-700 pt-4">
-          {onDuplicate && !isClient && (
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onDuplicate(cargo);
-              }}
-              className="py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors text-sm font-semibold flex items-center gap-1.5 shadow-sm"
-            >
-              <Copy className="h-4 w-4" /> Duplicar Carga
-            </button>
-          )}
-          <button type="button" onClick={onClose} className="py-2 px-4 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500 text-sm font-medium">
+        <div className="mt-6 flex justify-end border-t dark:border-gray-700 pt-4">
+          <button type="button" onClick={onClose} className="py-2 px-4 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">
             Fechar
           </button>
         </div>

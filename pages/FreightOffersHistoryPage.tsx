@@ -109,7 +109,7 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
       
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
         <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg text-indigo-600 dark:text-indigo-400">
+          <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg text-amber-600 dark:text-amber-400">
             <FilterIcon className="w-5 h-5" />
           </div>
           <div>

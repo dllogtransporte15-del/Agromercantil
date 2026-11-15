@@ -1,6 +1,6 @@
 # Regra de Atualização do Resumo do Sistema (Changelog / O Que Há de Novo)
 
-Sempre que novas funcionalidades, melhorias, regras de negócio ou correções forem desenvolvidas e preparadas para entrega/commit no projeto **Transcunha Logística**:
+Sempre que novas funcionalidades, melhorias, regras de negócio ou correções forem desenvolvidas e preparadas para entrega/commit no projeto **DLLOG Transportes**:
 
 1. **Atualização Obrigatória do `utils/systemUpdates.ts`**:
    - Adicionar um novo objeto no topo do array `SYSTEM_RELEASES`.

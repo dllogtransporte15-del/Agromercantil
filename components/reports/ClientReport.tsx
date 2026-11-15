@@ -5,8 +5,26 @@ import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { PackageIcon } from '../icons/PackageIcon';
 import { StayRecord } from '../../utils/toolStorage';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
-import { isStayForShipment } from '../../utils';
-import { Download, List, X, Filter, Building2, ChevronDown, ChevronUp, MapPin, CheckCircle2, TrendingUp } from 'lucide-react';
+import { isStayForShipment, hasCteAttached, isCteApplicableForStatus, getShipmentCte } from '../../utils';
+import { 
+  Download, 
+  List, 
+  X, 
+  Filter, 
+  Building2, 
+  ChevronDown, 
+  ChevronUp, 
+  MapPin, 
+  CheckCircle2, 
+  TrendingUp, 
+  Search, 
+  Scale, 
+  FileSpreadsheet, 
+  ArrowRight, 
+  Layers,
+  ShieldAlert,
+  Truck
+} from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { addPdfLogo } from '../../utils/pdfGenerator';
@@ -47,17 +65,36 @@ interface ClientStats {
   branches: ClientBranchStats[];
 }
 
-const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactElement; formatAsCurrency?: boolean }> = ({ title, value, icon, formatAsCurrency = false }) => {
+const StatCard: React.FC<{ 
+  title: string; 
+  value: string | number; 
+  icon: React.ReactElement; 
+  formatAsCurrency?: boolean;
+  subtext?: string;
+}> = ({ title, value, icon, formatAsCurrency = false, subtext }) => {
   const displayValue = formatAsCurrency && typeof value === 'number'
     ? value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
     : value;
 
   return (
-    <div className="flex items-center p-4 bg-gray-50 dark:bg-gray-700/60 rounded-xl border border-gray-100 dark:border-gray-600/50 shadow-xs">
-      <div className="flex-shrink-0">{icon}</div>
-      <div className="ml-3 min-w-0 flex-1">
-        <p className="text-xs font-semibold text-gray-500 dark:text-gray-300 truncate">{title}</p>
-        <p className="text-lg font-black text-gray-900 dark:text-white truncate">{displayValue}</p>
+    <div className="relative overflow-hidden p-4 bg-white dark:bg-gray-800/90 rounded-2xl border border-gray-100 dark:border-gray-700/80 shadow-xs hover:shadow-md transition-all duration-200 group">
+      <div className="flex items-center justify-between">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider truncate mb-1">
+            {title}
+          </p>
+          <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight truncate">
+            {displayValue}
+          </p>
+          {subtext && (
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1 truncate">
+              {subtext}
+            </p>
+          )}
+        </div>
+        <div className="flex-shrink-0 p-2.5 rounded-xl bg-gray-50 dark:bg-gray-700/60 group-hover:scale-110 transition-transform">
+          {icon}
+        </div>
       </div>
     </div>
   );
@@ -68,6 +105,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
   const [showListModal, setShowListModal] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | 'ALL'>('ALL');
   const [expandedClientBranches, setExpandedClientBranches] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Modal filters
   const [filterModalStatus, setFilterModalStatus] = useState<string[]>([]);
@@ -165,49 +203,24 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       });
     });
 
-    // Mesma regra do Fat. Bruto global: apenas embarques com CT-e emitido
-    // Inclui também estadias com CT-e complementar (approvedValue > 0)
-    const countableStatuses = [
-      ShipmentStatus.AguardandoSeguradora,
-      ShipmentStatus.PreCadastro,
-      ShipmentStatus.AguardandoCarregamento,
-      ShipmentStatus.AguardandoNota,
-      ShipmentStatus.AguardandoFiscal,
-      ShipmentStatus.AguardandoAdiantamento,
-      ShipmentStatus.AguardandoAgendamento,
-      ShipmentStatus.AguardandoDescarga,
-      ShipmentStatus.AguardandoPagamentoSaldo,
-      ShipmentStatus.Finalizado
-    ];
+    // Regra: considerar exclusivamente embarques válidos com CT-e emitido
+    shipments.forEach(shipment => {
+      if (shipment.status === ShipmentStatus.Cancelado || !isCteApplicableForStatus(shipment.status)) return;
+      if (!hasCteAttached(shipment)) return;
 
-    shipments.filter(s => countableStatuses.includes(s.status)).forEach(shipment => {
       const cargo = cargoMap.get(shipment.cargoId);
       if (!cargo) return;
 
       const clientEntry = statsMap.get(cargo.clientId);
       if (!clientEntry) return;
 
-      // Verificar se possui CT-e (embarque principal) OU CT-e de estadia (complementar)
-      const hasShipmentCte = Boolean(
-        shipment.cteNumber ||
-        shipment.documents?.cte_number ||
-        shipment.documents?.['CT-e'] ||
-        shipment.documents?.['CTE']
-      );
-
-      // CT-e de estadia: estadias aprovadas vinculadas a este embarque
-      const shipmentStays = stays.filter(stay => isStayForShipment(stay, shipment) && (stay.approvedValue || 0) > 0);
-      const hasStayCte = shipmentStays.some(stay => stay.cteUrl);
-
-      // Contar apenas se tiver CT-e do embarque ou CT-e complementar de estadia
-      if (!hasShipmentCte && !hasStayCte) return;
-
       const client = clients.find(c => c.id === cargo.clientId);
       const ton = shipment.loadedTonnage || shipment.shipmentTonnage || 0;
-      const expenses = calculateShipmentExpenses(shipment, cargo);
+      const expenses = calculateShipmentExpenses(shipment, cargo, undefined, stays);
       const grossValue = expenses.companyFreight;
 
-      // Estadia aprovada: faturamento bruto inclui o valor cobrado ao cliente (approvedValue)
+      // Estadias aprovadas vinculadas a este embarque com CT-e
+      const shipmentStays = stays.filter(stay => isStayForShipment(stay, shipment) && (stay.approvedValue || 0) > 0);
       const demurrageRevenue = shipmentStays
         .reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
 
@@ -215,21 +228,15 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
         .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
 
       // Faturamento bruto = frete + estadias aprovadas
-      const totalGrossValue = hasShipmentCte ? grossValue + demurrageRevenue : demurrageRevenue;
-
-      const profit = hasShipmentCte
-        ? (expenses.netProfit + demurrageProfit)
-        : demurrageProfit;
+      const totalGrossValue = grossValue + demurrageRevenue;
+      const profit = expenses.netProfit + demurrageProfit;
 
       const isCompleted = shipment.status === ShipmentStatus.Finalizado;
-      const isCanceled = shipment.status === ShipmentStatus.Cancelado;
 
       // Add to overall client
-      if (hasShipmentCte && !isCanceled) {
-        clientEntry.totalTonnage += ton;
-        clientEntry.totalShipments += 1;
-        if (isCompleted) clientEntry.completedShipments += 1;
-      }
+      clientEntry.totalTonnage += ton;
+      clientEntry.totalShipments += 1;
+      if (isCompleted) clientEntry.completedShipments += 1;
       clientEntry.grossBilled += totalGrossValue;
       clientEntry.profitMargin += profit;
 
@@ -256,11 +263,9 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
         }
       }
 
-      if (hasShipmentCte && !isCanceled) {
-        branchStat.totalTonnage += ton;
-        branchStat.totalShipments += 1;
-        if (isCompleted) branchStat.completedShipments += 1;
-      }
+      branchStat.totalTonnage += ton;
+      branchStat.totalShipments += 1;
+      if (isCompleted) branchStat.completedShipments += 1;
       branchStat.grossBilled += totalGrossValue;
       branchStat.profitMargin += profit;
     });
@@ -293,6 +298,47 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       .sort((a, b) => b.grossBilled - a.grossBilled);
   }, [shipments, cargos, clients, stays, cargoMap, isClientUser, currentUser]);
 
+  // Global summary KPIs
+  const globalSummary = useMemo(() => {
+    return clientStats.reduce((acc, c) => {
+      acc.totalClients += 1;
+      acc.totalBranches += (c.branches?.length || 1);
+      acc.totalShipments += c.totalShipments;
+      acc.completedShipments += c.completedShipments;
+      acc.totalTonnage += c.totalTonnage;
+      acc.totalGrossBilled += c.grossBilled;
+      acc.totalProfitMargin += c.profitMargin;
+      return acc;
+    }, {
+      totalClients: 0,
+      totalBranches: 0,
+      totalShipments: 0,
+      completedShipments: 0,
+      totalTonnage: 0,
+      totalGrossBilled: 0,
+      totalProfitMargin: 0
+    });
+  }, [clientStats]);
+
+  const globalMarginPercentage = globalSummary.totalGrossBilled > 0
+    ? (globalSummary.totalProfitMargin / globalSummary.totalGrossBilled) * 100
+    : 0;
+
+  const filteredClients = useMemo(() => {
+    if (!searchQuery.trim()) return clientStats;
+    const q = searchQuery.toLowerCase().replace(/[^\w]/g, '');
+    return clientStats.filter(c => {
+      const nameMatch = c.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const cleanCnpj = c.cnpj.replace(/\D/g, '');
+      const cnpjMatch = cleanCnpj.includes(q);
+      const branchMatch = c.branches.some(b => 
+        b.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        b.cnpj.replace(/\D/g, '').includes(q)
+      );
+      return nameMatch || cnpjMatch || branchMatch;
+    });
+  }, [clientStats, searchQuery]);
+
   const toggleBranchExpand = (clientId: string) => {
     setExpandedClientBranches(prev => ({
       ...prev,
@@ -301,7 +347,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
   };
 
   const getShipmentsForPdfAndList = (clientId?: string, specificCnpj?: string) => {
-    let result = shipments.filter(s => s.status !== ShipmentStatus.Cancelado);
+    let result = shipments.filter(s => s.status !== ShipmentStatus.Cancelado && isCteApplicableForStatus(s.status) && hasCteAttached(s));
     if (clientId && clientId !== 'ALL') {
       result = result.filter(s => cargoMap.get(s.cargoId)?.clientId === clientId);
     }
@@ -319,7 +365,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
   };
 
   const baseModalShipments = useMemo(() => {
-    const nonCanceled = shipments.filter(s => s.status !== ShipmentStatus.Cancelado);
+    const nonCanceled = shipments.filter(s => s.status !== ShipmentStatus.Cancelado && isCteApplicableForStatus(s.status) && hasCteAttached(s));
     if (selectedClientId && selectedClientId !== 'ALL') {
       return nonCanceled.filter(s => cargoMap.get(s.cargoId)?.clientId === selectedClientId);
     }
@@ -363,6 +409,28 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
     });
   }, [baseModalShipments, filterModalStatus, filterModalOrigin, filterModalDest, filterModalDriver, filterModalCnpj, cargoMap, clients]);
 
+  // Financial totals for modal
+  const modalFinancialTotals = useMemo(() => {
+    return filteredModalShipments.reduce((acc, s) => {
+      const cargo = cargoMap.get(s.cargoId);
+      const tons = s.shipmentTonnage || 0;
+      const empRate = s.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
+      const motTotal = s.driverFreightValue || 0;
+      const empTotal = empRate * tons;
+
+      acc.totalTons += tons;
+      acc.totalCompanyFreight += empTotal;
+      acc.totalDriverFreight += motTotal;
+      acc.netMargin += (empTotal - motTotal);
+      return acc;
+    }, {
+      totalTons: 0,
+      totalCompanyFreight: 0,
+      totalDriverFreight: 0,
+      netMargin: 0
+    });
+  }, [filteredModalShipments, cargoMap]);
+
   const activeModalFiltersCount = filterModalStatus.length + filterModalOrigin.length + filterModalDest.length + filterModalDriver.length + filterModalCnpj.length;
 
   const clearModalFilters = () => {
@@ -393,7 +461,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
   };
 
   const generatePDF = (clientId?: string, specificCnpj?: string) => {
-    const targetShipments = getShipmentsForPdfAndList(clientId, specificCnpj).filter(s => s.status === ShipmentStatus.Finalizado);
+    const targetShipments = getShipmentsForPdfAndList(clientId, specificCnpj).filter(s => s.status === ShipmentStatus.Finalizado && hasCteAttached(s));
     const client = clientId && clientId !== 'ALL' ? clients.find(c => c.id === clientId) : (isClientUser && currentUser?.clientId ? clients.find(c => c.id === currentUser.clientId) : undefined);
     
     let subTitleName = client?.nomeFantasia || client?.razaoSocial || 'Todos os Clientes';
@@ -413,8 +481,8 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
     doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 22);
 
     const tableColumn = isClientUser
-      ? ["ID", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Contratado (/Ton)", "Peso Origem", "Peso Destino", "Quebra"]
-      : ["ID", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Emp/Ton", "Frete Mot/Ton", "Peso Origem", "Peso Destino", "Quebra"];
+      ? ["ID", "CT-e", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Contratado (/Ton)", "Peso Origem", "Peso Destino", "Quebra"]
+      : ["ID", "CT-e", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Emp/Ton", "Frete Mot/Ton", "Peso Origem", "Peso Destino", "Quebra"];
     
     const tableRows: any[] = [];
 
@@ -433,6 +501,8 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       const dataInicio = new Date(shipment.createdAt).toLocaleDateString('pt-BR');
       const statusFinalizado = shipment.statusHistory?.find(h => h.status === ShipmentStatus.Finalizado);
       const dataFim = statusFinalizado ? new Date(statusFinalizado.timestamp).toLocaleDateString('pt-BR') : '-';
+
+      const cteNumber = getShipmentCte(shipment) || shipment.cteNumber || '-';
 
       const freteEmpresa = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
       const freteMotorista = shipment.driverFreightRateSnapshot || (shipment.driverFreightValue / (shipment.shipmentTonnage || 1));
@@ -457,6 +527,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       if (isClientUser) {
         tableRows.push([
           shipment.id,
+          cteNumber,
           dataInicio,
           dataFim,
           cliente,
@@ -473,6 +544,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       } else {
         tableRows.push([
           shipment.id,
+          cteNumber,
           dataInicio,
           dataFim,
           cliente,
@@ -494,7 +566,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
 
     if (isClientUser) {
       tableRows.push([
-        "TOTAIS", "-", "-", "-", "-", "-", `Embarques: ${targetShipments.length}`, "-", "-",
+        "TOTAIS", "-", "-", "-", "-", "-", "-", `Embarques: ${targetShipments.length}`, "-", "-",
         formatCurrency(totalFreteEmpresa),
         totalPesoCarregado.toFixed(2) + ' t',
         totalPesoDestino > 0 ? totalPesoDestino.toFixed(2) + ' t' : '-',
@@ -502,7 +574,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       ]);
     } else {
       tableRows.push([
-        "TOTAIS", "-", "-", "-", "-", "-", `Embarques: ${targetShipments.length}`, "-", "-",
+        "TOTAIS", "-", "-", "-", "-", "-", "-", `Embarques: ${targetShipments.length}`, "-", "-",
         formatCurrency(totalFreteEmpresa),
         formatCurrency(totalFreteMotorista),
         totalPesoCarregado.toFixed(2) + ' t',
@@ -511,7 +583,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       ]);
 
       tableRows.push([
-        "LÍQUIDO", "-", "-", "-", "-", "-", "-", "-", "-",
+        "LÍQUIDO", "-", "-", "-", "-", "-", "-", "-", "-", "-",
         formatCurrency(totalFreteEmpresa - totalFreteMotorista),
         "-", "-", "-", "-"
       ]);
@@ -523,7 +595,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       startY: 26,
       theme: 'grid',
       styles: { fontSize: 7.5 },
-      headStyles: { fillColor: [29, 59, 141], textColor: 255 },
+      headStyles: { fillColor: [166, 113, 66], textColor: 255 },
       didParseCell: (data) => {
         if (data.cell.section === 'body') {
           const rawRow = data.row.raw;
@@ -573,8 +645,8 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
 
     const startY = filterDesc.length > 0 ? 32 : 27;
     const tableColumn = isClientUser
-      ? ["ID", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Contratado (/Ton)", "Peso Origem", "Peso Destino", "Quebra", "Status"]
-      : ["ID", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Emp/Ton", "Frete Mot/Ton", "Peso Origem", "Peso Destino", "Quebra", "Status"];
+      ? ["ID", "CT-e", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Contratado (/Ton)", "Peso Origem", "Peso Destino", "Quebra", "Status"]
+      : ["ID", "CT-e", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Emp/Ton", "Frete Mot/Ton", "Peso Origem", "Peso Destino", "Quebra", "Status"];
     
     const tableRows: any[] = [];
 
@@ -583,7 +655,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
     let totalPesoCarregado = 0;
     let totalPesoDestino = 0;
 
-    const shipmentsForPdf = filteredModalShipments.filter(s => s.status === ShipmentStatus.Finalizado);
+    const shipmentsForPdf = filteredModalShipments.filter(s => s.status === ShipmentStatus.Finalizado && hasCteAttached(s));
 
     shipmentsForPdf.forEach(shipment => {
       const cargo = cargoMap.get(shipment.cargoId);
@@ -595,6 +667,8 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       const dataInicio = new Date(shipment.createdAt).toLocaleDateString('pt-BR');
       const statusFinalizado = shipment.statusHistory?.find(h => h.status === ShipmentStatus.Finalizado);
       const dataFim = statusFinalizado ? new Date(statusFinalizado.timestamp).toLocaleDateString('pt-BR') : '-';
+
+      const cteNumber = getShipmentCte(shipment) || shipment.cteNumber || '-';
 
       const freteEmpresa = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
       const freteMotorista = shipment.driverFreightRateSnapshot || (shipment.driverFreightValue / (shipment.shipmentTonnage || 1));
@@ -619,6 +693,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       if (isClientUser) {
         tableRows.push([
           shipment.id,
+          cteNumber,
           dataInicio,
           dataFim,
           `${clienteNome} (${info.name})`,
@@ -636,6 +711,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       } else {
         tableRows.push([
           shipment.id,
+          cteNumber,
           dataInicio,
           dataFim,
           `${clienteNome} (${info.name})`,
@@ -658,7 +734,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
 
     if (isClientUser) {
       tableRows.push([
-        "TOTAIS", "-", "-", "-", "-", "-", `Embarques: ${shipmentsForPdf.length}`, "-", "-",
+        "TOTAIS", "-", "-", "-", "-", "-", "-", `Embarques: ${shipmentsForPdf.length}`, "-", "-",
         fmt(totalFreteEmpresa),
         totalPesoCarregado.toFixed(2) + ' t',
         totalPesoDestino > 0 ? totalPesoDestino.toFixed(2) + ' t' : '-',
@@ -666,7 +742,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       ]);
     } else {
       tableRows.push([
-        "TOTAIS", "-", "-", "-", "-", "-", `Embarques: ${shipmentsForPdf.length}`, "-", "-",
+        "TOTAIS", "-", "-", "-", "-", "-", "-", `Embarques: ${shipmentsForPdf.length}`, "-", "-",
         fmt(totalFreteEmpresa),
         fmt(totalFreteMotorista),
         totalPesoCarregado.toFixed(2) + ' t',
@@ -675,7 +751,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       ]);
 
       tableRows.push([
-        "LÍQUIDO", "-", "-", "-", "-", "-", "-", "-", "-",
+        "LÍQUIDO", "-", "-", "-", "-", "-", "-", "-", "-", "-",
         fmt(totalFreteEmpresa - totalFreteMotorista),
         "-", "-", "-", "-", "-"
       ]);
@@ -687,7 +763,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       startY,
       theme: 'grid',
       styles: { fontSize: 7 },
-      headStyles: { fillColor: [29, 59, 141], textColor: 255 },
+      headStyles: { fillColor: [166, 113, 66], textColor: 255 },
       didParseCell: (data) => {
         if (data.cell.section === 'body') {
           const rawRow = data.row.raw;
@@ -710,191 +786,329 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
     doc.save(`Listagem_Demandas_${clientName.replace(/[^a-zA-Z0-9]/g, '_')}${suffix}_${Date.now()}.pdf`);
   };
 
+  const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+
   return (
-    <div>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+    <div className="space-y-6 animate-fadeIn">
+      {/* Header / Actions Bar */}
+      <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-xs border border-gray-100 dark:border-gray-700/80 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-800 dark:text-white">
-            {isClientUser ? 'Histórico e Desempenho da Minha Empresa' : 'Desempenho por Cliente'}
-          </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            {isClientUser
-              ? 'Consulte o histórico consolidado de transporte e o detalhamento por cada filial e CNPJ da sua empresa.'
-              : 'Visualize o desempenho consolidado da empresa e o relatório detalhado por cada CNPJ e filial.'}
-          </p>
+          <div className="flex items-center gap-2.5">
+            <div className="p-2.5 bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 rounded-xl">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white tracking-tight">
+                {isClientUser ? 'Histórico e Desempenho da Minha Empresa' : 'Desempenho por Cliente e Filial'}
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {isClientUser
+                  ? 'Consulte o histórico consolidado de transporte e o detalhamento por cada filial e CNPJ da sua empresa.'
+                  : 'Demonstrativo executivo de faturamento, margens, volume transportado e desempenho por filial.'}
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="flex gap-2">
+
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           <button
             onClick={() => generatePDF('ALL')}
-            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-xs text-sm cursor-pointer"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl font-bold transition-all shadow-xs hover:shadow-md text-xs sm:text-sm cursor-pointer"
           >
             <Download className="w-4 h-4" /> Baixar PDF Consolidado
           </button>
           <button
             onClick={() => openListModal('ALL')}
-            className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-xs text-sm cursor-pointer"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2.5 rounded-xl font-bold transition-all shadow-xs hover:shadow-md text-xs sm:text-sm cursor-pointer"
           >
             <List className="w-4 h-4" /> Listagem Completa
           </button>
         </div>
       </div>
 
-      {clientStats.length === 0 ? (
-        <div className="bg-white dark:bg-gray-800 rounded-lg p-8 text-center text-gray-500 dark:text-gray-400 shadow-xs border border-gray-100 dark:border-gray-700">
-          Nenhum dado encontrado para os filtros selecionados.
+      {/* Executive Consolidated KPIs */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+        <div className="p-4 bg-gradient-to-br from-amber-600 to-amber-700 text-white rounded-2xl shadow-sm">
+          <div className="flex items-center justify-between opacity-90 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider">{isClientUser ? 'Minha Empresa' : 'Clientes Ativos'}</span>
+            <Building2 className="w-4 h-4" />
+          </div>
+          <p className="text-2xl font-black">{globalSummary.totalClients}</p>
+          <p className="text-[11px] text-amber-100 mt-0.5">
+            {globalSummary.totalBranches} CNPJs / filiais atendidas
+          </p>
+        </div>
+
+        <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-xs">
+          <div className="flex items-center justify-between text-gray-500 dark:text-gray-400 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Volume Faturado</span>
+            <Scale className="w-4 h-4 text-amber-500" />
+          </div>
+          <p className="text-2xl font-black text-gray-900 dark:text-white">
+            {globalSummary.totalTonnage.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} <span className="text-sm font-semibold text-gray-400">ton</span>
+          </p>
+          <p className="text-[11px] text-gray-400 mt-0.5">Embarques com CT-e emitido</p>
+        </div>
+
+        <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-xs">
+          <div className="flex items-center justify-between text-gray-500 dark:text-gray-400 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider">{isClientUser ? 'Total em Frete' : 'Faturamento Bruto'}</span>
+            <DollarSignIcon className="w-4 h-4 text-emerald-500" />
+          </div>
+          <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+            {formatCurrency(globalSummary.totalGrossBilled)}
+          </p>
+          <p className="text-[11px] text-gray-400 mt-0.5">Inclui estadias e fretes</p>
+        </div>
+
+        {isClientUser ? (
+          <>
+            <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-xs">
+              <div className="flex items-center justify-between text-gray-500 dark:text-gray-400 mb-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider">Frete Médio / Ton</span>
+                <TrendingUp className="w-4 h-4 text-teal-500" />
+              </div>
+              <p className="text-2xl font-black text-gray-900 dark:text-white">
+                {formatCurrency(globalSummary.totalTonnage > 0 ? (globalSummary.totalGrossBilled / globalSummary.totalTonnage) : 0)}
+              </p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Custo unitário por tonelada</p>
+            </div>
+
+            <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-xs">
+              <div className="flex items-center justify-between text-gray-500 dark:text-gray-400 mb-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider">Viagens Concluídas</span>
+                <CheckCircle2 className="w-4 h-4 text-purple-500" />
+              </div>
+              <p className="text-2xl font-black text-purple-600 dark:text-purple-400">
+                {globalSummary.completedShipments} <span className="text-sm font-semibold text-gray-400">/ {globalSummary.totalShipments}</span>
+              </p>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                {globalSummary.totalShipments > 0 ? ((globalSummary.completedShipments / globalSummary.totalShipments) * 100).toFixed(0) : 0}% entregas finalizadas
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-xs">
+              <div className="flex items-center justify-between text-gray-500 dark:text-gray-400 mb-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider">Lucro Operacional</span>
+                <TrendingUp className="w-4 h-4 text-teal-500" />
+              </div>
+              <p className="text-2xl font-black text-teal-600 dark:text-teal-400">
+                {formatCurrency(globalSummary.totalProfitMargin)}
+              </p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Receita líquida após motoristas</p>
+            </div>
+
+            <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-xs">
+              <div className="flex items-center justify-between text-gray-500 dark:text-gray-400 mb-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider">Margem Média</span>
+                <PackageIcon className="w-4 h-4 text-purple-500" />
+              </div>
+              <p className="text-2xl font-black text-purple-600 dark:text-purple-400">
+                {globalMarginPercentage.toFixed(2)}%
+              </p>
+              <div className="w-full bg-gray-100 dark:bg-gray-700 h-1.5 rounded-full mt-2 overflow-hidden">
+                <div 
+                  className="bg-purple-500 h-1.5 rounded-full transition-all duration-500" 
+                  style={{ width: `${Math.min(globalMarginPercentage, 100)}%` }}
+                />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Search Toolbar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="relative w-full sm:w-80">
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Buscar por cliente, filial ou CNPJ..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-xs sm:text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-hidden focus:ring-2 focus:ring-primary/20 transition-all"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="text-xs text-gray-500 dark:text-gray-400 font-medium self-end sm:self-center">
+          Exibindo <span className="font-bold text-gray-900 dark:text-white">{filteredClients.length}</span> de {clientStats.length} empresas
+        </div>
+      </div>
+
+      {filteredClients.length === 0 ? (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-12 text-center text-gray-500 dark:text-gray-400 shadow-xs border border-gray-100 dark:border-gray-700">
+          <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-400">
+            <Building2 className="w-6 h-6" />
+          </div>
+          <p className="font-bold text-gray-700 dark:text-gray-300">Nenhum cliente encontrado</p>
+          <p className="text-xs mt-1">Verifique o termo digitado ou revise os filtros de data.</p>
         </div>
       ) : (
-        <div className="space-y-6">
-          {clientStats.map(stats => {
+        <div className="space-y-4">
+          {filteredClients.map(stats => {
             const hasMultipleBranches = stats.branches && stats.branches.length > 1;
             const isBranchesExpanded = !!expandedClientBranches[stats.id] || (isClientUser && hasMultipleBranches);
 
             return (
-              <div key={stats.id} className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-md border border-gray-100 dark:border-gray-700 space-y-4">
-                
+              <div 
+                key={stats.id} 
+                className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-xs border border-gray-100 dark:border-gray-700 hover:border-amber-200 dark:hover:border-amber-800/60 transition-all duration-200 space-y-4"
+              >
                 {/* Client Header */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-3 border-b border-gray-100 dark:border-gray-700">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-gray-100 dark:border-gray-700/80">
                   <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-xl">
-                      <Building2 className="w-6 h-6" />
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-600 text-white flex items-center justify-center font-black text-sm shadow-xs flex-shrink-0">
+                      <Building2 className="w-5 h-5" />
                     </div>
                     <div>
-                      <div className="flex items-center gap-2.5">
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white">{stats.name}</h3>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <h3 className="text-lg font-black text-gray-900 dark:text-white tracking-tight">
+                          {stats.name}
+                        </h3>
                         {hasMultipleBranches && (
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                             {stats.branches.length} CNPJs Vinculados
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 font-mono mt-0.5">
+                      <p className="text-[11px] text-gray-400 dark:text-gray-500 font-mono mt-0.5">
                         CNPJ Matriz: {stats.cnpj}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
                     {hasMultipleBranches && (
                       <button
                         onClick={() => toggleBranchExpand(stats.id)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border cursor-pointer ${
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
                           isBranchesExpanded
-                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
-                            : 'bg-gray-50 text-gray-700 dark:bg-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600 hover:bg-gray-100'
+                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-xs'
+                            : 'bg-gray-50 text-gray-700 dark:bg-gray-700/60 dark:text-gray-200 border-gray-200 dark:border-gray-600 hover:bg-gray-100'
                         }`}
                       >
                         <Building2 className="w-3.5 h-3.5" />
-                        <span>Ver Relatório por CNPJ ({stats.branches.length})</span>
+                        <span>Ver por CNPJ ({stats.branches.length})</span>
                         {isBranchesExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                       </button>
                     )}
                     <button
                       onClick={() => generatePDF(stats.id)}
-                      className="flex items-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 px-3 py-1.5 rounded-lg font-bold transition-colors text-xs border border-red-200 dark:border-red-800 cursor-pointer"
-                      title="Baixar PDF consolidado"
+                      className="flex items-center gap-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:hover:bg-rose-900/40 px-3.5 py-2 rounded-xl font-bold transition-colors text-xs border border-rose-200 dark:border-rose-900/50 cursor-pointer"
+                      title="Baixar PDF consolidado deste cliente"
                     >
                       <Download className="w-3.5 h-3.5" /> PDF Consolidado
                     </button>
                     <button
                       onClick={() => openListModal(stats.id)}
-                      className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40 px-3 py-1.5 rounded-lg font-bold transition-colors text-xs border border-blue-200 dark:border-blue-800 cursor-pointer"
-                      title="Ver todos os embarques"
+                      className="flex items-center gap-1.5 bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-900/40 px-3.5 py-2 rounded-xl font-bold transition-colors text-xs border border-amber-200 dark:border-amber-900/50 cursor-pointer"
+                      title="Ver todos os embarques deste cliente"
                     >
-                      <List className="w-3.5 h-3.5" /> Listagem Geral
+                      <List className="w-3.5 h-3.5" /> Listagem ({stats.totalShipments})
                     </button>
                   </div>
                 </div>
 
-                {/* Stat Cards */}
+                {/* Stat Cards Grid */}
                 {isClientUser ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-                    <StatCard title="Total de Embarques" value={stats.totalShipments} icon={<PackageIcon className="w-7 h-7 text-blue-500 dark:text-blue-400"/>} />
-                    <StatCard title="Volume Transportado" value={`${stats.totalTonnage.toLocaleString('pt-BR')} ton`} icon={<PackageIcon className="w-7 h-7 text-indigo-500 dark:text-indigo-400"/>} />
-                    <StatCard title="Total em Frete Contratado" value={stats.grossBilled} icon={<DollarSignIcon className="w-7 h-7 text-green-500 dark:text-green-400"/>} formatAsCurrency />
-                    <StatCard title="Frete Médio / Ton" value={stats.totalTonnage > 0 ? (stats.grossBilled / stats.totalTonnage) : 0} icon={<TrendingUp className="w-7 h-7 text-teal-500 dark:text-teal-400"/>} formatAsCurrency />
-                    <StatCard title="Embarques Concluídos" value={stats.completedShipments} icon={<CheckCircle2 className="w-7 h-7 text-purple-500 dark:text-purple-400"/>} />
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <StatCard title="Total de Embarques" value={stats.totalShipments} icon={<Truck className="w-6 h-6 text-amber-500"/>} />
+                    <StatCard title="Volume Transportado" value={`${stats.totalTonnage.toLocaleString('pt-BR')} ton`} icon={<Scale className="w-6 h-6 text-amber-500"/>} />
+                    <StatCard title="Frete Contratado" value={stats.grossBilled} icon={<DollarSignIcon className="w-6 h-6 text-emerald-500"/>} formatAsCurrency />
+                    <StatCard title="Frete Médio / Ton" value={stats.totalTonnage > 0 ? (stats.grossBilled / stats.totalTonnage) : 0} icon={<TrendingUp className="w-6 h-6 text-teal-500"/>} formatAsCurrency />
+                    <StatCard title="Embarques Concluídos" value={stats.completedShipments} icon={<CheckCircle2 className="w-6 h-6 text-purple-500"/>} />
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-                    <StatCard title="Total de Embarques" value={stats.totalShipments} icon={<PackageIcon className="w-7 h-7 text-blue-500 dark:text-blue-400"/>} />
-                    <StatCard title="Volume Total" value={`${stats.totalTonnage.toLocaleString('pt-BR')} ton`} icon={<PackageIcon className="w-7 h-7 text-indigo-500 dark:text-indigo-400"/>} />
-                    <StatCard title="Faturamento Bruto" value={stats.grossBilled} icon={<DollarSignIcon className="w-7 h-7 text-green-500 dark:text-green-400"/>} formatAsCurrency />
-                    <StatCard title="Lucro Operacional" value={stats.profitMargin} icon={<DollarSignIcon className="w-7 h-7 text-teal-500 dark:text-teal-400"/>} formatAsCurrency />
-                    <StatCard title="Margem de Lucro" value={`${stats.profitMarginPercentage.toFixed(2)}%`} icon={<DollarSignIcon className="w-7 h-7 text-purple-500 dark:text-purple-400"/>} />
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <StatCard title="Total de Embarques" value={stats.totalShipments} icon={<Truck className="w-6 h-6 text-amber-500"/>} />
+                    <StatCard title="Volume Total" value={`${stats.totalTonnage.toLocaleString('pt-BR')} ton`} icon={<Scale className="w-6 h-6 text-amber-500"/>} />
+                    <StatCard title="Faturamento Bruto" value={stats.grossBilled} icon={<DollarSignIcon className="w-6 h-6 text-emerald-500"/>} formatAsCurrency />
+                    <StatCard title="Lucro Operacional" value={stats.profitMargin} icon={<TrendingUp className="w-6 h-6 text-teal-500"/>} formatAsCurrency />
+                    <StatCard title="Margem de Lucro" value={`${stats.profitMarginPercentage.toFixed(2)}%`} icon={<PackageIcon className="w-6 h-6 text-purple-500"/>} />
                   </div>
                 )}
 
                 {/* Breakdown by CNPJ / Filial */}
                 {hasMultipleBranches && isBranchesExpanded && (
-                  <div className="mt-4 p-4 bg-gray-50/70 dark:bg-gray-750/50 rounded-xl border border-gray-200 dark:border-gray-650 space-y-3 animate-fadeIn">
+                  <div className="mt-4 p-4 bg-gray-50/80 dark:bg-gray-750/50 rounded-2xl border border-gray-200 dark:border-gray-700 space-y-3 animate-fadeIn">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wide">
+                      <div className="flex items-center gap-2 text-xs font-black text-gray-800 dark:text-gray-200 uppercase tracking-wide">
                         <Building2 className="w-4 h-4 text-emerald-600" />
-                        Detalhamento e Histórico Individual por CNPJ / Filial
+                        Detalhamento e Histórico por CNPJ / Filial
                       </div>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {stats.branches.length} unidades
+                      <span className="text-xs text-gray-500 dark:text-gray-400 font-semibold">
+                        {stats.branches.length} unidades registradas
                       </span>
                     </div>
 
-                    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                    <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs">
                       <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-left text-xs bg-white dark:bg-gray-800">
-                        <thead className="bg-gray-100/70 dark:bg-gray-700/70 font-bold text-gray-600 dark:text-gray-300">
+                        <thead className="bg-gray-100/80 dark:bg-gray-700/80 font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider text-[11px]">
                           <tr>
-                            <th className="px-3.5 py-2.5">Unidade / Filial</th>
-                            <th className="px-3.5 py-2.5">CNPJ</th>
-                            <th className="px-3.5 py-2.5">Cidade/UF</th>
-                            <th className="px-3.5 py-2.5 text-right">Embarques</th>
-                            <th className="px-3.5 py-2.5 text-right">Volume (Ton)</th>
-                            <th className="px-3.5 py-2.5 text-right">{isClientUser ? 'Total em Frete' : 'Faturamento Bruto'}</th>
-                            {!isClientUser && <th className="px-3.5 py-2.5 text-right">Lucro Líquido</th>}
-                            {!isClientUser && <th className="px-3.5 py-2.5 text-right">Margem</th>}
-                            <th className="px-3.5 py-2.5 text-right">Ações por CNPJ</th>
+                            <th className="px-4 py-3">Unidade / Filial</th>
+                            <th className="px-4 py-3">CNPJ</th>
+                            <th className="px-4 py-3">Cidade/UF</th>
+                            <th className="px-4 py-3 text-right">Embarques</th>
+                            <th className="px-4 py-3 text-right">Volume (Ton)</th>
+                            <th className="px-4 py-3 text-right">{isClientUser ? 'Total em Frete' : 'Faturamento Bruto'}</th>
+                            {!isClientUser && <th className="px-4 py-3 text-right">Lucro Líquido</th>}
+                            {!isClientUser && <th className="px-4 py-3 text-right">Margem</th>}
+                            <th className="px-4 py-3 text-right">Ações por CNPJ</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                           {stats.branches.map(branch => (
-                            <tr key={branch.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                              <td className="px-3.5 py-3 font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                                <span className={`w-2 h-2 rounded-full ${branch.id === 'matriz' ? 'bg-blue-500' : 'bg-emerald-500'}`} />
+                            <tr key={branch.id} className="hover:bg-gray-50/80 dark:hover:bg-gray-700/40 transition-colors">
+                              <td className="px-4 py-3 font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${branch.id === 'matriz' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
                                 {branch.name}
                               </td>
-                              <td className="px-3.5 py-3 font-mono text-gray-600 dark:text-gray-300">
+                              <td className="px-4 py-3 font-mono text-gray-600 dark:text-gray-300">
                                 {branch.cnpj}
                               </td>
-                              <td className="px-3.5 py-3 text-gray-500 dark:text-gray-400">
+                              <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
                                 {branch.cityState}
                               </td>
-                              <td className="px-3.5 py-3 text-right font-semibold text-gray-800 dark:text-gray-200">
+                              <td className="px-4 py-3 text-right font-bold text-gray-800 dark:text-gray-200">
                                 {branch.totalShipments}
                               </td>
-                              <td className="px-3.5 py-3 text-right font-semibold text-gray-800 dark:text-gray-200">
+                              <td className="px-4 py-3 text-right font-bold text-gray-800 dark:text-gray-200">
                                 {branch.totalTonnage.toFixed(2)} t
                               </td>
-                              <td className="px-3.5 py-3 text-right font-bold text-green-600 dark:text-green-400">
+                              <td className="px-4 py-3 text-right font-black text-emerald-600 dark:text-emerald-400">
                                 {branch.grossBilled.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                               </td>
                               {!isClientUser && (
-                                <td className="px-3.5 py-3 text-right font-bold text-teal-600 dark:text-teal-400">
+                                <td className="px-4 py-3 text-right font-black text-teal-600 dark:text-teal-400">
                                   {branch.profitMargin.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                 </td>
                               )}
                               {!isClientUser && (
-                                <td className="px-3.5 py-3 text-right font-bold text-purple-600 dark:text-purple-400">
+                                <td className="px-4 py-3 text-right font-bold text-purple-600 dark:text-purple-400">
                                   {branch.profitMarginPercentage.toFixed(2)}%
                                 </td>
                               )}
-                              <td className="px-3.5 py-3 text-right space-x-1.5 whitespace-nowrap">
+                              <td className="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
                                 <button
                                   onClick={() => generatePDF(stats.id, branch.cnpj)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 rounded font-bold transition-colors cursor-pointer text-[11px]"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 rounded-lg font-bold transition-colors cursor-pointer text-[11px] border border-rose-200 dark:border-rose-900/50"
                                   title={`Baixar PDF exclusivo do CNPJ ${branch.cnpj}`}
                                 >
                                   <Download className="w-3 h-3" /> PDF
                                 </button>
                                 <button
                                   onClick={() => openListModal(stats.id, branch.cnpj)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 rounded font-bold transition-colors cursor-pointer text-[11px]"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 rounded-lg font-bold transition-colors cursor-pointer text-[11px] border border-amber-200 dark:border-amber-900/50"
                                   title={`Ver embarques exclusivos do CNPJ ${branch.cnpj}`}
                                 >
                                   <List className="w-3 h-3" /> Listagem
@@ -907,7 +1121,6 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
                     </div>
                   </div>
                 )}
-
               </div>
             );
           })}
@@ -916,46 +1129,94 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
 
       {/* Shipments List Modal */}
       {showListModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/50 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col border border-gray-100 dark:border-gray-700 overflow-hidden">
-            <div className="flex justify-between items-center p-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-700 overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  <List className="w-5 h-5 text-primary" />
-                  Listagem de Embarques
-                </h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-lg">
+                    <FileSpreadsheet className="w-4 h-4" />
+                  </span>
+                  <h3 className="text-lg font-black text-gray-900 dark:text-white">
+                    Listagem de Embarques
+                  </h3>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300">
+                    {filteredModalShipments.length} embarques
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   {selectedClientId === 'ALL'
-                    ? (isClientUser ? 'Todos os Embarques da Empresa' : 'Todos os Clientes')
+                    ? (isClientUser ? 'Todos os Embarques da Empresa' : 'Todos os Clientes e Demandas')
                     : `Cliente: ${clients.find(c => c.id === selectedClientId)?.nomeFantasia || selectedClientId}`}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                 <button
                   onClick={generatePDFFromModal}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-800 cursor-pointer"
-                  title={activeModalFiltersCount > 0 ? 'Baixar PDF com filtros aplicados' : 'Baixar PDF completo'}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-colors text-xs font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50 cursor-pointer"
+                  title={activeModalFiltersCount > 0 ? 'Exportar PDF com os filtros aplicados' : 'Exportar PDF completo'}
                 >
                   <Download className="w-3.5 h-3.5" />
-                  PDF {activeModalFiltersCount > 0 && <span className="ml-1 bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{filteredModalShipments.length}</span>}
+                  PDF
+                  {activeModalFiltersCount > 0 && (
+                    <span className="ml-1 bg-rose-200 dark:bg-rose-800 text-rose-800 dark:text-rose-200 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                      {filteredModalShipments.length}
+                    </span>
+                  )}
                 </button>
                 <button 
                   onClick={() => setShowModalFilters(!showModalFilters)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors text-xs font-bold cursor-pointer ${showModalFilters || activeModalFiltersCount > 0 ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800' : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'}`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-colors text-xs font-bold cursor-pointer ${
+                    showModalFilters || activeModalFiltersCount > 0 
+                      ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800' 
+                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                  }`}
                 >
                   <Filter className="w-3.5 h-3.5" /> Filtros {activeModalFiltersCount > 0 && `(${activeModalFiltersCount})`}
                 </button>
                 <button
                   onClick={() => setShowListModal(false)}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors cursor-pointer"
+                  className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
+            {/* Financial summary ticker strip */}
+            <div className="bg-gray-50 dark:bg-gray-900/60 px-5 py-2.5 border-b border-gray-100 dark:border-gray-700 text-xs flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-4 flex-wrap">
+                <div>
+                  <span className="text-gray-400 font-semibold mr-1">Volume Carregado:</span>
+                  <span className="font-black text-gray-800 dark:text-gray-200">{modalFinancialTotals.totalTons.toFixed(2)} t</span>
+                </div>
+                <span className="text-gray-300 dark:text-gray-700">•</span>
+                <div>
+                  <span className="text-gray-400 font-semibold mr-1">{isClientUser ? 'Total em Frete:' : 'Frete Empresa Total:'}</span>
+                  <span className="font-black text-primary dark:text-amber-400">{formatCurrency(modalFinancialTotals.totalCompanyFreight)}</span>
+                </div>
+                {!isClientUser && (
+                  <>
+                    <span className="text-gray-300 dark:text-gray-700">•</span>
+                    <div>
+                      <span className="text-gray-400 font-semibold mr-1">Frete Motoristas:</span>
+                      <span className="font-black text-gray-800 dark:text-gray-200">{formatCurrency(modalFinancialTotals.totalDriverFreight)}</span>
+                    </div>
+                    <span className="text-gray-300 dark:text-gray-700">•</span>
+                    <div>
+                      <span className="text-gray-400 font-semibold mr-1">Margem Bruta Empresa:</span>
+                      <span className="font-black text-emerald-600 dark:text-emerald-400">{formatCurrency(modalFinancialTotals.netMargin)}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Collapsible Filter Toolbar */}
             {showModalFilters && (
-              <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/20">
+              <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                   <MultiSelectDropdown label="CNPJ / Filial" options={modalCnpjOptions} selectedValues={filterModalCnpj} onChange={setFilterModalCnpj} placeholder="Todos os CNPJs..." />
                   <MultiSelectDropdown label="Status" options={modalStatusOptions} selectedValues={filterModalStatus} onChange={setFilterModalStatus} placeholder="Todos..." />
@@ -964,8 +1225,8 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
                   <MultiSelectDropdown label="Destino" options={modalDestOptions} selectedValues={filterModalDest} onChange={setFilterModalDest} placeholder="Todos..." />
                 </div>
                 {activeModalFiltersCount > 0 && (
-                  <div className="mt-2.5 flex justify-end">
-                    <button onClick={clearModalFilters} className="text-xs font-bold flex items-center gap-1 text-red-600 hover:text-red-700 dark:text-red-400 cursor-pointer">
+                  <div className="mt-3 flex justify-end">
+                    <button onClick={clearModalFilters} className="text-xs font-bold flex items-center gap-1 text-rose-600 hover:text-rose-700 dark:text-rose-400 cursor-pointer">
                       <X className="w-3.5 h-3.5" /> Limpar Filtros
                     </button>
                   </div>
@@ -973,21 +1234,22 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
               </div>
             )}
 
+            {/* Shipments Table */}
             <div className="p-0 overflow-auto flex-1">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 shadow-xs text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-left text-xs">
+                <thead className="bg-gray-50 dark:bg-gray-900/90 sticky top-0 shadow-xs uppercase tracking-wider font-bold text-gray-500 dark:text-gray-400">
                   <tr>
-                    <th className="px-4 py-3 text-left">ID / Motorista</th>
-                    <th className="px-4 py-3 text-left">Datas (Início/Fim)</th>
-                    <th className="px-4 py-3 text-left">Placa</th>
-                    <th className="px-4 py-3 text-left">Cliente / CNPJ Pagador</th>
-                    <th className="px-4 py-3 text-left">Rota (Origem → Destino)</th>
-                    <th className="px-4 py-3 text-left">{isClientUser ? 'Frete (/Ton)' : 'Valores (/Ton)'}</th>
-                    <th className="px-4 py-3 text-left">Pesos (Orig. / Dest.)</th>
-                    <th className="px-4 py-3 text-left">Status</th>
+                    <th scope="col" className="px-4 py-3">ID / Motorista</th>
+                    <th scope="col" className="px-4 py-3">Datas (Início/Fim)</th>
+                    <th scope="col" className="px-4 py-3">Placa Cavalo</th>
+                    <th scope="col" className="px-4 py-3">Cliente / CNPJ Pagador</th>
+                    <th scope="col" className="px-4 py-3">Rota (Origem → Destino)</th>
+                    <th scope="col" className="px-4 py-3">{isClientUser ? 'Frete (/Ton)' : 'Valores (/Ton)'}</th>
+                    <th scope="col" className="px-4 py-3">Pesos (Orig. / Dest.)</th>
+                    <th scope="col" className="px-4 py-3">Status</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700 text-xs">
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
                   {filteredModalShipments.map(shipment => {
                     const cargo = cargoMap.get(shipment.cargoId);
                     const origem = cargo?.origin || 'N/A';
@@ -1009,69 +1271,105 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
                       quebra = (pesoOrigem - pesoDestino).toFixed(2);
                     }
 
+                    const getStatusColor = (status: ShipmentStatus) => {
+                      switch (status) {
+                        case ShipmentStatus.Finalizado:
+                          return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+                        case ShipmentStatus.AguardandoDescarga:
+                        case ShipmentStatus.ValidacaoTicket:
+                        case ShipmentStatus.AguardandoPagamentoSaldo:
+                          return 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800';
+                        case ShipmentStatus.AguardandoCarregamento:
+                        case ShipmentStatus.AguardandoNota:
+                        case ShipmentStatus.AguardandoFiscal:
+                        case ShipmentStatus.AguardandoAdiantamento:
+                          return 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800';
+                        case ShipmentStatus.Cancelado:
+                          return 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800';
+                        default:
+                          return 'bg-gray-50 text-gray-700 dark:bg-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600';
+                      }
+                    };
+
                     return (
-                      <tr key={shipment.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                      <tr key={shipment.id} className="hover:bg-gray-50/80 dark:hover:bg-gray-700/40 transition-colors">
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="font-bold text-gray-900 dark:text-white">{shipment.id}</div>
-                          <div className="text-gray-500 dark:text-gray-400 mt-0.5">{shipment.driverName}</div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex flex-col gap-0.5 text-[11px]">
-                            <div><span className="text-gray-500">Início:</span> <span className="font-medium text-gray-900 dark:text-gray-200">{dataInicio}</span></div>
-                            <div><span className="text-gray-500">Fim:</span> <span className="font-medium text-gray-900 dark:text-gray-200">{dataFim}</span></div>
+                          <span className="font-mono font-bold text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-700/60 px-1.5 py-0.5 rounded text-[11px]">
+                            {shipment.id}
+                          </span>
+                          <div className="text-gray-700 dark:text-gray-300 font-semibold mt-1">
+                            {shipment.driverName}
                           </div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <span className="font-bold text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-600 font-mono text-[11px]">
+                          <div className="flex flex-col gap-0.5 text-[11px]">
+                            <div className="flex items-center gap-1">
+                              <span className="text-gray-400">Início:</span>
+                              <span className="font-medium text-gray-800 dark:text-gray-200">{dataInicio}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-gray-400">Fim:</span>
+                              <span className="font-medium text-gray-800 dark:text-gray-200">{dataFim}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="font-mono font-bold text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-600 text-[11px]">
                             {shipment.horsePlate || '-'}
                           </span>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="font-bold text-gray-800 dark:text-gray-200">{clienteNome}</div>
+                          <div className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                            <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                            {clienteNome}
+                          </div>
                           <div className="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono flex items-center gap-1 mt-0.5">
-                            <span className="px-1.5 py-0.2 bg-emerald-50 dark:bg-emerald-900/40 rounded border border-emerald-200 dark:border-emerald-800">
+                            <span className="px-1.5 py-0.2 bg-emerald-50 dark:bg-emerald-950/40 rounded border border-emerald-200 dark:border-emerald-800">
                               {info.name} ({info.cnpj})
                             </span>
                           </div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex flex-col text-[11px]">
-                            <span className="font-medium text-gray-900 dark:text-white">{origem}</span>
-                            <span className="text-gray-400 text-[10px]">para</span>
-                            <span className="font-medium text-gray-900 dark:text-white">{destino}</span>
+                          <div className="flex items-center gap-1.5 text-[11px]">
+                            <span className="font-semibold text-gray-800 dark:text-gray-200">{origem}</span>
+                            <ArrowRight className="w-3 h-3 text-gray-400" />
+                            <span className="font-semibold text-gray-800 dark:text-gray-200">{destino}</span>
                           </div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <div className="flex flex-col gap-0.5 text-[11px]">
-                            <div className="flex justify-between gap-2">
-                              <span className="text-gray-500">{isClientUser ? 'Frete:' : 'Empresa:'}</span>
-                              <span className="font-bold text-blue-600 dark:text-blue-400">
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freteEmpresa)}
-                              </span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-gray-400">{isClientUser ? 'Frete:' : 'Emp:'}</span>
+                              <span className="font-bold text-primary dark:text-amber-400">{formatCurrency(freteEmpresa)}</span>
                             </div>
                             {!isClientUser && (
-                              <div className="flex justify-between gap-2">
-                                <span className="text-gray-500">Motorista:</span>
-                                <span className="font-medium text-gray-900 dark:text-gray-200">
-                                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freteMotorista)}
-                                </span>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-gray-400">Mot:</span>
+                                <span className="font-semibold text-gray-700 dark:text-gray-300">{formatCurrency(freteMotorista)}</span>
                               </div>
                             )}
                           </div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex flex-col text-[11px]">
-                            <div><span className="text-gray-500">Origem:</span> <span className="font-medium">{pesoOrigem.toFixed(2)} t</span></div>
-                            <div><span className="text-gray-500">Destino:</span> <span className="font-medium">{pesoDestino !== undefined ? `${pesoDestino.toFixed(2)} t` : '-'}</span></div>
+                          <div className="flex flex-col gap-0.5 text-[11px]">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-gray-400">Origem:</span>
+                              <span className="font-medium text-gray-800 dark:text-gray-200">{pesoOrigem.toFixed(2)} t</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-gray-400">Destino:</span>
+                              <span className="font-medium text-gray-800 dark:text-gray-200">{pesoDestino !== undefined ? `${pesoDestino.toFixed(2)} t` : '-'}</span>
+                            </div>
                             {quebra && (
-                              <div className="text-red-600 dark:text-red-400 font-bold mt-0.5">
-                                Quebra: {quebra} t
+                              <div className="flex items-center justify-between gap-2 text-rose-600 dark:text-rose-400 font-bold">
+                                <span>Quebra:</span>
+                                <span>{quebra} t</span>
                               </div>
                             )}
                           </div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <span className="px-2.5 py-0.5 inline-flex text-[11px] font-bold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
+                          <span className={`px-2.5 py-1 inline-flex text-[10px] font-bold rounded-full border ${getStatusColor(shipment.status)}`}>
                             {shipment.status}
                           </span>
                         </td>
@@ -1081,8 +1379,8 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
                 </tbody>
               </table>
               {filteredModalShipments.length === 0 && (
-                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                  Nenhum embarque encontrado com os filtros atuais.
+                <div className="text-center py-12 text-gray-400 dark:text-gray-500 text-xs">
+                  Nenhum embarque corresponde aos filtros selecionados.
                 </div>
               )}
             </div>

@@ -1,10 +1,10 @@
 import React from 'react';
 import { Shipment, ShipmentStatus, Cargo, RISK_QUERY_COST_MAP, HistoryLog, User, Client, UserProfile } from '../types';
-import { extractDetailedDocData } from '../utils/fiscalDocParser';
+import { extractDetailedDocData, isStrictNotaFiscalCategory } from '../utils/fiscalDocParser';
 import { upsertShipment } from '../lib/db';
 import { useToast } from '../hooks/useToast';
 import { isDemoUser } from '../auth';
-import { StayRecord, getAllToolStays } from '../utils/toolStorage';
+import { StayRecord, getAllToolStays, extractCteNumberFromStay } from '../utils/toolStorage';
 import { isStayForShipment } from '../utils';
 import { calculateTacTaxDeductions } from '../utils/freightCalculation';
 import { 
@@ -37,7 +37,8 @@ import {
   Plus,
   Trash2,
   HelpCircle,
-  FileWarning
+  FileWarning,
+  Landmark
 } from 'lucide-react';
 
 interface CteCostAutomationPanelProps {
@@ -51,7 +52,7 @@ interface CteCostAutomationPanelProps {
   users?: User[];
   clients?: Client[];
   currentUser?: User | null;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void> | void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => Promise<void> | void;
 }
 
 export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
@@ -271,7 +272,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Enquadramento fiscal alterado de "${oldRegimeLabel}" para "${newRegimeLabel}". Imposto Federal e custos operacionais recalculados.`
       };
@@ -423,7 +424,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       const oldTax = impostoFederalLiquido;
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Imposto Federal editado manualmente: de "${formatBrl(oldTax)}" para "${formatBrl(validNum)}".`
       };
@@ -485,7 +486,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Imposto Federal restaurado para o cálculo automático do sistema.`
       };
@@ -615,7 +616,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       const oldCredit = pisCofinsCredit;
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Crédito Gerado editado manualmente: de "${formatBrl(oldCredit)}" para "${formatBrl(validNum)}".`
       };
@@ -677,7 +678,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Crédito Gerado restaurado para o cálculo automático do sistema.`
       };
@@ -723,6 +724,261 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       showToast('Erro ao restaurar cálculo automático.', 'error');
     } finally {
       setIsSavingGeneratedCredit(false);
+    }
+  };
+
+  // Valor da NF (Mercadoria) editável
+  const initialCustomInvoiceValue = shipment.nfeValue !== undefined 
+    ? shipment.nfeValue 
+    : (shipment.realProfitData?.invoiceValue !== undefined 
+        ? shipment.realProfitData.invoiceValue 
+        : ((shipment.documents as any)?.nfe_value !== undefined 
+            ? Number((shipment.documents as any).nfe_value) 
+            : ((shipment.documents as any)?.valor_mercadoria !== undefined 
+                ? Number((shipment.documents as any).valor_mercadoria) 
+                : undefined)));
+
+  const [customInvoiceValue, setCustomInvoiceValue] = React.useState<number | undefined>(initialCustomInvoiceValue);
+  const [isEditingInvoiceValue, setIsEditingInvoiceValue] = React.useState(false);
+  const [invoiceValueInput, setInvoiceValueInput] = React.useState<string>('');
+  const [isSavingInvoiceValue, setIsSavingInvoiceValue] = React.useState(false);
+  const [justSavedInvoiceValue, setJustSavedInvoiceValue] = React.useState(false);
+
+  React.useEffect(() => {
+    const currentVal = shipment.nfeValue !== undefined 
+      ? shipment.nfeValue 
+      : (shipment.realProfitData?.invoiceValue !== undefined 
+          ? shipment.realProfitData.invoiceValue 
+          : ((shipment.documents as any)?.nfe_value !== undefined 
+              ? Number((shipment.documents as any).nfe_value) 
+              : ((shipment.documents as any)?.valor_mercadoria !== undefined 
+                  ? Number((shipment.documents as any).valor_mercadoria) 
+                  : undefined)));
+    setCustomInvoiceValue(currentVal);
+  }, [shipment.nfeValue, shipment.realProfitData?.invoiceValue, shipment.documents]);
+
+  const handleStartEditInvoiceValue = () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    const currentNum = customInvoiceValue !== undefined ? customInvoiceValue : (autoInvoiceValue || shipment.nfeValue || shipment.realProfitData?.invoiceValue || 0);
+    setInvoiceValueInput(currentNum > 0 ? String(currentNum) : '');
+    setIsEditingInvoiceValue(true);
+  };
+
+  const handleSaveInvoiceValue = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    setIsSavingInvoiceValue(true);
+    try {
+      const parsedVal = parseCurrencyInput(invoiceValueInput);
+      const validNum = isNaN(parsedVal) || parsedVal < 0 ? 0 : Number(parsedVal.toFixed(2));
+      
+      setCustomInvoiceValue(validNum);
+      setIsEditingInvoiceValue(false);
+      setJustSavedInvoiceValue(true);
+      setTimeout(() => setJustSavedInvoiceValue(false), 3000);
+
+      const oldVal = customInvoiceValue || shipment.nfeValue || 0;
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: currentUser?.id || 'system',
+        timestamp: new Date().toISOString(),
+        description: `Valor da NF-e editado manualmente: de "${formatBrl(oldVal)}" para "${formatBrl(validNum)}".`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+        invoiceValue: validNum,
+        isInvoiceValueManual: true,
+      };
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        nfe_value: validNum,
+        valor_mercadoria: validNum,
+        real_profit_data: updatedRealProfitData
+      };
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        nfeValue: validNum,
+        realProfitData: updatedRealProfitData as any,
+        history: updatedHistory,
+        documents: updatedDocs
+      };
+
+      await upsertShipment(updatedShipment);
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          nfeValue: validNum,
+          realProfitData: updatedRealProfitData as any,
+          history: updatedHistory,
+          documents: updatedDocs
+        });
+      }
+
+      showToast(`Valor da NF-e atualizado para ${formatBrl(validNum)} com sucesso!`, 'success');
+    } catch (err) {
+      console.error('Erro ao salvar Valor da NF-e:', err);
+      showToast('Erro ao salvar Valor da NF-e.', 'error');
+    } finally {
+      setIsSavingInvoiceValue(false);
+    }
+  };
+
+  // Vale-Pedágio editável / correção de divergência
+  const [customToll, setCustomToll] = React.useState<number | undefined>(undefined);
+  const [isEditingToll, setIsEditingToll] = React.useState(false);
+  const [tollInput, setTollInput] = React.useState<string>('');
+  const [isSavingToll, setIsSavingToll] = React.useState(false);
+  const [justSavedToll, setJustSavedToll] = React.useState(false);
+
+  React.useEffect(() => {
+    if (shipment.tollValue !== undefined && shipment.tollValue !== null) {
+      setCustomToll(Number(shipment.tollValue));
+    } else if (shipment.realProfitData?.toll !== undefined) {
+      setCustomToll(Number(shipment.realProfitData.toll));
+    } else {
+      setCustomToll(undefined);
+    }
+  }, [shipment.tollValue, shipment.realProfitData?.toll, shipment.id]);
+
+  const handleApplyDocToll = async (targetToll: number) => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    setIsSavingToll(true);
+    try {
+      const validNum = Math.max(0, Number(targetToll.toFixed(2)));
+      setCustomToll(validNum);
+      setIsEditingToll(false);
+      setJustSavedToll(true);
+      setTimeout(() => setJustSavedToll(false), 4000);
+
+      const oldToll = toll;
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: currentUser?.id || 'system',
+        timestamp: new Date().toISOString(),
+        description: `Vale-Pedágio corrigido para o valor do documento fiscal: de "${formatBrl(oldToll)}" para "${formatBrl(validNum)}".`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+        toll: validNum,
+      };
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        toll_value: validNum,
+        valor_pedagio: validNum,
+        real_profit_data: updatedRealProfitData
+      };
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        tollValue: validNum,
+        realProfitData: updatedRealProfitData as any,
+        history: updatedHistory,
+        documents: updatedDocs
+      };
+
+      await upsertShipment(updatedShipment);
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          tollValue: validNum,
+          realProfitData: updatedRealProfitData as any,
+          history: updatedHistory,
+          documents: updatedDocs
+        });
+      }
+
+      showToast(`Vale-Pedágio corrigido para ${formatBrl(validNum)} com sucesso!`, 'success');
+    } catch (err) {
+      console.error('Erro ao corrigir Vale-Pedágio:', err);
+      showToast('Erro ao corrigir Vale-Pedágio.', 'error');
+    } finally {
+      setIsSavingToll(false);
+    }
+  };
+
+  const handleStartEditToll = () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    const currentNum = customToll !== undefined ? customToll : toll;
+    setTollInput(currentNum > 0 ? String(currentNum) : (autoToll && autoToll > 0 ? String(autoToll) : ''));
+    setIsEditingToll(true);
+  };
+
+  const handleSaveCustomToll = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    setIsSavingToll(true);
+    try {
+      const parsedVal = parseCurrencyInput(tollInput);
+      const validNum = isNaN(parsedVal) || parsedVal < 0 ? 0 : Number(parsedVal.toFixed(2));
+
+      setCustomToll(validNum);
+      setIsEditingToll(false);
+      setJustSavedToll(true);
+      setTimeout(() => setJustSavedToll(false), 4000);
+
+      const oldToll = toll;
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: currentUser?.id || 'system',
+        timestamp: new Date().toISOString(),
+        description: `Vale-Pedágio editado manualmente: de "${formatBrl(oldToll)}" para "${formatBrl(validNum)}".`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+        toll: validNum,
+      };
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        toll_value: validNum,
+        valor_pedagio: validNum,
+        real_profit_data: updatedRealProfitData
+      };
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        tollValue: validNum,
+        realProfitData: updatedRealProfitData as any,
+        history: updatedHistory,
+        documents: updatedDocs
+      };
+
+      await upsertShipment(updatedShipment);
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          tollValue: validNum,
+          realProfitData: updatedRealProfitData as any,
+          history: updatedHistory,
+          documents: updatedDocs
+        });
+      }
+
+      showToast(`Vale-Pedágio atualizado para ${formatBrl(validNum)} com sucesso!`, 'success');
+    } catch (err) {
+      console.error('Erro ao salvar Vale-Pedágio:', err);
+      showToast('Erro ao salvar Vale-Pedágio.', 'error');
+    } finally {
+      setIsSavingToll(false);
     }
   };
 
@@ -806,7 +1062,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Custo Adicional / Prejuízo registrado: ${formatBrl(newCost.value)} (Categoria: ${newCost.category}). Justificativa: "${newCost.description}".`
       };
@@ -876,7 +1132,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Custo Adicional / Prejuízo de ${formatBrl(oldVal)} removido da operação.`
       };
@@ -945,7 +1201,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Comissão de Agência (${effectiveAgencyPercentage}% sobre Lucro Líquido Real) ${nextState ? `ativada: ${formatBrl(calculatedAgencyVal)} destinado à ${responsibleAgencyName}` : 'desativada'}.`
       };
@@ -1018,7 +1274,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Comissão do Embarcador (${formatBrl(shipperCommRate)}/t) ${nextState ? `ativada: ${formatBrl(calculatedShipperVal)} (${tonnage.toFixed(2)}t) creditado ao embarcador` : 'desativada'}.`
       };
@@ -1092,7 +1348,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Taxa da Comissão do Embarcador alterada para ${formatBrl(validRate)}/ton (Total: ${formatBrl(calculatedShipperVal)}).`
       };
@@ -1145,53 +1401,227 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     }
   };
 
-  const cteGrossFreight = shipment.realProfitData?.companyFreight !== undefined && shipment.realProfitData.companyFreight > 0
-    ? shipment.realProfitData.companyFreight
-    : (companyRate > 0 && tonnage > 0 
-        ? Number((companyRate * tonnage).toFixed(2)) 
-        : (shipment.driverFreightValue || 0));
+  const calculatedCompanyFreight = (companyRate > 0 && tonnage > 0) ? Number((companyRate * tonnage).toFixed(2)) : 0;
+  const cteGrossFreight = (calculatedCompanyFreight > 0 && shipment.realProfitData?.companyFreight && Math.abs(shipment.realProfitData.companyFreight - calculatedCompanyFreight) > 5.00 && (shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon))
+    ? calculatedCompanyFreight
+    : (shipment.realProfitData?.companyFreight !== undefined && shipment.realProfitData.companyFreight > 0
+        ? shipment.realProfitData.companyFreight
+        : (calculatedCompanyFreight > 0 
+            ? calculatedCompanyFreight 
+            : (shipment.driverFreightValue || 0)));
 
   // Estados para capturas automáticas do XML/Documentos
   const [autoToll, setAutoToll] = React.useState<number | undefined>(undefined);
   const [autoInvoiceValue, setAutoInvoiceValue] = React.useState<number | undefined>(undefined);
   const [autoFederalTax, setAutoFederalTax] = React.useState<number | undefined>(undefined);
+  const [autoCteServiceTotal, setAutoCteServiceTotal] = React.useState<number | undefined>(undefined);
+  const [autoCteIcms, setAutoCteIcms] = React.useState<number | undefined>(undefined);
+  const [autoCteIcmsRate, setAutoCteIcmsRate] = React.useState<number | undefined>(undefined);
   const [isSyncing, setIsSyncing] = React.useState(false);
 
   const syncDocs = React.useCallback(async () => {
     if (!shipment.documents) return;
-    const allUrls: string[] = [];
+
+    const isExcludedDocCategory = (cat: string) => {
+      const lower = (cat || '').toLowerCase();
+      return (
+        lower.includes('cadastro') ||
+        lower.includes('cnh') ||
+        lower.includes('adiantamento') ||
+        lower.includes('agendamento') ||
+        lower.includes('descarga') ||
+        lower.includes('saldo') ||
+        lower.includes('seguradora') ||
+        lower.includes('liberação') ||
+        lower.includes('liberacao') ||
+        lower.includes('ordem') ||
+        lower.includes('veículo') ||
+        lower.includes('veiculo')
+      );
+    };
+
+    const docEntries: Array<{ url: string; category: string }> = [];
     for (const [key, val] of Object.entries(shipment.documents)) {
+      if (isExcludedDocCategory(key)) continue;
       if (Array.isArray(val)) {
         for (const u of val) {
           if (typeof u === 'string' && (u.startsWith('http') || u.startsWith('/'))) {
-            allUrls.push(u);
+            docEntries.push({ url: u, category: key });
           }
         }
       } else if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) {
-        allUrls.push(val);
+        docEntries.push({ url: val, category: key });
       }
     }
 
-    for (const url of allUrls) {
+    let sumDirectNfeValues = 0;
+    let directNfeCount = 0;
+    let transportCargoValue: number | undefined;
+    const detectedNfeNumbersList: string[] = [];
+    const countedNfeKeys = new Set<string>();
+
+    let detectedToll: number | undefined;
+    let detectedFederalTax: number | undefined;
+
+    for (const { url, category } of docEntries) {
       try {
-        const ext = await extractDetailedDocData(url, 'Documento');
-        if (ext.financeiro?.valorPedagio !== undefined && ext.financeiro.valorPedagio > 0) {
-          setAutoToll(ext.financeiro.valorPedagio);
+        const ext = await extractDetailedDocData(url, category);
+
+        // Se for CT-e de outro número que não do embarque (ex: anexo de outro transporte), ignorar
+        if (ext.documentType === 'CT-e' && shipment.cteNumber && ext.docNumber && String(ext.docNumber) !== String(shipment.cteNumber)) {
+          continue;
         }
-        if (ext.carga?.valorMercadoria !== undefined && ext.carga.valorMercadoria > 0) {
-          setAutoInvoiceValue(ext.carga.valorMercadoria);
+        // Se for MDF-e de outro número que não do embarque, ignorar
+        if (ext.documentType === 'MDF-e' && shipment.mdfeNumber && ext.docNumber && String(ext.docNumber) !== String(shipment.mdfeNumber)) {
+          continue;
         }
+
+        const isTransportDoc = 
+          ext.documentType === 'Carta Frete' || 
+          ext.documentType === 'CT-e' || 
+          ext.documentType === 'MDF-e' ||
+          category.toLowerCase().includes('carta') ||
+          category.toLowerCase().includes('frete') ||
+          category.toLowerCase().includes('contrato') ||
+          category.toLowerCase().includes('cte') ||
+          category.toLowerCase().includes('ct-e') ||
+          category.toLowerCase().includes('mdfe') ||
+          category.toLowerCase().includes('mdf-e');
+
+        if (isTransportDoc && ext.financeiro?.valorPedagio !== undefined && ext.financeiro.valorPedagio >= 0) {
+          // Um documento declarando "sem pedágio" (0) prevalece sobre valores positivos de outros documentos
+          if (ext.financeiro.valorPedagio === 0 || detectedToll !== 0) {
+            detectedToll = ext.financeiro.valorPedagio;
+            setAutoToll(ext.financeiro.valorPedagio);
+          }
+        }
+
+        const isNotaFiscalCategory = isStrictNotaFiscalCategory(category);
+        const docNfeVal = ext.carga?.valorMercadoria || ext.financeiro?.valorTotalNfe;
+
+        if (isNotaFiscalCategory) {
+          // Identificador único da NF para evitar dupla contagem do mesmo arquivo/número
+          const nfeUniqueKey = ext.accessKey || (ext.docNumber ? String(ext.docNumber) : url);
+          if (!countedNfeKeys.has(nfeUniqueKey)) {
+            countedNfeKeys.add(nfeUniqueKey);
+            // Quando há múltiplas notas anexadas (ex: 2 notas), soma o valor de cada uma delas
+            if (docNfeVal !== undefined && docNfeVal > 0) {
+              sumDirectNfeValues = Number((sumDirectNfeValues + docNfeVal).toFixed(2));
+              directNfeCount++;
+            }
+          }
+          const num = ext.docNumber || ext.notasFiscais?.[0]?.numero || ext.documentosVinculados?.find(d => d.tipo.toLowerCase().includes('nfe') || d.tipo.toLowerCase().includes('nota'))?.numero;
+          if (num && !detectedNfeNumbersList.includes(String(num))) {
+            detectedNfeNumbersList.push(String(num));
+          }
+        } else if (ext.documentType === 'CT-e' || ext.documentType === 'MDF-e') {
+          if (docNfeVal !== undefined && docNfeVal > 0 && !transportCargoValue) {
+            transportCargoValue = docNfeVal;
+          }
+          if (ext.documentType === 'CT-e') {
+            const servVal = ext.financeiro?.valorTotalServico !== undefined ? ext.financeiro.valorTotalServico : ext.financeiro?.valorTotalFrete;
+            if (servVal !== undefined && servVal > 0) {
+              setAutoCteServiceTotal(servVal);
+            }
+            if (ext.financeiro?.valorIcms !== undefined) {
+              setAutoCteIcms(ext.financeiro.valorIcms);
+            }
+            if (ext.financeiro?.aliquotaIcms !== undefined && ext.financeiro.aliquotaIcms > 0) {
+              setAutoCteIcmsRate(ext.financeiro.aliquotaIcms);
+            }
+          }
+          if (ext.notasFiscais && ext.notasFiscais.length > 0) {
+            for (const nf of ext.notasFiscais) {
+              if (nf.numero && !detectedNfeNumbersList.includes(String(nf.numero))) {
+                detectedNfeNumbersList.push(String(nf.numero));
+              }
+            }
+          }
+        }
+
         if (ext.financeiro?.valorPisCofinsFederal !== undefined && ext.financeiro.valorPisCofinsFederal > 0) {
+          detectedFederalTax = ext.financeiro.valorPisCofinsFederal;
           setAutoFederalTax(ext.financeiro.valorPisCofinsFederal);
         } else if (ext.financeiro?.valorPis !== undefined || ext.financeiro?.valorCofins !== undefined) {
           const sumFed = (ext.financeiro?.valorPis || 0) + (ext.financeiro?.valorCofins || 0);
-          if (sumFed > 0) setAutoFederalTax(sumFed);
+          if (sumFed > 0) {
+            detectedFederalTax = sumFed;
+            setAutoFederalTax(sumFed);
+          }
         }
       } catch {
         // ignore
       }
     }
-  }, [shipment.documents]);
+
+    // Consolidação do Valor da NF: se houver 2 ou mais notas anexadas, a soma total prevalece
+    let detectedInvoiceValue: number | undefined;
+    if (directNfeCount > 0 && sumDirectNfeValues > 0) {
+      detectedInvoiceValue = directNfeCount > 1 
+        ? sumDirectNfeValues 
+        : Math.max(sumDirectNfeValues, transportCargoValue || 0);
+    } else if (transportCargoValue !== undefined && transportCargoValue > 0) {
+      detectedInvoiceValue = transportCargoValue;
+    }
+
+    if (detectedInvoiceValue && detectedInvoiceValue > 0) {
+      setAutoInvoiceValue(detectedInvoiceValue);
+    }
+
+    if (onUpdateShipmentData) {
+      let hasPatch = false;
+      const patch: Partial<Shipment> = {};
+      const updatedRealProfit = { ...(shipment.realProfitData || {}) };
+      const updatedDocs = { ...(shipment.documents || {}) };
+
+      if (detectedInvoiceValue && detectedInvoiceValue > 0) {
+        const currentInv = shipment.nfeValue || shipment.realProfitData?.invoiceValue;
+        if (!currentInv || currentInv !== detectedInvoiceValue) {
+          patch.nfeValue = detectedInvoiceValue;
+          updatedRealProfit.invoiceValue = detectedInvoiceValue;
+          (updatedDocs as any).nfe_value = detectedInvoiceValue;
+          (updatedDocs as any).valor_mercadoria = detectedInvoiceValue;
+          if (detectedNfeNumbersList.length > 0) {
+            const combinedNumbers = detectedNfeNumbersList.join(', ');
+            patch.nfeNumber = combinedNumbers;
+            (updatedDocs as any).nfe_number = combinedNumbers;
+          }
+          hasPatch = true;
+        }
+      }
+
+      // Pedágio explicitamente zerado no embarque (sem pedágio) nunca é sobrescrito pela leitura automática
+      const isTollExplicitlyZero = shipment.tollValue !== undefined && shipment.tollValue !== null && Number(shipment.tollValue) === 0;
+      if (detectedToll === 0) {
+        const docs: any = shipment.documents || {};
+        if (!isTollExplicitlyZero || Number(shipment.realProfitData?.toll) > 0 || Number(docs.toll_value) > 0 || Number(docs.valor_pedagio) > 0) {
+          patch.tollValue = 0;
+          updatedRealProfit.toll = 0;
+          (updatedDocs as any).toll_value = 0;
+          (updatedDocs as any).valor_pedagio = 0;
+          hasPatch = true;
+        }
+      } else if (detectedToll && detectedToll > 0 && !isTollExplicitlyZero) {
+        if (!shipment.tollValue || shipment.tollValue !== detectedToll || !shipment.realProfitData?.toll) {
+          patch.tollValue = detectedToll;
+          updatedRealProfit.toll = detectedToll;
+          (updatedDocs as any).toll_value = detectedToll;
+          (updatedDocs as any).valor_pedagio = detectedToll;
+          hasPatch = true;
+        }
+      }
+
+      if (hasPatch) {
+        patch.realProfitData = updatedRealProfit as any;
+        patch.documents = updatedDocs;
+        try {
+          onUpdateShipmentData(shipment.id, patch, { silent: true });
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }, [shipment.documents, shipment.id, shipment.nfeValue, shipment.tollValue, shipment.realProfitData, onUpdateShipmentData]);
 
   React.useEffect(() => {
     syncDocs();
@@ -1219,7 +1649,9 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const isExportSuspended = isExportCargo;
 
   // 3. Valor NF (Valor da Mercadoria / Carga informado no CT-e / NF-e)
-  const invoiceValue = autoInvoiceValue || shipment.nfeValue || shipment.realProfitData?.invoiceValue || 0;
+  const invoiceValue = customInvoiceValue !== undefined 
+    ? customInvoiceValue 
+    : (autoInvoiceValue || shipment.nfeValue || shipment.realProfitData?.invoiceValue || 0);
   // Base de Seguro: Acréscimo de +18% somente em carga de exportação (NF * 1.18); Mercado Interno: Base = Valor da NF
   const insuranceBaseValue = invoiceValue > 0 
     ? Number((invoiceValue * (isExportCargo ? 1.18 : 1.00)).toFixed(2)) 
@@ -1233,17 +1665,27 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const totalSeguroAcidenteRoubo = insuranceTaxes;
 
   // 5. Seguro RCV (R$ 5,00 por veículo / viagem)
-  const seguroRcv = 5.00;
+  const isComplementar = Boolean(
+    shipment.isComplementar || 
+    (shipment.documents as any)?.is_complementar || 
+    (shipment.documents as any)?.isComplementar
+  );
+  const seguroRcv = isComplementar ? 0 : 5.00;
 
   // 8. Vale-Pedágio (Informativo da Carta Frete / TAG / Formulário / Embarque)
   const parsedPropToll = tollValue !== undefined && tollValue !== '' ? Number(tollValue) : undefined;
-  const toll = (parsedPropToll !== undefined && !isNaN(parsedPropToll) && parsedPropToll > 0)
-    ? parsedPropToll
-    : (autoToll !== undefined && autoToll > 0
-        ? autoToll
-        : (shipment.tollValue !== undefined && shipment.tollValue > 0
-            ? shipment.tollValue
-            : (shipment.realProfitData?.toll || 0)));
+  // Prioridade: valor editado/corrigido no painel > valor digitado no formulário > tollValue do embarque (inclusive 0 = sem pedágio) > leitura automática > realProfitData
+  const toll = isComplementar
+    ? 0
+    : (customToll !== undefined && !isNaN(customToll)
+        ? customToll
+        : (parsedPropToll !== undefined && !isNaN(parsedPropToll) && parsedPropToll > 0
+            ? parsedPropToll
+            : (shipment.tollValue !== undefined && shipment.tollValue !== null && !isNaN(Number(shipment.tollValue))
+                ? Number(shipment.tollValue)
+                : (autoToll !== undefined && autoToll > 0
+                    ? autoToll
+                    : (shipment.realProfitData?.toll || 0)))));
 
   const isExplicitPj = selectedRegime === 'Lucro Real / Presumido' || selectedRegime === 'Lucro Real' || selectedRegime === 'Lucro Presumido' || selectedRegime === 'Simples Nacional' || selectedRegime === 'MEI' || selectedRegime === 'PJ' || selectedRegime === 'ETC' || shipment.driverFreightType === 'PJ' || shipment.anttModality === 'ETC';
   const isShipmentPf = !isExplicitPj && (selectedRegime === 'PF' || selectedRegime === 'TAC' || shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC');
@@ -1263,26 +1705,71 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     : 'PJ (6,5136% • Manut. ICMS Exportação)';
 
   const driverRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+  const tonVal = Number(tonnage) || Number(shipment.shipmentTonnage) || 0;
+  const calculatedDriverFreight = (driverRate > 0 && tonVal > 0) ? Number((driverRate * tonVal).toFixed(2)) : 0;
   const driverFreight = shipment.realProfitData?.driverFreight !== undefined && shipment.realProfitData.driverFreight > 0
     ? shipment.realProfitData.driverFreight
-    : (shipment.driverFreightValue || (driverRate * tonnage));
+    : ((calculatedDriverFreight > 0 && shipment.driverFreightValue && Math.abs(Number(shipment.driverFreightValue) - calculatedDriverFreight) > 5.00 && shipment.driverFreightRateSnapshot)
+        ? calculatedDriverFreight
+        : (Number(shipment.driverFreightValue) || calculatedDriverFreight));
 
   // Bases de Frete Líquidas de Pedágio (Conforme regra do ERP)
   const baseFreteEmpresa = Math.max(0, cteGrossFreight - toll);
   const baseFreteMotorista = Math.max(0, driverFreight - toll);
 
   // 7. ICMS (Valor integral do ICMS destacado no CT-e / vICMS)
-  const icmsPercentage = cargo?.icmsPercentage || (cargo?.hasIcms ? 7 : 0);
-  const icmsBruto = (cargo?.hasIcms && icmsPercentage > 0)
+  // Se a carga NÃO tem ICMS destacado no seu cadastro, nenhum embarque vinculado pode destacar/deduzir ICMS
+  const isCargoWithoutIcms = Boolean(
+    cargo &&
+    !cargo.hasIcms &&
+    !(cargo.icmsPercentage && Number(cargo.icmsPercentage) > 0) &&
+    !(cargo.freightLegs && cargo.freightLegs[0]?.hasIcms === true) &&
+    !(cargo.freightLegs && Number(cargo.freightLegs[0]?.icmsPercentage) > 0) &&
+    (cargo as any).freightCalculationType !== 'per_ton_plus_icms' &&
+    !(cargo.freightLegs && (cargo.freightLegs[0] as any)?.freightCalculationType === 'per_ton_plus_icms') &&
+    !(shipment as any)?.hasIcms
+  );
+
+  const isIcmsExemptExplicit = Boolean(
+    isCargoWithoutIcms ||
+    (shipment as any)?.isIcmsExempt ||
+    (shipment.documents as any)?.is_icms_exempt ||
+    (shipment.documents as any)?.isIcmsExempt ||
+    shipment.realProfitData?.isIcmsExempt ||
+    shipment.icmsValue === 0 ||
+    (shipment.documents as any)?.icms_value === 0 ||
+    (shipment.documents as any)?.icms_value === '0' ||
+    (shipment.documents as any)?.valor_icms === 0 ||
+    shipment.realProfitData?.icmsDifference === 0
+  );
+  const detectedOrCalculatedIcmsRate = (() => {
+    if (isIcmsExemptExplicit || isCargoWithoutIcms) return 0;
+    if (autoCteIcmsRate && autoCteIcmsRate > 0) return autoCteIcmsRate;
+    if ((shipment as any)?.icmsPercentage && (shipment as any).icmsPercentage > 0) return (shipment as any).icmsPercentage;
+    if (cargo?.icmsPercentage && cargo.icmsPercentage > 0) return cargo.icmsPercentage;
+    const effectiveIcmsVal = autoCteIcms !== undefined 
+      ? autoCteIcms 
+      : (Number((shipment.documents as any)?.icms_value) || Number(shipment.icmsValue) || 0);
+    if (effectiveIcmsVal > 0 && cteGrossFreight > 0) {
+      const computedRatio = Math.round((effectiveIcmsVal / cteGrossFreight) * 100);
+      if (computedRatio > 0 && computedRatio <= 30) return computedRatio;
+    }
+    return ((shipment as any)?.hasIcms || cargo?.hasIcms) ? 7 : 0;
+  })();
+  const icmsPercentage = isIcmsExemptExplicit ? 0 : detectedOrCalculatedIcmsRate;
+  const icmsBruto = (!isIcmsExemptExplicit && !isCargoWithoutIcms && (cargo?.hasIcms || (shipment as any)?.hasIcms || icmsPercentage > 0) && icmsPercentage > 0)
     ? Number((cteGrossFreight * (icmsPercentage / 100)).toFixed(2))
     : 0;
 
   // Valor ICMS Completo (Destacado no CT-e)
-  const icms = icmsBruto > 0
-    ? icmsBruto
-    : (shipment.realProfitData?.icmsDifference !== undefined && shipment.realProfitData.icmsDifference > 0
-        ? shipment.realProfitData.icmsDifference
-        : 0);
+  const icmsDoc = isIcmsExemptExplicit ? 0 : (Number((shipment.documents as any)?.icms_value) || Number(shipment.icmsValue) || 0);
+  const icms = isIcmsExemptExplicit
+    ? 0
+    : (icmsBruto > 0
+        ? icmsBruto
+        : (shipment.realProfitData?.icmsDifference !== undefined && shipment.realProfitData.icmsDifference > 0
+            ? shipment.realProfitData.icmsDifference
+            : (icmsDoc > 0 ? icmsDoc : 0)));
 
   const allDocText = [
     cargo?.observations,
@@ -1322,7 +1809,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   // Frete_Bruto = cteGrossFreight (vTPrest)
   // ICMS_Destacado = icmsBruto (vICMS)
   // Frete_Liquido = Frete_Bruto - ICMS_Destacado
-  const freteLiquidoIcms = Math.max(0, cteGrossFreight - icmsBruto);
+  const freteLiquidoIcms = Math.max(0, cteGrossFreight - (icmsBruto > 0 ? icmsBruto : icms));
 
   // Passo 2: Apurar o Spread Comercial (Diferença de Frete)
   // Diferenca_Frete_RS = Frete_Empresa_Liquido - Frete_Motorista
@@ -1412,15 +1899,18 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
   let riskCost = 0;
   if (!isRiskRequired) {
-    riskCost = 0;
-  } else if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && shipment.riskQueryCost > 0) {
+    riskCost = (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && Number(shipment.riskQueryCost) > 0) ? Number(shipment.riskQueryCost) : 0;
+  } else if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && Number(shipment.riskQueryCost) > 0) {
     riskCost = Number(shipment.riskQueryCost);
-  } else if (historyRiskCost !== undefined && historyRiskCost !== null && historyRiskCost > 0) {
+  } else if (historyRiskCost !== undefined && historyRiskCost !== null && Number(historyRiskCost) > 0) {
     riskCost = historyRiskCost;
-  } else if (effectiveRiskType) {
+  } else if (effectiveRiskType && effectiveRiskType !== 'Pendente de Definição') {
     riskCost = (RISK_QUERY_COST_MAP[effectiveRiskType] ?? RISK_QUERY_COST_MAP[effectiveRiskType.toLowerCase().trim()] ?? 6.50);
   } else if (effectiveReleaseCode && !isPreCadastroOrSeguradora) {
     riskCost = 6.50;
+  } else if ((shipment.status === ShipmentStatus.Cancelado || (shipment as any)?.releaseStatus === 'Reprovado') && !isPreCadastroOrSeguradora) {
+    const inferredType = effectiveRiskType || 'Cadastro Geral + Biometria';
+    riskCost = RISK_QUERY_COST_MAP[inferredType] ?? RISK_QUERY_COST_MAP[inferredType.toLowerCase().trim()] ?? 31.50;
   } else {
     riskCost = 0;
   }
@@ -1437,11 +1927,17 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const inssRetidoPf = tacDeductions?.inss || 0;
   const sestSenatRetidoPf = tacDeductions?.sestSenat || 0;
 
-  // 11. CIOT (0,20% s/ Frete do Motorista abatido Pedágio; se PF deduz também INSS e SEST/SENAT)
+  // 11. CIOT (0,20% s/ Frete Líquido do Motorista: deduz pedágio e, para TAC/PF, retenções de INSS e SEST/SENAT)
+  const isCiotManual = Boolean((shipment.realProfitData as any)?.isCiotManual);
+  const manualCiotValue = (shipment.realProfitData as any)?.ciot;
   const baseCiotFreight = isShipmentPf
     ? Math.max(0, driverFreight - toll - inssRetidoPf - sestSenatRetidoPf)
     : Math.max(0, driverFreight - toll);
-  const ciotValue = Number((baseCiotFreight * 0.0020).toFixed(2));
+  const ciotValue = isComplementar
+    ? 0
+    : (isCiotManual && manualCiotValue !== undefined
+        ? Number(manualCiotValue)
+        : (baseCiotFreight > 0 ? Number((baseCiotFreight * 0.0020).toFixed(2)) : 0));
 
   // 13. Custo Fixo (0,35% s/ Frete Bruto)
   const custoFixoValue = Number((cteGrossFreight * 0.0035).toFixed(2));
@@ -1490,6 +1986,54 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const demurrageProfit = demurrageRevenue - demurrageDriverPaid;
   const hasStays = shipmentStays.length > 0 && (demurrageRevenue > 0 || demurrageDriverPaid > 0 || shipmentStays.length > 0);
 
+  // Tributos do CT-e Complementar de Estadia (conforme alíquotas do embarque ou informados na estadia)
+  const stayCteNumbers = shipmentStays.map(s => s.cteNumber).filter(Boolean);
+  const effectiveStayIcmsRate = isIcmsExemptExplicit ? 0 : icmsPercentage;
+  const stayFederalRate = isExportCargo 
+    ? 0 
+    : (isSimplesNacional ? simplesFederalRate : (isShipmentPf ? 0.03655 : 0.0925));
+  const stayFederalRateLabel = isExportCargo 
+    ? '0% Exportação' 
+    : (isSimplesNacional ? '3,40% Simples' : (isShipmentPf ? '3,655% PF' : '9,25%'));
+
+  // Apuração detalhada de tributos de cada estadia vinculada
+  const staysWithTaxes = shipmentStays.map(s => {
+    const cteNum = s.cteNumber || extractCteNumberFromStay(s) || 'S/N';
+    const appVal = s.approvedValue || 0;
+
+    // ICMS
+    const sIcmsPct = s.icmsPercentage !== undefined && s.icmsPercentage !== null
+      ? Number(s.icmsPercentage)
+      : effectiveStayIcmsRate;
+    const sIcmsVal = s.icmsValue !== undefined && s.icmsValue !== null
+      ? Number(s.icmsValue)
+      : ((isIcmsExemptExplicit || effectiveStayIcmsRate <= 0 || appVal <= 0)
+          ? 0
+          : Number((appVal * (effectiveStayIcmsRate / 100)).toFixed(2)));
+
+    // Imposto Federal
+    const sFedVal = s.federalTaxValue !== undefined && s.federalTaxValue !== null
+      ? Number(s.federalTaxValue)
+      : (isExportCargo ? 0 : (stayFederalRate > 0 && appVal > 0 ? Number((appVal * stayFederalRate).toFixed(2)) : 0));
+
+    return {
+      ...s,
+      cteNumber: cteNum,
+      stayIcmsVal: sIcmsVal,
+      stayIcmsPct: sIcmsPct,
+      stayFederalVal: sFedVal
+    };
+  });
+
+  const totalStayIcms = Number(staysWithTaxes.reduce((sum, s) => sum + s.stayIcmsVal, 0).toFixed(2));
+  const totalStayFederalTax = Number(staysWithTaxes.reduce((sum, s) => sum + s.stayFederalVal, 0).toFixed(2));
+  const stayIcms = totalStayIcms;
+  const stayFederalTax = totalStayFederalTax;
+
+  // Totais Tributários Consolidados (CT-e Principal + Complementares)
+  const totalImpostoFederal = Number((impostoFederalLiquido + totalStayFederalTax).toFixed(2));
+  const totalIcms = Number((icms + totalStayIcms).toFixed(2));
+
   // Totais Combinados (Frete Base CT-e + Estadia / CT-e Complementar)
   const totalCompanyFreight = cteGrossFreight + demurrageRevenue;
   const totalDriverFreight = driverFreight + demurrageDriverPaid;
@@ -1507,11 +2051,51 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     ? Number((shipperCommRate * tonnage).toFixed(2))
     : 0;
 
+  // 14.5 Custo Financeiro (pro rata s/ Frete Empresa conforme taxa mensal e prazo)
+  const isCargoFinActive = Boolean(
+    (shipment.financialCostValue !== undefined && Number(shipment.financialCostValue) > 0) ||
+    (shipment.financialCostRate !== undefined && Number(shipment.financialCostRate) > 0) ||
+    cargo?.financialCostEnabled === true ||
+    (cargo?.financialCostMonthlyRate !== undefined && Number(cargo.financialCostMonthlyRate) > 0 && cargo?.financialCostDaysTerm !== undefined && Number(cargo.financialCostDaysTerm) > 0)
+  );
+
+  const financialCostMonthlyRate = shipment.financialCostMonthlyRate !== undefined && shipment.financialCostMonthlyRate !== null
+    ? Number(shipment.financialCostMonthlyRate)
+    : (cargo?.financialCostMonthlyRate !== undefined && cargo.financialCostMonthlyRate !== null
+        ? Number(cargo.financialCostMonthlyRate)
+        : 0);
+
+  const financialCostDaysTerm = shipment.financialCostDaysTerm !== undefined && shipment.financialCostDaysTerm !== null
+    ? Number(shipment.financialCostDaysTerm)
+    : (cargo?.financialCostDaysTerm !== undefined && cargo.financialCostDaysTerm !== null
+        ? Number(cargo.financialCostDaysTerm)
+        : 30);
+
+  const financialCostBaseDays = cargo?.financialCostBaseDays || 30;
+
+  const financialCostEffectiveRate = shipment.financialCostRate !== undefined && shipment.financialCostRate !== null
+    ? Number(shipment.financialCostRate)
+    : (cargo?.financialCostEffectiveRate !== undefined && cargo.financialCostEffectiveRate !== null
+        ? Number(cargo.financialCostEffectiveRate)
+        : (financialCostBaseDays > 0 ? Number(((financialCostMonthlyRate * financialCostDaysTerm) / financialCostBaseDays).toFixed(4)) : 0));
+
+  const calculatedFinancialCost = (financialCostEffectiveRate > 0 && cteGrossFreight > 0)
+    ? Number((cteGrossFreight * (financialCostEffectiveRate / 100)).toFixed(2))
+    : 0;
+
+  const financialCostValue = calculatedFinancialCost > 0
+    ? calculatedFinancialCost
+    : ((shipment.financialCostValue !== undefined && shipment.financialCostValue !== null && Number(shipment.financialCostValue) > 0)
+        ? Number(shipment.financialCostValue)
+        : (isCargoFinActive ? calculatedFinancialCost : 0));
+
   // 15. Deduções Operacionais Base (sem comissão de agência)
   // Nota: Custo Adicional / Prejuízo agora é informativo e não afeta o cálculo do Lucro Líquido Real
   const totalBaseDeductionsWithoutAgency = Number((
     impostoFederalLiquido +
+    totalStayFederalTax +
     icms +
+    totalStayIcms +
     riskCost +
     seguroRcv +
     totalSeguroAcidenteRoubo +
@@ -1521,7 +2105,8 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     salespersonCommission +
     comissaoComercial +
     totalDriverFreight +
-    shipperCommissionValue
+    shipperCommissionValue +
+    financialCostValue
   ).toFixed(2));
 
   // Lucro Operacional antes da comissão de agência
@@ -1551,17 +2136,17 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       {/* Cabeçalho Principal */}
       <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-200/80 dark:border-slate-800">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-lg">
+          <div className="p-1.5 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded-lg">
             <Calculator className="w-3.5 h-3.5" />
           </div>
           <div>
             <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-1.5 flex-wrap">
               <span>Automatização do CT-e</span>
-              <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60">
+              <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60">
                 Custos & Margem
               </span>
               {isExportCargo ? (
-                <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700">
+                <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
                   Exportação
                 </span>
               ) : (
@@ -1586,7 +2171,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         <div className="flex items-center justify-between gap-1.5">
           <div className="flex items-center gap-1.5 min-w-0">
             <Building2 className={`w-3.5 h-3.5 shrink-0 ${
-              isSimplesNacional ? 'text-purple-600' : isShipmentPf ? 'text-orange-500' : 'text-blue-600'
+              isSimplesNacional ? 'text-purple-600' : isShipmentPf ? 'text-orange-500' : 'text-amber-600'
             }`} />
             <span className="text-[11px] font-bold text-slate-800 dark:text-slate-100 uppercase tracking-tight truncate">
               Regime Tributário
@@ -1597,7 +2182,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
               : isShipmentPf
                 ? 'bg-orange-50 text-orange-700 dark:bg-orange-950/60 dark:text-orange-300'
-                : 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
           }`}>
             {justSaved ? '✔ Salvo!' : selectedRegime}
           </span>
@@ -1614,7 +2199,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                 ? 'bg-purple-50/70 text-purple-900 border-purple-300 dark:bg-purple-950/50 dark:text-purple-200 dark:border-purple-800'
                 : isShipmentPf
                   ? 'bg-orange-50/70 text-orange-900 border-orange-300 dark:bg-orange-950/50 dark:text-orange-200 dark:border-orange-800'
-                  : 'bg-blue-50/70 text-blue-900 border-blue-300 dark:bg-blue-950/50 dark:text-blue-200 dark:border-blue-800'
+                  : 'bg-amber-50/70 text-amber-900 border-amber-300 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800'
             }`}
           >
             <option value="Simples Nacional">🟣 Simples Nacional (3,40% s/ Frete Bruto)</option>
@@ -1628,7 +2213,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               type="button"
               onClick={handleSaveRegime}
               disabled={isSavingRegime}
-              className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-xs transition-all shrink-0 cursor-pointer"
+              className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-xs transition-all shrink-0 cursor-pointer"
               title="Salvar regime tributário no banco de dados e registrar histórico"
             >
               {isSavingRegime ? (
@@ -1742,7 +2327,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                       href={stay.cteUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-0.5 text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                      className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400 hover:underline font-semibold"
                     >
                       <FileText className="w-3 h-3" />
                       CT-e
@@ -1769,15 +2354,21 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       {/* LINHA 1: Cards Principais de Receita & Bases */}
       <div className={`grid grid-cols-1 ${isAgenciador ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-2`}>
         {/* Box 1: CTe Frete Bruto */}
-        <div className="bg-white dark:bg-slate-800/90 rounded-xl border border-blue-100 dark:border-blue-900/40 p-2.5 shadow-2xs">
+        <div className="bg-white dark:bg-slate-800/90 rounded-xl border border-amber-100 dark:border-amber-900/40 p-2.5 shadow-2xs">
           <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">
             <span className="uppercase tracking-wider">CT-e Frete Bruto</span>
-            <Receipt className="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />
+            <Receipt className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
           </div>
           <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-white font-mono">
             {formatBrl(totalCompanyFreight)}
           </div>
-          <div className="text-[10px] text-blue-600 dark:text-blue-400 font-medium truncate mt-0.5" title={demurrageRevenue > 0 ? `Frete Base: ${formatBrl(cteGrossFreight)} + Estadia: ${formatBrl(demurrageRevenue)}` : undefined}>
+          {autoCteServiceTotal !== undefined && Math.abs(autoCteServiceTotal - totalCompanyFreight) > 1.00 && (
+            <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800" title="Regra: VALOR TOTAL DO SERVIÇO - CTE precisa ser igual ao Total Frete Emp do sistema.">
+              <AlertTriangle className="w-3 h-3 shrink-0" />
+              <span>Divergência CT-e: {formatBrl(autoCteServiceTotal)}</span>
+            </div>
+          )}
+          <div className="text-[10px] text-amber-600 dark:text-amber-400 font-medium truncate mt-0.5" title={demurrageRevenue > 0 ? `Frete Base: ${formatBrl(cteGrossFreight)} + Estadia: ${formatBrl(demurrageRevenue)}` : undefined}>
             Empresa • {tonnage.toLocaleString('pt-BR')} ton
             {demurrageRevenue > 0 && (
               <span className="text-amber-600 dark:text-amber-400 font-semibold ml-1">
@@ -1788,21 +2379,89 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         </div>
 
         {/* Box 2: Valor NF (Valor da Mercadoria / Carga do CT-e) & Base de Seguro (+18%) */}
-        <div className="bg-white dark:bg-slate-800/90 rounded-xl border border-indigo-100 dark:border-indigo-900/40 p-2.5 shadow-2xs flex flex-col justify-between">
+        <div className={`p-2.5 bg-white dark:bg-slate-800/90 rounded-xl border ${
+          isEditingInvoiceValue
+            ? 'border-amber-500 ring-2 ring-amber-500/20 shadow-md'
+            : 'border-amber-100 dark:border-amber-900/40 shadow-2xs'
+        } flex flex-col justify-between transition-all`}>
           <div>
             <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">
               <span className="uppercase tracking-wider">Valor NF</span>
-              <ShieldCheck className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <div className="flex items-center gap-1">
+                {justSavedInvoiceValue && (
+                  <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 animate-pulse">
+                    ✔ Salvo!
+                  </span>
+                )}
+                <ShieldCheck className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                {!isEditingInvoiceValue && !isDemo && (
+                  <button
+                    type="button"
+                    onClick={handleStartEditInvoiceValue}
+                    className="p-0.5 text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded transition-all cursor-pointer"
+                    title="Editar valor da NF manualmente"
+                  >
+                    <Pencil className="w-2.5 h-2.5" />
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-white font-mono leading-tight">
-              {formatBrl(invoiceValue)}
-            </div>
+
+            {isEditingInvoiceValue ? (
+              <div className="space-y-1 py-0.5">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">R$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    autoFocus
+                    placeholder="0,00"
+                    value={invoiceValueInput}
+                    onChange={(e) => setInvoiceValueInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveInvoiceValue();
+                      if (e.key === 'Escape') setIsEditingInvoiceValue(false);
+                    }}
+                    disabled={isSavingInvoiceValue}
+                    className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-amber-400 bg-amber-50/40 dark:bg-slate-700 dark:border-amber-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-amber-500/40"
+                  />
+                </div>
+                
+                <div className="flex items-center justify-between gap-1 pt-0.5">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleSaveInvoiceValue}
+                      disabled={isSavingInvoiceValue}
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                      title="Salvar valor da NF"
+                    >
+                      {isSavingInvoiceValue ? <RefreshCw className="w-2 h-2 animate-spin" /> : <Check className="w-2 h-2" />}
+                      <span>Salvar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingInvoiceValue(false)}
+                      disabled={isSavingInvoiceValue}
+                      className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-[9px] font-medium rounded transition-all cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-white font-mono leading-tight">
+                {formatBrl(invoiceValue)}
+              </div>
+            )}
           </div>
-          <div className="mt-1 pt-1 border-t border-indigo-50 dark:border-indigo-950/60" title={`Base de cálculo do seguro averbado: Valor da NF (${formatBrl(invoiceValue)})${isExportCargo ? ' + 18% (Exportação)' : ' (Mercado Interno)'} = ${formatBrl(insuranceBaseValue)}`}>
+          <div className="mt-1 pt-1 border-t border-amber-50 dark:border-amber-950/60" title={`Base de cálculo do seguro averbado: Valor da NF (${formatBrl(invoiceValue)})${isExportCargo ? ' + 18% (Exportação)' : ' (Mercado Interno)'} = ${formatBrl(insuranceBaseValue)}`}>
             <div className="text-[9px] text-slate-400 dark:text-slate-500 leading-tight">
               Base Seguro {isExportCargo ? '(+18% Exp.)' : '(NF)'}:
             </div>
-            <div className="text-[11px] font-mono font-bold text-indigo-700 dark:text-indigo-300 leading-tight">
+            <div className="text-[11px] font-mono font-bold text-amber-700 dark:text-amber-300 leading-tight">
               {formatBrl(insuranceBaseValue)}
             </div>
           </div>
@@ -1947,7 +2606,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       </div>
 
       {/* Box de Destaque: Diferença de Frete (Passo 3: Frete_Liquido - Frete_Motorista) */}
-      <div className="bg-white dark:bg-slate-800/90 rounded-xl border border-blue-200/80 dark:border-blue-800/60 p-2.5 shadow-2xs space-y-2">
+      <div className="bg-white dark:bg-slate-800/90 rounded-xl border border-amber-200/80 dark:border-amber-800/60 p-2.5 shadow-2xs space-y-2">
         {/* Cabeçalho da Diferença de Frete */}
         <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700/60 pb-1.5">
           <div className="flex items-center gap-1.5">
@@ -1958,7 +2617,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-[10px] text-slate-400 font-medium">Margem:</span>
-            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60">
+            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60">
               {margemFretePercentWithStay}%
             </span>
           </div>
@@ -2031,7 +2690,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setShowDeductions(!showDeductions)}
-                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/80 rounded-md transition-colors cursor-pointer capitalize shadow-2xs"
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-200/80 dark:border-amber-800/80 rounded-md transition-colors cursor-pointer capitalize shadow-2xs"
                 title={showDeductions ? 'Ocultar detalhes das deduções' : 'Exibir detalhes das deduções'}
               >
                 {showDeductions ? (
@@ -2060,7 +2719,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             {/* Imposto Federal (Simples Nacional 3,40% / PIS/COFINS / Contribuições Federais) */}
             <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border ${
               isEditingFederalTax
-                ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-md'
+                ? 'border-amber-500 ring-2 ring-amber-500/20 shadow-md'
                 : isFederalTaxCustom
                   ? 'border-amber-300 dark:border-amber-700/80 shadow-2xs'
                   : 'border-slate-200/90 dark:border-slate-700/80 shadow-2xs'
@@ -2086,7 +2745,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                       ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
                       : isSimplesNacional
                         ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
-                        : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                        : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
                   } max-w-[95px] truncate`} title={
                     isFederalTaxCustom
                       ? `Valor manual informado: ${formatBrl(impostoFederalLiquido)} (Base cálculo: ${isExportCargo ? 'Exportação' : (isSimplesNacional ? 'Simples Nacional 3,40%' : (isShipmentPf ? 'PF 3,655%' : 'PJ Spread 9,25%'))})`
@@ -2103,7 +2762,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                     <button
                       type="button"
                       onClick={handleStartEditFederalTax}
-                      className="p-0.5 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded transition-all cursor-pointer"
+                      className="p-0.5 text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded transition-all cursor-pointer"
                       title="Editar valor do Imposto Federal"
                     >
                       <Pencil className="w-2.5 h-2.5" />
@@ -2129,7 +2788,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                         if (e.key === 'Escape') setIsEditingFederalTax(false);
                       }}
                       disabled={isSavingFederalTax}
-                      className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-blue-400 bg-blue-50/40 dark:bg-slate-700 dark:border-blue-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-blue-500/40"
+                      className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-amber-400 bg-amber-50/40 dark:bg-slate-700 dark:border-amber-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-amber-500/40"
                     />
                   </div>
                   
@@ -2139,7 +2798,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                         type="button"
                         onClick={handleSaveFederalTax}
                         disabled={isSavingFederalTax}
-                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
                         title="Salvar valor do Imposto Federal"
                       >
                         {isSavingFederalTax ? <RefreshCw className="w-2 h-2 animate-spin" /> : <Check className="w-2 h-2" />}
@@ -2173,14 +2832,14 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               ) : (
                 <>
                   <div className="flex items-baseline justify-between gap-1">
-                    <div className={`text-xs font-bold font-mono ${impostoFederalLiquido > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
-                      {impostoFederalLiquido > 0 ? `- ${formatBrl(impostoFederalLiquido)}` : 'R$ 0,00'}
+                    <div className={`text-xs font-bold font-mono ${totalImpostoFederal > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                      {totalImpostoFederal > 0 ? `- ${formatBrl(totalImpostoFederal)}` : 'R$ 0,00'}
                     </div>
                     {!isDemo && (
                       <button
                         type="button"
                         onClick={handleStartEditFederalTax}
-                        className="text-[8px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium"
+                        className="text-[8px] text-amber-600 dark:text-amber-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium"
                         title="Editar valor do Imposto Federal"
                       >
                         <Pencil className="w-2 h-2" />
@@ -2197,12 +2856,30 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                           ? `Simples Nacional: Frete Empresa Bruto ${formatBrl(cteGrossFreight)} • 3,40% = ${formatBrl(impostoFederalSimples)}`
                           : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`)
                   }>
-                    {isFederalTaxCustom
-                      ? `Manual (Auto: ${formatBrl(isSimplesNacional ? impostoFederalSimples : (isShipmentPf ? impostoFederalPf : impostoFederalPjSpread))})`
-                      : (isExportCargo ? 'Exportação: R$ 0,00' : (isSimplesNacional ? `Simples: ${formatBrl(cteGrossFreight)} • 3,4%` : (isShipmentPf ? `PF: Líq. • 3,655%` : `PJ: Spread • 9,25%`)))}
+                    {staysWithTaxes.length > 0 
+                      ? `CT-e Princ.: ${formatBrl(impostoFederalLiquido)}`
+                      : (isFederalTaxCustom
+                          ? `Manual (Auto: ${formatBrl(isSimplesNacional ? impostoFederalSimples : (isShipmentPf ? impostoFederalPf : impostoFederalPjSpread))})`
+                          : (isExportCargo ? 'Exportação: R$ 0,00' : (isSimplesNacional ? `Simples: ${formatBrl(cteGrossFreight)} • 3,4%` : (isShipmentPf ? `PF: Líq. • 3,655%` : `PJ: Spread • 9,25%`))))}
                   </div>
                 </>
               )}
+
+              {staysWithTaxes.map((s, idx) => (
+                <div 
+                  key={s.id || idx}
+                  className="mt-1 pt-1 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-[8px]"
+                  title={`CT-e Complementar de Estadia (CT-e nº ${s.cteNumber}): ${formatBrl(s.stayFederalVal)}. Total Imposto Federal: ${formatBrl(totalImpostoFederal)}`}
+                >
+                  <span className="text-slate-500 dark:text-slate-400 font-medium truncate flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 inline-block"></span>
+                    <span>CT-e Comp. Estadia (CT-e nº {s.cteNumber}):</span>
+                  </span>
+                  <span className={`font-mono font-bold shrink-0 ml-1 ${s.stayFederalVal > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                    {formatBrl(s.stayFederalVal)}
+                  </span>
+                </div>
+              ))}
             </div>
 
             {/* ICMS Destacado Completo */}
@@ -2215,27 +2892,180 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                   {icmsPercentage > 0 ? `${icmsPercentage}% CT-e` : 'Isento'}
                 </span>
               </div>
-              <div className={`text-xs font-bold font-mono ${icms > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
-                {icms > 0 ? `- ${formatBrl(icms)}` : 'R$ 0,00'}
+              <div className={`text-xs font-bold font-mono ${totalIcms > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                {totalIcms > 0 ? `- ${formatBrl(totalIcms)}` : 'R$ 0,00'}
               </div>
-              {icmsBruto > 0 && (
-                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Valor integral do ICMS destacado no CT-e (${icmsPercentage}% s/ ${formatBrl(cteGrossFreight)})`}>
+              {(() => {
+                const effectiveCteIcms = autoCteIcms !== undefined 
+                  ? autoCteIcms 
+                  : (Number((shipment.documents as any)?.icms_value) || (shipment.icmsValue !== undefined ? Number(shipment.icmsValue) : undefined));
+                if (effectiveCteIcms !== undefined && Math.abs(effectiveCteIcms - icms) > 1.00) {
+                  return (
+                    <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800" title="Divergência entre o ICMS do sistema e o destacado no CT-e">
+                      <AlertTriangle className="w-3 h-3 shrink-0" />
+                      <span>Divergência CT-e: {formatBrl(effectiveCteIcms)}</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              {staysWithTaxes.length > 0 ? (
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title="ICMS destacado no CT-e Principal">
+                  {isIcmsExemptExplicit || icmsPercentage === 0 ? 'CT-e Princ.: Isento' : `CT-e Princ.: ${formatBrl(icms)}`}
+                </div>
+              ) : (icmsBruto > 0 ? (
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Valor integral do ICMS destacado no CT-e Principal (${icmsPercentage}% s/ ${formatBrl(cteGrossFreight)})`}>
                   Integral ({formatBrl(icmsBruto)})
                 </div>
-              )}
+              ) : null)}
+
+              {staysWithTaxes.map((s, idx) => (
+                <div 
+                  key={s.id || idx}
+                  className="mt-1 pt-1 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-[8px]" 
+                  title={`CT-e Complementar de Estadia (CT-e nº ${s.cteNumber}) (${s.stayIcmsPct}%): ${formatBrl(s.stayIcmsVal)}. Total ICMS: ${formatBrl(totalIcms)}`}
+                >
+                  <span className="text-slate-500 dark:text-slate-400 font-medium truncate flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 inline-block"></span>
+                    <span>CT-e Comp. Estadia (CT-e nº {s.cteNumber}) ({s.stayIcmsPct}%):</span>
+                  </span>
+                  <span className={`font-mono font-bold shrink-0 ml-1 ${s.stayIcmsVal > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                    {isIcmsExemptExplicit || s.stayIcmsPct === 0 ? 'Isento' : formatBrl(s.stayIcmsVal)}
+                  </span>
+                </div>
+              ))}
             </div>
 
             {/* Vale-Pedágio: (Informativo da Carta Frete / TAG) */}
-            <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+            <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border shadow-2xs flex flex-col justify-between transition-all ${
+              isEditingToll
+                ? 'border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/20'
+                : 'border-slate-200/90 dark:border-slate-700/80'
+            }`}>
               <div className="flex items-center justify-between gap-1 mb-0.5">
                 <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Vale-Pedágio:</span>
                 <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0">
                   Informativo
                 </span>
               </div>
-              <div className="text-xs font-bold font-mono text-amber-600 dark:text-amber-400">
-                {formatBrl(toll)}
-              </div>
+
+              {isEditingToll ? (
+                <div className="space-y-1.5 mt-0.5 animate-in fade-in duration-150">
+                  <div className="relative">
+                    <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400">R$</span>
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="0,00"
+                      value={tollInput}
+                      onChange={(e) => setTollInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveCustomToll();
+                        if (e.key === 'Escape') setIsEditingToll(false);
+                      }}
+                      disabled={isSavingToll}
+                      className="w-full text-xs font-bold font-mono pl-6 pr-1.5 py-0.5 rounded border border-amber-400 bg-amber-50/40 dark:bg-slate-700 dark:border-amber-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-amber-500/40"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={handleSaveCustomToll}
+                        disabled={isSavingToll}
+                        className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                        title="Salvar valor do Vale-Pedágio"
+                      >
+                        {isSavingToll ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Check className="w-2.5 h-2.5" />}
+                        <span>Salvar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingToll(false)}
+                        disabled={isSavingToll}
+                        className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-[9px] font-medium rounded transition-all cursor-pointer"
+                        title="Cancelar"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+
+                    {autoToll !== undefined && autoToll > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTollInput(String(autoToll));
+                        }}
+                        disabled={isSavingToll}
+                        className="text-[8px] font-bold text-amber-700 dark:text-amber-300 hover:underline cursor-pointer"
+                        title={`Preencher com o valor do documento (${formatBrl(autoToll)})`}
+                      >
+                        Usar Doc ({formatBrl(autoToll)})
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-baseline justify-between gap-1">
+                    <div className="text-xs font-bold font-mono text-amber-600 dark:text-amber-400">
+                      {formatBrl(toll)}
+                    </div>
+                    {!isDemo && (
+                      <button
+                        type="button"
+                        onClick={handleStartEditToll}
+                        className="text-[8px] text-amber-600 dark:text-amber-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium"
+                        title="Editar valor do Vale-Pedágio manualmente"
+                      >
+                        <Pencil className="w-2 h-2" />
+                        <span>editar</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {justSavedToll && (
+                    <div className="mt-1 flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 animate-in fade-in">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      <span>Valor atualizado</span>
+                    </div>
+                  )}
+
+                  {autoToll !== undefined && Math.abs(autoToll - toll) > 1.00 && (
+                    <div className="mt-1.5 flex flex-col gap-1.5 text-[10px] bg-amber-50 dark:bg-amber-950/40 p-2 rounded-md border border-amber-300 dark:border-amber-700/80 shadow-2xs animate-in fade-in duration-200" title="Divergência entre o Vale-Pedágio do sistema e o documento fiscal">
+                      <div className="flex items-center gap-1 font-bold text-amber-700 dark:text-amber-300">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <span className="truncate">Divergência Doc: {formatBrl(autoToll)}</span>
+                      </div>
+                      {!isDemo && (
+                        <div className="flex items-center gap-1.5 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleApplyDocToll(autoToll)}
+                            disabled={isSavingToll}
+                            className="flex-1 text-[10px] font-bold text-white bg-amber-600 hover:bg-amber-700 active:scale-95 px-2 py-1 rounded shadow-2xs transition-all cursor-pointer flex items-center justify-center gap-1 disabled:opacity-50"
+                            title={`Corrigir o Vale-Pedágio para o valor do documento fiscal (${formatBrl(autoToll)})`}
+                          >
+                            {isSavingToll ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                            <span>Corrigir p/ {formatBrl(autoToll)}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleStartEditToll}
+                            disabled={isSavingToll}
+                            className="text-[9px] font-semibold text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 px-1.5 py-1 rounded transition-colors cursor-pointer flex items-center gap-0.5"
+                            title="Digitar outro valor manualmente"
+                          >
+                            <Pencil className="w-2.5 h-2.5" />
+                            <span>Outro</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             {/* Consulta GR (Modalidade de Consulta Realizada) */}
@@ -2262,7 +3092,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
               <div className="flex items-center justify-between gap-1 mb-0.5">
                 <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Seguro RCV</span>
-                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 shrink-0">
+                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0">
                   R$ 5/veíc
                 </span>
               </div>
@@ -2275,7 +3105,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
               <div className="flex items-center justify-between gap-1 mb-0.5">
                 <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Acidente + Roubo</span>
-                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 shrink-0" title={`0,0125% Acidente + 0,0125% Roubo = 0,025% sobre a Base de Seguro (${formatBrl(insuranceBaseValue)})${isExportCargo ? ' (NF + 18% para Exportação)' : ' (NF Integral)'}`}>
+                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0" title={`0,0125% Acidente + 0,0125% Roubo = 0,025% sobre a Base de Seguro (${formatBrl(insuranceBaseValue)})${isExportCargo ? ' (NF + 18% para Exportação)' : ' (NF Integral)'}`}>
                   {isExportCargo ? '0,025% Exp' : '0,025% NF'}
                 </span>
               </div>
@@ -2289,19 +3119,23 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               )}
             </div>
 
-            {/* CIOT (0,20% sobre o Frete Motorista abatido o Pedágio; se PF deduz também INSS e SEST/SENAT) */}
+            {/* CIOT (0,20% sobre o Frete Líquido do Motorista) */}
             <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
               <div className="flex items-center justify-between gap-1 mb-0.5">
                 <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">CIOT</span>
                 <span 
-                  className="text-[8px] font-medium px-1 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0" 
-                  title={isShipmentPf ? "0,20% sobre o frete do motorista deduzindo pedágio, INSS e SEST/SENAT (PF)" : "0,20% sobre o frete do motorista abatido o valor do pedágio (PJ)"}
+                  className="text-[8px] font-medium px-1 py-0.2 rounded shrink-0 bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300"
+                  title={isShipmentPf ? "0,20% sobre o frete líquido do motorista deduzindo pedágio, INSS e SEST/SENAT (PF)" : "0,20% sobre o frete líquido do motorista abatido o pedágio (PJ)"}
                 >
-                  {isShipmentPf ? '0,20% Mot. (PF)' : '0,20% Mot.'}
+                  {isShipmentPf ? '0,20% Líq. (PF)' : '0,20% Líq. (PJ)'}
                 </span>
               </div>
-              <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
-                - {formatBrl(ciotValue)}
+              <div className={`text-xs font-bold font-mono ${
+                ciotValue > 0
+                  ? 'text-rose-600 dark:text-rose-400'
+                  : 'text-slate-500 dark:text-slate-400 font-medium'
+              }`}>
+                {ciotValue > 0 ? `- ${formatBrl(ciotValue)}` : 'R$ 0,00'}
               </div>
               {driverFreight > 0 && (
                 <div 
@@ -2309,7 +3143,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                   title={
                     isShipmentPf
                       ? `0,20% sobre frete (${formatBrl(driverFreight)}) - pedágio (${formatBrl(toll)}) - INSS (${formatBrl(inssRetidoPf)}) - SEST/SENAT (${formatBrl(sestSenatRetidoPf)}) = Base ${formatBrl(baseCiotFreight)}`
-                      : `0,20% sobre o frete do motorista ${toll > 0 ? `abatido pedágio (${formatBrl(baseCiotFreight)})` : `(${formatBrl(driverFreight)})`}`
+                      : `0,20% sobre frete líquido (${formatBrl(driverFreight)}${toll > 0 ? ` - pedágio (${formatBrl(toll)})` : ''}) = Base ${formatBrl(baseCiotFreight)}`
                   }
                 >
                   {isShipmentPf 
@@ -2382,6 +3216,31 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               )}
             </div>
 
+            {/* Custo Financeiro (Pro rata s/ Frete Empresa) */}
+            <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${financialCostValue === 0 ? 'opacity-90' : ''}`}>
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1" title="Custo Financeiro pro rata sobre o Frete Empresa">
+                  <Landmark className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                  Custo Financeiro
+                </span>
+                <span className={`text-[8px] font-medium px-1 py-0.2 rounded shrink-0 max-w-[110px] truncate ${
+                  financialCostValue > 0 
+                    ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300' 
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                }`} title={financialCostValue > 0 ? `${financialCostEffectiveRate.toFixed(2)}% (${financialCostDaysTerm} dias a ${financialCostMonthlyRate}% a.m.)` : 'Sem custo financeiro'}>
+                  {financialCostValue > 0 ? `${financialCostEffectiveRate.toFixed(2)}% (${financialCostDaysTerm}d)` : 'Isento'}
+                </span>
+              </div>
+              <div className={`text-xs font-bold font-mono ${financialCostValue > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                {financialCostValue > 0 ? `- ${formatBrl(financialCostValue)}` : 'R$ 0,00'}
+              </div>
+              {financialCostValue > 0 && (
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`${financialCostDaysTerm} dias a ${financialCostMonthlyRate}% a.m. (base ${financialCostBaseDays}d) sobre ${formatBrl(cteGrossFreight)}`}>
+                  {financialCostDaysTerm}d a {financialCostMonthlyRate}% a.m. s/ {formatBrl(cteGrossFreight)}
+                </div>
+              )}
+            </div>
+
             {/* Frete Motorista */}
             <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
               <div className="flex items-center justify-between gap-1 mb-0.5">
@@ -2413,7 +3272,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                 <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">
                   Comissão Comercial
                 </span>
-                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 shrink-0" title="0,20% sobre o valor bruto do frete empresa do embarque">
+                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0" title="0,20% sobre o valor bruto do frete empresa do embarque">
                   0,20%
                 </span>
               </div>
@@ -2490,12 +3349,12 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             {/* 15. Comissionamento do Embarcador (Valor Variável por Tonelada) */}
             <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border ${
               shipperCommEnabled
-                ? 'border-blue-300 dark:border-blue-900/60 bg-blue-50/20 dark:bg-blue-950/20'
+                ? 'border-amber-300 dark:border-amber-900/60 bg-amber-50/20 dark:bg-amber-950/20'
                 : 'border-slate-200/90 dark:border-slate-700/80'
             } shadow-2xs flex flex-col justify-between transition-all relative`}>
               <div className="flex items-center justify-between gap-1 mb-0.5">
                 <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1" title="Comissão do Embarcador / Cliente por Tonelada">
-                  <UserCheck className={`w-2.5 h-2.5 ${shipperCommEnabled ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'} shrink-0`} />
+                  <UserCheck className={`w-2.5 h-2.5 ${shipperCommEnabled ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'} shrink-0`} />
                   Comissão Embarcador
                 </span>
 
@@ -2505,7 +3364,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                   onClick={handleToggleShipperCommission}
                   disabled={isSavingShipperComm || isDemo}
                   className={`relative inline-flex h-4 w-7 shrink-0 ${isDemo ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'} rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden disabled:opacity-50 ${
-                    shipperCommEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'
+                    shipperCommEnabled ? 'bg-amber-600' : 'bg-slate-300 dark:bg-slate-600'
                   }`}
                   title={isDemo ? 'Acesso de visualização no modo demonstração' : (shipperCommEnabled ? 'Desativar comissão do embarcador' : 'Ativar comissão do embarcador por tonelada')}
                 >
@@ -2534,7 +3393,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                         if (e.key === 'Escape') setIsEditingShipperRate(false);
                       }}
                       disabled={isSavingShipperComm}
-                      className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-blue-400 bg-blue-50/40 dark:bg-slate-700 dark:border-blue-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-blue-500/40"
+                      className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-amber-400 bg-amber-50/40 dark:bg-slate-700 dark:border-amber-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-amber-500/40"
                     />
                   </div>
                   <div className="flex items-center justify-between gap-1 pt-0.5">
@@ -2543,7 +3402,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                         type="button"
                         onClick={() => handleSaveShipperRate()}
                         disabled={isSavingShipperComm}
-                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
                       >
                         <Check className="w-2 h-2" />
                         <span>Salvar</span>
@@ -2563,7 +3422,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                           key={presetVal}
                           type="button"
                           onClick={() => handleSaveShipperRate(presetVal)}
-                          className="px-1 py-0.2 rounded bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/60 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 text-[8px] font-bold cursor-pointer"
+                          className="px-1 py-0.2 rounded bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-800 dark:text-amber-200 text-[8px] font-bold cursor-pointer"
                         >
                           {presetVal}
                         </button>
@@ -2588,7 +3447,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                           setShipperRateInput(String(shipperCommRate));
                           setIsEditingShipperRate(true);
                         }}
-                        className="text-[8px] font-bold px-1 py-0.2 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 shrink-0 cursor-pointer flex items-center gap-0.5"
+                        className="text-[8px] font-bold px-1 py-0.2 rounded bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-800 shrink-0 cursor-pointer flex items-center gap-0.5"
                         title="Alterar valor da comissão por tonelada"
                       >
                         <span>R$ {shipperCommRate.toFixed(2)}/t</span>
@@ -2597,7 +3456,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                     )}
                     {shipperCommEnabled && isDemo && (
                       <span
-                        className="text-[8px] font-bold px-1 py-0.2 rounded bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0"
+                        className="text-[8px] font-bold px-1 py-0.2 rounded bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0"
                       >
                         R$ {shipperCommRate.toFixed(2)}/t
                       </span>
@@ -2732,7 +3591,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                   <button
                     type="button"
                     onClick={handleOpenViewAdditionalCost}
-                    className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 transition-colors cursor-pointer inline-flex items-center gap-1"
+                    className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-800 transition-colors cursor-pointer inline-flex items-center gap-1"
                   >
                     <Eye className="w-3 h-3" />
                     <span>Ver Detalhes</span>
@@ -2742,7 +3601,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                       <button
                         type="button"
                         onClick={() => handleOpenAddAdditionalCost('edit')}
-                        className="p-1.5 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                        className="p-1.5 text-slate-500 hover:text-amber-600 dark:text-slate-400 dark:hover:text-amber-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                         title="Editar valor, categoria ou justificativa"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -2792,7 +3651,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                         : 'Registrar Custo Adicional / Prejuízo Operacional'}
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Embarque: <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{shipment.id}</span> • Placa: <span className="font-mono font-bold">{shipment.horsePlate}</span>
+                    Embarque: <span className="font-mono font-bold text-amber-600 dark:text-amber-400">{shipment.id}</span> • Placa: <span className="font-mono font-bold">{shipment.horsePlate}</span>
                   </p>
                 </div>
               </div>
@@ -2855,7 +3714,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                       <button
                         type="button"
                         onClick={() => handleOpenAddAdditionalCost('edit')}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                         <span>Editar</span>

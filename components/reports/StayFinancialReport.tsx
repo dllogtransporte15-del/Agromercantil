@@ -34,7 +34,7 @@ const StayFinancialReport: React.FC<StayFinancialReportProps> = ({ stays, shipme
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-gradient-to-br from-indigo-600 to-blue-700 p-5 rounded-2xl text-white shadow-lg shadow-indigo-200 dark:shadow-none">
+        <div className="bg-gradient-to-br from-amber-600 to-amber-700 p-5 rounded-2xl text-white shadow-lg shadow-amber-200 dark:shadow-none">
           <p className="text-[10px] uppercase font-bold opacity-80 mb-1 tracking-wider">Receita Total (Aprovado)</p>
           <h3 className="text-2xl font-black">{formatCurrency(stats.totalApproved)}</h3>
           <div className="mt-2 flex items-center gap-2 text-xs opacity-90">
@@ -66,11 +66,11 @@ const StayFinancialReport: React.FC<StayFinancialReportProps> = ({ stays, shipme
         <div className="bg-white dark:bg-gray-800/90 p-5 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-300 mb-1 tracking-wider">Média por Estadia</p>
-            <h3 className="text-xl font-bold text-indigo-600 dark:text-indigo-400">
+            <h3 className="text-xl font-bold text-amber-600 dark:text-amber-400">
               {formatCurrency(stats.count > 0 ? stats.totalProfit / stats.count : 0)}
             </h3>
           </div>
-          <div className="w-12 h-12 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+          <div className="w-12 h-12 rounded-full bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
             <Scale className="w-6 h-6" />
           </div>
         </div>
@@ -79,7 +79,7 @@ const StayFinancialReport: React.FC<StayFinancialReportProps> = ({ stays, shipme
       <div className="bg-white dark:bg-gray-800/90 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-gray-100 dark:border-gray-700/80 flex justify-between items-center">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <FileText className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+                <FileText className="w-5 h-5 text-amber-500 dark:text-amber-400" />
                 Detalhamento Financeiro de Estadias
             </h3>
         </div>
@@ -111,7 +111,7 @@ const StayFinancialReport: React.FC<StayFinancialReportProps> = ({ stays, shipme
                       <div className="flex items-center gap-1.5">
                         <p className="font-bold text-gray-800 dark:text-gray-200">{displayDate}</p>
                         {linkedShipment && (
-                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-100 dark:border-indigo-800" title={`Vinculado ao Embarque ${linkedShipment.id}`}>
+                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-bold border border-amber-100 dark:border-amber-800" title={`Vinculado ao Embarque ${linkedShipment.id}`}>
                             {linkedShipment.id}
                           </span>
                         )}
@@ -132,7 +132,7 @@ const StayFinancialReport: React.FC<StayFinancialReportProps> = ({ stays, shipme
                       {formatCurrency(stay.driverPaidValue || 0)}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <span className={`font-black ${profit >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-red-600'}`}>
+                      <span className={`font-black ${profit >= 0 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600'}`}>
                         {formatCurrency(profit)}
                       </span>
                     </td>

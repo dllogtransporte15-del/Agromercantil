@@ -28,7 +28,7 @@ const ShipmentHistoryModal: React.FC<ShipmentHistoryModalProps> = ({
     switch (status) {
       case 'Finalizado': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400';
       case 'Cancelado': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400';
-      default: return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400';
+      default: return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400';
     }
   };
 
@@ -42,7 +42,7 @@ const ShipmentHistoryModal: React.FC<ShipmentHistoryModalProps> = ({
         <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
           <div>
             <h2 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-blue-500" />
+              <TrendingUp className="w-5 h-5 text-amber-500" />
               {title}
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -65,7 +65,7 @@ const ShipmentHistoryModal: React.FC<ShipmentHistoryModalProps> = ({
           </div>
           <div className="bg-white dark:bg-gray-700 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-600">
             <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tonnagem Total</span>
-            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{totalTonnage.toFixed(2)} <span className="text-sm font-normal text-gray-400">ton</span></p>
+            <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">{totalTonnage.toFixed(2)} <span className="text-sm font-normal text-gray-400">ton</span></p>
           </div>
           <div className="bg-white dark:bg-gray-700 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-600">
             <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Valor Total (Motorista)</span>
@@ -106,7 +106,7 @@ const ShipmentHistoryModal: React.FC<ShipmentHistoryModalProps> = ({
                         </div>
                       </td>
                       <td className="py-4 px-2">
-                        <span className="text-sm font-black text-blue-600 dark:text-blue-400">#{cargo?.sequenceId || '---'}</span>
+                        <span className="text-sm font-black text-amber-600 dark:text-amber-400">#{cargo?.sequenceId || '---'}</span>
                       </td>
                       <td className="py-4 px-2">
                         <div className="flex flex-col gap-0.5">

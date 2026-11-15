@@ -32,6 +32,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
       // Clean display name
       const cleanUrlName = (() => {
+        if (typeof fileUrl !== 'string') return '';
         try {
           const urlObj = new URL(fileUrl);
           const nameParam = urlObj.searchParams.get('name');
@@ -95,6 +96,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   if (!isOpen || !fileUrl) return null;
 
   const displayTitle = fileName || (() => {
+    if (typeof fileUrl !== 'string') return 'Documento';
     try {
       const urlObj = new URL(fileUrl);
       const nameParam = urlObj.searchParams.get('name');
@@ -155,7 +157,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         {/* Header */}
         <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
           <div className="flex items-center gap-3 truncate pr-4">
-            <div className="p-2 bg-indigo-50 dark:bg-indigo-900/40 rounded-xl text-indigo-600 dark:text-indigo-400 shrink-0">
+            <div className="p-2 bg-amber-50 dark:bg-amber-900/40 rounded-xl text-amber-600 dark:text-amber-400 shrink-0">
               {fileType === 'image' ? <ImageIcon className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
             </div>
             <div className="truncate">
@@ -173,7 +175,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={handlePrint}
-              className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+              className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
               title="Imprimir Arquivo"
             >
               <Printer className="w-4 h-4" />
@@ -182,7 +184,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
             <button
               onClick={handleOpenNewTab}
-              className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50 rounded-lg transition-colors flex items-center gap-1.5"
+              className="px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50 rounded-lg transition-colors flex items-center gap-1.5"
               title="Abrir em Nova Aba do Navegador"
             >
               <ExternalLink className="w-4 h-4" />
@@ -212,7 +214,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         <div className="flex-1 bg-gray-900/95 p-4 overflow-auto flex items-center justify-center relative">
           {isLoading && (
             <div className="flex flex-col items-center gap-3 text-white">
-              <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+              <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
               <span className="text-sm font-medium">Carregando visualização...</span>
             </div>
           )}

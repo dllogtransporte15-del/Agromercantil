@@ -111,4 +111,48 @@ export const formatFretebrasVehicleTypes = (allowed?: { setType: string }[]): st
   return [...new Set(mapped)].join(', ');
 };
 
+export const SHIPMENT_STATUS_CORPORATE_LABELS: Record<string, string> = {
+  'Ag. Cadastro': 'Triagem / Pré-Cadastro',
+  'Pré-cadastro': 'Triagem / Pré-Cadastro',
+  'PreCadastro': 'Triagem / Pré-Cadastro',
+  'Ag. Seguradora': 'Análise de Risco (PGR)',
+  'AguardandoSeguradora': 'Análise de Risco (PGR)',
+  'Ag. Carregamento': 'Aguardando Check-in / Carga',
+  'AguardandoCarregamento': 'Aguardando Check-in / Carga',
+  'Ag. Nota': 'Emissão Fiscal (CT-e / NF-e)',
+  'AguardandoNota': 'Emissão Fiscal (CT-e / NF-e)',
+  'Ag. Fiscal': 'Emissão Fiscal (CT-e / MDF-e)',
+  'AguardandoFiscal': 'Emissão Fiscal (CT-e / MDF-e)',
+  'Ag. Adiantamento': 'Liberação de Adiantamento',
+  'AguardandoAdiantamento': 'Liberação de Adiantamento',
+  'Ag. Agendamento': 'Agendamento de Descarga (Slot)',
+  'Ag. Agend. ou Troca/nfe': 'Agendamento de Descarga (Slot)',
+  'AguardandoAgendamento': 'Agendamento de Descarga (Slot)',
+  'Ag. Descarga': 'Em Trânsito / Aguardando Descarga',
+  'AguardandoDescarga': 'Em Trânsito / Aguardando Descarga',
+  'Valid. de Ticket': 'Valid. de Ticket',
+  'ValidacaoTicket': 'Valid. de Ticket',
+  'Ag. Saldo': 'Liquidação de Saldo',
+  'AguardandoPagamentoSaldo': 'Liquidação de Saldo',
+  'Finalizado': 'Operação Concluída',
+  'Cancelado': 'Cancelado',
+};
+
+export const formatShipmentStatusLabel = (status?: string | null): string => {
+  if (!status) return '';
+  return SHIPMENT_STATUS_CORPORATE_LABELS[status] || status;
+};
+
+export const DEMAND_TYPE_CORPORATE_LABELS: Record<string, string> = {
+  'Demanda Livre': 'Demanda Contínua',
+  'Demanda Fixa': 'Cota Diária Programada',
+  'Demanda a Verificar': 'Demanda Sob Consulta',
+};
+
+export const formatDemandTypeLabel = (type?: string | null): string => {
+  if (!type) return '';
+  return DEMAND_TYPE_CORPORATE_LABELS[type] || type;
+};
+
+
 

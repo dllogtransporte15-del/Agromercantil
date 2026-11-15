@@ -3,8 +3,7 @@ import { supabase } from '../supabase';
 import type { DriverLocation } from '../types';
 
 const CHANNEL_NAME = 'driver_locations_monitor';
-const LAST_LOCATIONS_KEY = 'agromercantil_last_driver_locations';
-const LEGACY_LOCATIONS_KEY = 'transcunha_last_driver_locations';
+const LAST_LOCATIONS_KEY = 'transcunha_last_driver_locations';
 
 export interface ExtendedDriverLocation extends DriverLocation {
   isAppActive?: boolean;
@@ -17,7 +16,7 @@ export function normalizeDriverKey(str?: string): string {
 
 export function getStoredLastLocations(): Record<string, ExtendedDriverLocation> {
   try {
-    const data = localStorage.getItem(LAST_LOCATIONS_KEY) || localStorage.getItem(LEGACY_LOCATIONS_KEY);
+    const data = localStorage.getItem(LAST_LOCATIONS_KEY);
     return data ? JSON.parse(data) : {};
   } catch (e) {
     return {};

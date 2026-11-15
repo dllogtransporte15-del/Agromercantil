@@ -4,7 +4,7 @@ import Header from '../components/Header';
 import OwnerTable from '../components/OwnerTable';
 import OwnerFormModal from '../components/OwnerFormModal';
 import OwnerFilter, { OwnerFilters } from '../components/OwnerFilter';
-import type { Owner, User, ProfilePermissions } from '../types';
+import type { Owner, User, ProfilePermissions, Vehicle, Driver, Shipment } from '../types';
 import { OwnerType } from '../types';
 import { can } from '../auth';
 
@@ -14,9 +14,12 @@ interface OwnersPageProps {
   onSaveOwner: (ownerData: Owner | Omit<Owner, 'id'>) => void;
   currentUser: User;
   profilePermissions: ProfilePermissions;
+  vehicles?: Vehicle[];
+  drivers?: Driver[];
+  shipments?: Shipment[];
 }
 
-const OwnersPage: React.FC<OwnersPageProps> = ({ owners, setOwners, onSaveOwner, currentUser, profilePermissions }) => {
+const OwnersPage: React.FC<OwnersPageProps> = ({ owners, setOwners, onSaveOwner, currentUser, profilePermissions, vehicles = [], drivers = [], shipments = [] }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [ownerToEdit, setOwnerToEdit] = useState<Owner | null>(null);
   const [filters, setFilters] = useState<OwnerFilters>({
@@ -34,10 +37,11 @@ const OwnersPage: React.FC<OwnersPageProps> = ({ owners, setOwners, onSaveOwner,
 
   const filteredOwners = useMemo(() => {
     return owners.filter(owner => {
+      if (!owner || (!owner.id && !owner.name && !owner.cpfCnpj)) return false;
       const idMatch = !filters.id || (owner.id && owner.id.toLowerCase().includes(filters.id.toLowerCase()));
-      const nameMatch = !filters.name || owner.name.toLowerCase().includes(filters.name.toLowerCase());
-      const cpfCnpjMatch = !filters.cpfCnpj || owner.cpfCnpj.includes(filters.cpfCnpj);
-      const phoneMatch = !filters.phone || owner.phone.includes(filters.phone);
+      const nameMatch = !filters.name || (owner.name && owner.name.toLowerCase().includes(filters.name.toLowerCase()));
+      const cpfCnpjMatch = !filters.cpfCnpj || (owner.cpfCnpj && owner.cpfCnpj.includes(filters.cpfCnpj));
+      const phoneMatch = !filters.phone || (owner.phone && owner.phone.includes(filters.phone));
       const typeMatch = !filters.type || owner.type === filters.type;
 
       return idMatch && nameMatch && cpfCnpjMatch && phoneMatch && typeMatch;
@@ -148,7 +152,7 @@ const OwnersPage: React.FC<OwnersPageProps> = ({ owners, setOwners, onSaveOwner,
             </button>
             <button
               onClick={handleExport}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500"
             >
               Exportar
             </button>
@@ -177,6 +181,8 @@ const OwnersPage: React.FC<OwnersPageProps> = ({ owners, setOwners, onSaveOwner,
 
       <OwnerTable 
         owners={filteredOwners} 
+        vehicles={vehicles}
+        drivers={drivers}
         onEdit={canUpdate ? handleEditOwner : undefined} 
         onDelete={canDelete ? handleDeleteOwner : undefined} 
       />
@@ -186,6 +192,9 @@ const OwnersPage: React.FC<OwnersPageProps> = ({ owners, setOwners, onSaveOwner,
         onClose={handleCloseModal}
         onSave={handleSaveOwner}
         ownerToEdit={ownerToEdit}
+        vehicles={vehicles}
+        drivers={drivers}
+        shipments={shipments}
       />
     </>
   );

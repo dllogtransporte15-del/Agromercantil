@@ -4,13 +4,15 @@ import type { Shipment, Cargo, User } from '../types';
 import { UserProfile, ShipmentStatus } from '../types';
 import { WhatsAppIcon } from './icons/WhatsAppIcon';
 import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
-import { getShipmentEffectiveDate } from '../utils';
+import { getShipmentEffectiveDate, hasCteAttached } from '../utils';
 
 interface ShipperRankingCardProps {
   shipments: Shipment[];
   cargos: Cargo[];
   users: User[];
   currentUser: User | null;
+  dateRangeBounds?: { start: number | null; end: number | null };
+  periodLabel?: string;
 }
 
 interface ShipperStat {
@@ -23,10 +25,17 @@ interface ShipperStat {
   commission: number;
 }
 
-const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, cargos, users, currentUser }) => {
+const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ 
+  shipments, 
+  cargos, 
+  users, 
+  currentUser,
+  dateRangeBounds,
+  periodLabel
+}) => {
   const canViewCommission = React.useMemo(() => {
     if (!currentUser) return false;
-    return [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Demonstracao].includes(currentUser.profile);
+    return [UserProfile.Desenvolvedor, UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Demonstracao].includes(currentUser.profile);
   }, [currentUser]);
 
   const getWhatsAppLink = (shipperId: string): string | null => {
@@ -66,10 +75,28 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
         const effDateStr = getShipmentEffectiveDate(shipment);
         
         if (effDateStr) {
-          const referenceDate = new Date(effDateStr + 'T00:00:00');
-          const isCurrentMonth = referenceDate.getMonth() === currentMonth && referenceDate.getFullYear() === currentYear;
+          let isInPeriod = false;
+          let refTime = 0;
+          const parts = effDateStr.split('-');
+          if (parts.length === 3) {
+            refTime = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0).getTime();
+          } else {
+            refTime = new Date(effDateStr).getTime();
+          }
 
-          if (isCurrentMonth) {
+          if (dateRangeBounds) {
+            if (dateRangeBounds.start === null && dateRangeBounds.end === null) {
+              isInPeriod = true;
+            } else {
+              isInPeriod = (dateRangeBounds.start === null || refTime >= dateRangeBounds.start) &&
+                           (dateRangeBounds.end === null || refTime <= dateRangeBounds.end);
+            }
+          } else {
+            const referenceDate = new Date(refTime);
+            isInPeriod = referenceDate.getMonth() === currentMonth && referenceDate.getFullYear() === currentYear;
+          }
+
+          if (isInPeriod) {
             shipmentCount++;
             if (shipment.horsePlate) {
                 uniqueVehicles.add(shipment.horsePlate);
@@ -81,12 +108,15 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
               netMargin += expenses.netProfit;
             }
 
-            effectiveTonnage += (shipment.shipmentTonnage || 0);
+            if (hasCteAttached(shipment)) {
+              effectiveTonnage += (shipment.shipmentTonnage || 0);
+            }
           }
         }
       });
 
-      const commission = effectiveTonnage * 2;
+      const ratePerTon = Number(shipper.shipperCommissionRatePerTon) || 2;
+      const commission = effectiveTonnage * ratePerTon;
 
       return {
         id: shipper.id,
@@ -100,7 +130,7 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
     });
 
     return stats.sort((a, b) => b.netMargin - a.netMargin);
-  }, [shipments, cargos, users]);
+  }, [shipments, cargos, users, dateRangeBounds]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -109,7 +139,7 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md col-span-1 lg:col-span-2">
       <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200 mb-1">Ranking de Embarcadores</h3>
-      <p className="text-xs text-gray-500 mb-4">Resultados do mês atual</p>
+      <p className="text-xs text-gray-500 mb-4">Resultados ({periodLabel || 'Mês Atual'})</p>
       <div className="overflow-x-auto">
         <table className="min-w-full">
           <thead className="border-b dark:border-gray-700">
@@ -132,17 +162,17 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
                   key={stat.id} 
                   className={`hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
                     isCurrentUser 
-                      ? 'bg-indigo-50 dark:bg-indigo-950/30 border-l-4 border-indigo-500' 
+                      ? 'bg-amber-50 dark:bg-amber-950/30 border-l-4 border-amber-500' 
                       : ''
                   }`}
                 >
-                  <td className={`py-3 px-3 text-sm font-medium ${isCurrentUser ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>{index + 1}</td>
-                  <td className={`py-3 px-3 text-sm font-medium ${isCurrentUser ? 'text-indigo-900 dark:text-indigo-200 font-bold' : 'text-gray-900 dark:text-white'}`}>
+                  <td className={`py-3 px-3 text-sm font-medium ${isCurrentUser ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>{index + 1}</td>
+                  <td className={`py-3 px-3 text-sm font-medium ${isCurrentUser ? 'text-amber-900 dark:text-amber-200 font-bold' : 'text-gray-900 dark:text-white'}`}>
                     <div className="flex items-center gap-1.5">
                       <span>
                         {stat.name} 
                         {isCurrentUser && (
-                          <span className="ml-2 px-2 py-0.5 text-[10px] font-semibold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 rounded-full">
+                          <span className="ml-2 px-2 py-0.5 text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 rounded-full">
                             Você
                           </span>
                         )}

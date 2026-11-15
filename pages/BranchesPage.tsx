@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Plus, Edit2, Trash2, Building2, MapPin } from 'lucide-react';
 import type { Branch, User, ProfilePermissions } from '../types';
 import { UserProfile } from '../types';
+import { isDeveloperUser } from '../auth';
 import BranchFormModal from '../components/BranchFormModal';
 
 interface BranchesPageProps {
@@ -22,7 +23,8 @@ const BranchesPage: React.FC<BranchesPageProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [branchToEdit, setBranchToEdit] = useState<Branch | null>(null);
 
-  const canManage = currentUser?.profile === UserProfile.Admin;
+  const canManage = currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.GerenciadoraDeRisco || isDeveloperUser(currentUser);
+  const canDelete = currentUser?.profile === UserProfile.Admin || isDeveloperUser(currentUser);
 
   const handleEdit = (branch: Branch) => {
     setBranchToEdit(branch);
@@ -87,13 +89,15 @@ const BranchesPage: React.FC<BranchesPageProps> = ({
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
-                    <button
-                      onClick={() => onDeleteBranch(branch.id)}
-                      className="p-2 text-gray-400 hover:text-red-500 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
-                      title="Excluir"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {canDelete && (
+                      <button
+                        onClick={() => onDeleteBranch(branch.id)}
+                        className="p-2 text-gray-400 hover:text-red-500 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                        title="Excluir"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

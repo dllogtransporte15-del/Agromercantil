@@ -132,7 +132,7 @@ export function generateAgromercantilDailySchedule(
     parsedStartDate = `${fullYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   }
 
-  // REGRA AGROMERCANTIL: Programar para os próximos dias.
+  // REGRA DLLOG TRANSPORTES: Programar para os próximos dias.
   // Se a data informada na planilha for futura ou hoje, utiliza ela como início.
   // Se a data na planilha for passada, inicia a partir de HOJE (ou amanhã se for após 16h).
   if (parsedStartDate && parsedStartDate >= todayISO) {
@@ -189,7 +189,7 @@ export function generateAgromercantilDailySchedule(
 }
 
 /**
- * Parser de Fallback baseado em Tesseract OCR para tabelas da Agromercantil
+ * Parser de Fallback baseado em Tesseract OCR para tabelas da DLLOG Transportes
  */
 export function parseAgromercantilOcrText(text: string): AgromercantilExtractedRow[] {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
@@ -246,7 +246,7 @@ export function parseAgromercantilOcrText(text: string): AgromercantilExtractedR
 }
 
 /**
- * Processa a imagem da tabela/lotes da AGROMERCANTIL usando Gemini Vision (ou fallback Tesseract OCR)
+ * Processa a imagem da tabela/lotes da DLLOG TRANSPORTES usando Gemini Vision (ou fallback Tesseract OCR)
  */
 export async function processAgromercantilImage(
   imageInput: File | string,
@@ -278,7 +278,7 @@ export async function processAgromercantilImage(
     for (const modelName of modelsToTry) {
       try {
         const ai = new GoogleGenAI({ apiKey: key });
-        const prompt = `Você é um assistente especialista em logística e OCR de transportes de grãos para o cliente AGROMERCANTIL.
+        const prompt = `Você é um assistente especialista em logística e OCR de transportes de grãos para o cliente DLLOG TRANSPORTES.
 Analise com máxima acuidade a imagem desta tabela/planilha de ofertas e lotes de frete.
 
 ESTRUTURA DAS COLUNAS DA TABELA:
@@ -385,7 +385,7 @@ REGRAS:
           };
         }
       } catch (geminiErr: any) {
-        console.warn(`[Agromercantil Parser] Tentativa com modelo ${modelName} falhou:`, geminiErr);
+        console.warn(`[DLLOG Transportes Parser] Tentativa com modelo ${modelName} falhou:`, geminiErr);
         geminiErrorMessage = geminiErr?.message || String(geminiErr);
       }
     }
@@ -412,7 +412,7 @@ REGRAS:
       warningMessage: rows.length === 0 && !key ? 'Chave de API do Gemini não configurada. Para ler prints de tabelas com máxima precisão, insira sua chave Gemini.' : undefined,
     };
   } catch (ocrErr: any) {
-    console.error('[Agromercantil Parser] Erro no Tesseract OCR:', ocrErr);
+    console.error('[DLLOG Transportes Parser] Erro no Tesseract OCR:', ocrErr);
     return {
       rows: [],
       totalRowsFound: 0,
@@ -426,11 +426,11 @@ REGRAS:
 }
 
 /**
- * Formata o texto final para o campo "Observações" da carga AGROMERCANTIL
+ * Formata o texto final para o campo "Observações" da carga DLLOG TRANSPORTES
  */
 export function formatAgromercantilObservations(row: AgromercantilExtractedRow): string {
   const parts: string[] = [];
-  parts.push(`CLIENTE: AGROMERCANTIL`);
+  parts.push(`CLIENTE: DLLOG TRANSPORTES`);
   if (row.status) parts.push(`STATUS LOTE: ${row.status}`);
   if (row.cadenciaDia) parts.push(`CADÊNCIA/DIA: ${row.cadenciaDia} ton/dia`);
   if (row.inicioEmbarque) parts.push(`INÍCIO EMBARQUE: ${formatDateBR(row.inicioEmbarque)}`);

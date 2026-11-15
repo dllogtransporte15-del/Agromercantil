@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import type { Cargo, Driver, Shipment, Client, Vehicle, User } from '../types';
+import type { Cargo, Driver, Shipment, Client, Vehicle, User, Owner } from '../types';
 import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType, DriverPaymentMethod, ShipmentStatus, AnttModality, EtcTaxRegime, FreightCalculationType } from '../types';
 import { supabase } from '../supabase';
 import { useToast } from '../hooks/useToast';
 import { toCargo } from '../lib/db';
 import { calculateAdvanceAndBalance } from '../utils/freightCalculation';
 import { autoFormatInput } from '../utils/formatters';
-import { AlertTriangle, CheckCircle2, X, RefreshCw, ShieldCheck, Zap, Building2, User as UserIcon, Search, Loader2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, X, RefreshCw, ShieldCheck, Zap, Building2, User as UserIcon, Search, Loader2, Edit3 } from 'lucide-react';
+import { calculateCargoBalance } from '../utils/cargoBalance';
 
 
 interface NewShipmentModalProps {
@@ -20,16 +21,22 @@ interface NewShipmentModalProps {
   currentUser: User | null;
   shipments: Shipment[];
   users: User[];
+  owners?: Owner[];
   offer?: any;
 }
 
-const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, onSave, cargo, drivers, clients, vehicles, currentUser, shipments, users, offer }) => {
+const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, onSave, cargo, drivers, clients, vehicles, currentUser, shipments, users, owners = [], offer }) => {
   const [activeCargo, setActiveCargo] = useState<Cargo | null>(cargo);
   const [isUpdatingCargoPermission, setIsUpdatingCargoPermission] = useState(false);
   const [isSyncingCargo, setIsSyncingCargo] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [driverName, setDriverName] = useState('');
   const [driverCpf, setDriverCpf] = useState('');
+  const [codigoAtua, setCodigoAtua] = useState('');
+  const [hasPreloadedAtua, setHasPreloadedAtua] = useState(false);
+  const [ownerName, setOwnerName] = useState('');
+  const [ownerAutoFillSource, setOwnerAutoFillSource] = useState('');
   const [ownerContact, setOwnerContact] = useState('');
   const [horsePlate, setHorsePlate] = useState('');
   const [trailer1Plate, setTrailer1Plate] = useState('');
@@ -52,6 +59,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const [anttModality, setAnttModality] = useState<AnttModality | ''>('');
   const [anttOwnerIdentifier, setAnttOwnerIdentifier] = useState('');
   const [etcTaxRegime, setEtcTaxRegime] = useState<EtcTaxRegime | ''>('');
+  const [isManualEtcRegime, setIsManualEtcRegime] = useState(false);
   const [driverFreightType, setDriverFreightType] = useState<'PJ' | 'PF'>('PJ');
   const [isSearchingCnpj, setIsSearchingCnpj] = useState(false);
   const [cnpjSearchResult, setCnpjSearchResult] = useState<{ razaoSocial?: string; status?: string; regimeFound?: string } | null>(null);
@@ -118,6 +126,34 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   }, [users]);
 
+  // Helper para buscar código ATUA existente do motorista no cadastro ou histórico de embarques
+  const findDriverExistingAtua = (cpf?: string, name?: string, phone?: string, driverObj?: Driver): string => {
+    if (driverObj?.codigoAtua && String(driverObj.codigoAtua).trim() !== '') {
+      return String(driverObj.codigoAtua).trim();
+    }
+    const cleanCpf = cpf ? cpf.replace(/\D/g, '') : '';
+    const cleanName = name ? name.trim().toLowerCase() : '';
+    const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
+
+    for (const s of (shipments || [])) {
+      const sCpf = s.driverCpf ? s.driverCpf.replace(/\D/g, '') : '';
+      const sName = s.driverName ? s.driverName.trim().toLowerCase() : '';
+      const sPhone = s.driverContact ? s.driverContact.replace(/\D/g, '') : '';
+
+      const matchesCpf = cleanCpf.length === 11 && sCpf === cleanCpf;
+      const matchesName = cleanName.length > 0 && sName === cleanName;
+      const matchesPhone = cleanPhone.length >= 10 && sPhone === cleanPhone;
+
+      if (matchesCpf || matchesName || matchesPhone) {
+        const atua = s.codigoAtua || (s.documents as any)?.codigo_atua || (s.documents as any)?.codg_atua || (s.documents as any)?.codigoAtua;
+        if (atua && String(atua).trim() !== '' && String(atua).trim() !== '-') {
+          return String(atua).trim();
+        }
+      }
+    }
+    return '';
+  };
+
   const prevIsOpen = React.useRef(isOpen);
 
   useEffect(() => {
@@ -144,6 +180,15 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setDriverName(initialDriverName);
       setDriverCpf(initialDriverCpf);
       setDriverContact(initialDriverContact);
+
+      const existingAtua = findDriverExistingAtua(initialDriverCpf, initialDriverName, initialDriverContact, driverInDb);
+      if (existingAtua) {
+        setCodigoAtua(existingAtua);
+        setHasPreloadedAtua(true);
+      } else {
+        setCodigoAtua('');
+        setHasPreloadedAtua(false);
+      }
 
       // Now search for driver's last shipment across ALL available identifiers
       const cleanTargetCpf = initialDriverCpf.replace(/\D/g, '');
@@ -190,7 +235,27 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
 
       const initialAntt = (lastShipment?.anttModality as AnttModality) || (lastShipment?.driverFreightType === 'PF' ? AnttModality.TAC : (lastShipment?.driverFreightType === 'PJ' ? AnttModality.ETC : ''));
       setAnttModality(initialAntt || '');
-      setAnttOwnerIdentifier(lastShipment?.anttOwnerIdentifier || (initialAntt === AnttModality.TAC ? (initialDriverCpf || '') : ''));
+      const initialOwnerId = lastShipment?.anttOwnerIdentifier || (initialAntt === AnttModality.TAC ? (initialDriverCpf || '') : '');
+      setAnttOwnerIdentifier(initialOwnerId);
+
+      let initialOwnerName = lastShipment?.ownerName || '';
+      let initialOwnerSource = '';
+      if (!initialOwnerName && initialOwnerId) {
+        const cleanId = initialOwnerId.replace(/\D/g, '');
+        if (cleanId === cleanTargetCpf && initialDriverName) {
+          initialOwnerName = initialDriverName;
+          initialOwnerSource = 'Motorista do Embarque';
+        } else {
+          const ownerMatch = (owners || []).find(o => o.cpfCnpj && o.cpfCnpj.replace(/\D/g, '') === cleanId);
+          if (ownerMatch) {
+            initialOwnerName = ownerMatch.name;
+            initialOwnerSource = 'Proprietário Cadastrado';
+          }
+        }
+      }
+      setOwnerName(initialOwnerName);
+      setOwnerAutoFillSource(initialOwnerSource);
+
       setCnpjSearchResult(null);
       setEtcTaxRegime((lastShipment?.etcTaxRegime as EtcTaxRegime) || '');
       setDriverFreightType(lastShipment?.driverFreightType || (initialAntt === AnttModality.TAC ? 'PF' : 'PJ'));
@@ -199,94 +264,389 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setShowConfirmModal(false);
       setActiveShipmentsFound([]);
       setPendingPayload(null);
+      setIsSubmitting(false);
     }
     prevIsOpen.current = isOpen;
-  }, [isOpen, currentUser, offer, cargo, drivers, shipments, users, vehicles]);
+  }, [isOpen, currentUser, offer, cargo, drivers, shipments, users, vehicles, owners]);
 
-  // Driver selection & Autofill logic
+  // Driver & Plate Suggestions State
+  const [showDriverSuggestions, setShowDriverSuggestions] = useState(false);
+  const [showPlateSuggestions, setShowPlateSuggestions] = useState(false);
+  const driverInputContainerRef = useRef<HTMLDivElement>(null);
+  const plateInputContainerRef = useRef<HTMLDivElement>(null);
   const [lastAlertedDriverId, setLastAlertedDriverId] = useState<string>('');
-  const [lastAutofilledDriverId, setLastAutofilledDriverId] = useState<string>('');
-  const [lastAutofilledPlate, setLastAutofilledPlate] = useState<string>('');
 
+  // Close suggestion dropdowns when clicking outside
   useEffect(() => {
-    const cleanName = driverName.trim().toLowerCase();
-    const cleanCpf = driverCpf.replace(/\D/g, '');
+    const handleClickOutside = (e: MouseEvent) => {
+      if (driverInputContainerRef.current && !driverInputContainerRef.current.contains(e.target as Node)) {
+        setShowDriverSuggestions(false);
+      }
+      if (plateInputContainerRef.current && !plateInputContainerRef.current.contains(e.target as Node)) {
+        setShowPlateSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
-    const driverByName = cleanName ? drivers.find(d => d.name.trim().toLowerCase() === cleanName) : undefined;
-    const driverByCpf = cleanCpf.length === 11 ? drivers.find(d => d.cpf.replace(/\D/g, '') === cleanCpf) : undefined;
+  // Efficient lookup for owner or driver details across system
+  const lookupOwnerInfo = (identifier: string, modality: AnttModality | '') => {
+    const clean = (identifier || '').replace(/\D/g, '');
+    if (!clean) return null;
 
-    const selectedDriver = driverByName || driverByCpf;
+    // Check if clean is CPF (11 digits) or modality is TAC (Pessoa Física)
+    if (clean.length === 11 || modality === AnttModality.TAC) {
+      const cleanDriverCpf = driverCpf.replace(/\D/g, '');
+      // 1. Match current driver in modal
+      if (cleanDriverCpf && clean === cleanDriverCpf && driverName.trim()) {
+        return {
+          name: driverName.trim(),
+          phone: driverContact || '',
+          bankDetails: bankDetails || '',
+          pixKey: pixKey || '',
+          paymentMethod: paymentMethod || '',
+          source: 'Motorista do Embarque Atual',
+        };
+      }
 
-    if (selectedDriver) {
-        if (driverByName && selectedDriver.cpf && selectedDriver.cpf.replace(/\D/g, '') !== cleanCpf && !driverCpf) {
-            setDriverCpf(selectedDriver.cpf);
-        } else if (driverByCpf && selectedDriver.name.trim().toLowerCase() !== cleanName && !driverName) {
-            setDriverName(selectedDriver.name);
-        }
+      // 2. Match any driver in drivers list
+      const matchingDriver = drivers.find(d => d.cpf && d.cpf.replace(/\D/g, '') === clean);
+      if (matchingDriver) {
+        return {
+          name: matchingDriver.name,
+          phone: matchingDriver.phone || '',
+          bankDetails: '',
+          pixKey: '',
+          paymentMethod: '',
+          source: 'Motorista Cadastrado na Plataforma',
+        };
+      }
 
-        if (selectedDriver.phone && !driverContact) {
-            setDriverContact(selectedDriver.phone);
-        }
+      // 3. Match any owner in owners list
+      const matchingOwner = (owners || []).find(o => o.cpfCnpj && o.cpfCnpj.replace(/\D/g, '') === clean);
+      if (matchingOwner) {
+        return {
+          name: matchingOwner.name,
+          phone: matchingOwner.phone || '',
+          bankDetails: matchingOwner.bankDetails || '',
+          pixKey: '',
+          paymentMethod: '',
+          source: 'Proprietário Cadastrado',
+        };
+      }
 
-        if (!selectedDriver.active && lastAlertedDriverId !== selectedDriver.id) {
-            showToast(`ATENÇÃO: Este motorista encontra-se RESTRITO! Motivo: ${selectedDriver.restrictionReason || 'Sem motivo especificado'}. O sistema impedirá a criação desta ordem.`, 'error', 10000);
-            setLastAlertedDriverId(selectedDriver.id);
-        } else if (selectedDriver.active) {
-            setLastAlertedDriverId(''); 
-        }
-
-        if (lastAutofilledDriverId !== selectedDriver.id && selectedDriver.active) {
-            const selectedCleanCpf = selectedDriver.cpf ? selectedDriver.cpf.replace(/\D/g, '') : '';
-            const lastShipment = shipments
-                .filter(s => 
-                    (selectedCleanCpf.length === 11 && s.driverCpf && s.driverCpf.replace(/\D/g, '') === selectedCleanCpf) || 
-                    (s.driverName && s.driverName.trim().toLowerCase() === selectedDriver.name.trim().toLowerCase())
-                )
-                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-
-            const linkedVehicle = vehicles.find(v => v.driverId === selectedDriver.id);
-
-            if (lastShipment) {
-                if (lastShipment.horsePlate) setHorsePlate(lastShipment.horsePlate);
-                if (lastShipment.trailer1Plate) setTrailer1Plate(lastShipment.trailer1Plate);
-                if (lastShipment.trailer2Plate) setTrailer2Plate(lastShipment.trailer2Plate);
-                if (lastShipment.trailer3Plate) setTrailer3Plate(lastShipment.trailer3Plate);
-                if (lastShipment.ownerContact) setOwnerContact(lastShipment.ownerContact);
-                if (lastShipment.driverContact && !driverContact) setDriverContact(lastShipment.driverContact);
-                if (lastShipment.paymentMethod) setPaymentMethod(lastShipment.paymentMethod);
-                if (lastShipment.pixKey) setPixKey(lastShipment.pixKey);
-                if (lastShipment.bankDetails) setBankDetails(lastShipment.bankDetails);
-                if (lastShipment.advancePercentage !== undefined) setAdvancePercentage(lastShipment.advancePercentage);
-                if (lastShipment.vehicleTag) setVehicleTag(lastShipment.vehicleTag);
-                if (lastShipment.vehicleSetType) setVehicleSetType(lastShipment.vehicleSetType);
-                if (lastShipment.vehicleBodyType) setVehicleBodyType(lastShipment.vehicleBodyType);
-                if (lastShipment.anttOwnerIdentifier) {
-                  setAnttOwnerIdentifier(lastShipment.anttOwnerIdentifier);
-                } else if (selectedDriver.cpf) {
-                  setAnttOwnerIdentifier(selectedDriver.cpf);
-                }
-                if (lastShipment.anttModality) {
-                  setAnttModality(lastShipment.anttModality as AnttModality);
-                  setDriverFreightType(lastShipment.anttModality === AnttModality.TAC ? 'PF' : 'PJ');
-                } else if (lastShipment.driverFreightType) {
-                  setDriverFreightType(lastShipment.driverFreightType);
-                  setAnttModality(lastShipment.driverFreightType === 'PF' ? AnttModality.TAC : AnttModality.ETC);
-                }
-                if (lastShipment.etcTaxRegime) {
-                  setEtcTaxRegime(lastShipment.etcTaxRegime as EtcTaxRegime);
-                }
-            } else if (linkedVehicle) {
-                if (linkedVehicle.plate) setHorsePlate(linkedVehicle.plate);
-                if (linkedVehicle.setType) setVehicleSetType(linkedVehicle.setType);
-                if (linkedVehicle.bodyType) setVehicleBodyType(linkedVehicle.bodyType);
-            }
-            setLastAutofilledDriverId(selectedDriver.id);
-        }
-    } else {
-        setLastAutofilledDriverId('');
-        setLastAlertedDriverId('');
+      // 4. Match past shipments
+      const pastShipment = shipments.find(s => {
+        const sOwnerId = (s.anttOwnerIdentifier || '').replace(/\D/g, '');
+        const sDriverCpf = (s.driverCpf || '').replace(/\D/g, '');
+        return (sOwnerId === clean && (s.ownerName || s.driverName)) || (sDriverCpf === clean && s.driverName);
+      });
+      if (pastShipment) {
+        return {
+          name: pastShipment.ownerName || (pastShipment.driverCpf?.replace(/\D/g, '') === clean ? pastShipment.driverName : ''),
+          phone: pastShipment.ownerContact || pastShipment.driverContact || '',
+          bankDetails: pastShipment.bankDetails || '',
+          pixKey: pastShipment.pixKey || '',
+          paymentMethod: pastShipment.paymentMethod || '',
+          source: 'Histórico de Embarques',
+        };
+      }
     }
-  }, [driverName, driverCpf, drivers, shipments, vehicles, lastAlertedDriverId, lastAutofilledDriverId, driverContact]);
+
+    // Check if clean is CNPJ (14 digits) or modality is ETC (Pessoa Jurídica)
+    if (clean.length === 14 || modality === AnttModality.ETC) {
+      // 1. Match owners list
+      const matchingOwner = (owners || []).find(o => o.cpfCnpj && o.cpfCnpj.replace(/\D/g, '') === clean);
+      if (matchingOwner) {
+        return {
+          name: matchingOwner.name,
+          phone: matchingOwner.phone || '',
+          bankDetails: matchingOwner.bankDetails || '',
+          pixKey: '',
+          paymentMethod: '',
+          source: 'Proprietário PJ Cadastrado',
+        };
+      }
+
+      // 2. Match past shipments
+      const pastShipment = shipments.find(s => (s.anttOwnerIdentifier || '').replace(/\D/g, '') === clean && s.ownerName);
+      if (pastShipment) {
+        return {
+          name: pastShipment.ownerName || '',
+          phone: pastShipment.ownerContact || '',
+          bankDetails: pastShipment.bankDetails || '',
+          pixKey: pastShipment.pixKey || '',
+          paymentMethod: pastShipment.paymentMethod || '',
+          source: 'Histórico de Embarques',
+        };
+      }
+    }
+
+    return null;
+  };
+
+  // Efficient single-pass search for driver's latest shipment
+  const findLastShipmentForDriver = (targetCpf?: string, targetName?: string, targetPhone?: string) => {
+    const cleanCpf = (targetCpf || '').replace(/\D/g, '');
+    const cleanName = (targetName || '').trim().toLowerCase();
+    const cleanPhone = (targetPhone || '').replace(/\D/g, '');
+
+    let latest: Shipment | null = null;
+    let latestTime = 0;
+
+    for (let i = 0; i < (shipments || []).length; i++) {
+      const s = shipments[i];
+      const sCpf = s.driverCpf ? s.driverCpf.replace(/\D/g, '') : '';
+      const sName = s.driverName ? s.driverName.trim().toLowerCase() : '';
+      const sPhone = s.driverContact ? s.driverContact.replace(/\D/g, '') : '';
+
+      const matchesCpf = cleanCpf.length === 11 && sCpf === cleanCpf;
+      const matchesName = cleanName.length > 0 && sName === cleanName;
+      const matchesPhone = cleanPhone.length >= 10 && sPhone === cleanPhone;
+
+      if (matchesCpf || matchesName || matchesPhone) {
+        const time = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+        if (time >= latestTime) {
+          latestTime = time;
+          latest = s;
+        }
+      }
+    }
+    return latest;
+  };
+
+  // Efficient single-pass search for last shipment by vehicle plate
+  const findLastShipmentByPlate = (plate: string) => {
+    const cleanPlate = plate.trim().toUpperCase();
+    if (!cleanPlate) return null;
+
+    let latest: Shipment | null = null;
+    let latestTime = 0;
+
+    for (let i = 0; i < (shipments || []).length; i++) {
+      const s = shipments[i];
+      if (s.horsePlate && s.horsePlate.trim().toUpperCase() === cleanPlate) {
+        const time = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+        if (time >= latestTime) {
+          latestTime = time;
+          latest = s;
+        }
+      }
+    }
+    return latest;
+  };
+
+  // Batch autofill driver and historical vehicle / bank info safely without render loops
+  const applyDriverAutofill = (selectedDriver: Driver) => {
+    setDriverName(selectedDriver.name || '');
+    if (selectedDriver.cpf) setDriverCpf(selectedDriver.cpf);
+    if (selectedDriver.phone) setDriverContact(selectedDriver.phone);
+
+    const existingAtua = findDriverExistingAtua(selectedDriver.cpf, selectedDriver.name, selectedDriver.phone, selectedDriver);
+    if (existingAtua) {
+      setCodigoAtua(existingAtua);
+      setHasPreloadedAtua(true);
+    } else {
+      setCodigoAtua('');
+      setHasPreloadedAtua(false);
+    }
+
+    if (!selectedDriver.active) {
+      if (lastAlertedDriverId !== selectedDriver.id) {
+        showToast(`ATENÇÃO: Este motorista encontra-se RESTRITO! Motivo: ${selectedDriver.restrictionReason || 'Sem motivo especificado'}. O sistema impedirá a criação desta ordem.`, 'error', 10000);
+        setLastAlertedDriverId(selectedDriver.id);
+      }
+    } else {
+      setLastAlertedDriverId('');
+    }
+
+    if (!selectedDriver.active) return;
+
+    const lastShipment = findLastShipmentForDriver(selectedDriver.cpf, selectedDriver.name, selectedDriver.phone);
+    const linkedVehicle = vehicles.find(v => v.driverId === selectedDriver.id);
+
+    if (lastShipment) {
+      if (lastShipment.horsePlate) setHorsePlate(lastShipment.horsePlate);
+      if (lastShipment.trailer1Plate) setTrailer1Plate(lastShipment.trailer1Plate);
+      if (lastShipment.trailer2Plate) setTrailer2Plate(lastShipment.trailer2Plate);
+      if (lastShipment.trailer3Plate) setTrailer3Plate(lastShipment.trailer3Plate);
+      if (lastShipment.ownerContact) setOwnerContact(lastShipment.ownerContact);
+      if (lastShipment.driverContact && !selectedDriver.phone) setDriverContact(lastShipment.driverContact);
+      if (lastShipment.paymentMethod) setPaymentMethod(lastShipment.paymentMethod);
+      if (lastShipment.pixKey) setPixKey(lastShipment.pixKey);
+      if (lastShipment.bankDetails) setBankDetails(lastShipment.bankDetails);
+      if (lastShipment.advancePercentage !== undefined) setAdvancePercentage(lastShipment.advancePercentage);
+      if (lastShipment.vehicleTag) setVehicleTag(lastShipment.vehicleTag);
+      if (lastShipment.vehicleSetType) setVehicleSetType(lastShipment.vehicleSetType);
+      if (lastShipment.vehicleBodyType) setVehicleBodyType(lastShipment.vehicleBodyType);
+      
+      const targetOwnerId = lastShipment.anttOwnerIdentifier || selectedDriver.cpf || '';
+      if (targetOwnerId) {
+        setAnttOwnerIdentifier(targetOwnerId);
+      }
+      
+      if (lastShipment.ownerName) {
+        setOwnerName(lastShipment.ownerName);
+        setOwnerAutoFillSource('Histórico de Embarques');
+      } else if (targetOwnerId && selectedDriver.cpf && targetOwnerId.replace(/\D/g, '') === selectedDriver.cpf.replace(/\D/g, '')) {
+        setOwnerName(selectedDriver.name || '');
+        setOwnerAutoFillSource('Motorista do Embarque');
+      }
+
+      if (lastShipment.anttModality) {
+        setAnttModality(lastShipment.anttModality as AnttModality);
+        setDriverFreightType(lastShipment.anttModality === AnttModality.TAC ? 'PF' : 'PJ');
+      } else if (lastShipment.driverFreightType) {
+        setDriverFreightType(lastShipment.driverFreightType);
+        setAnttModality(lastShipment.driverFreightType === 'PF' ? AnttModality.TAC : AnttModality.ETC);
+      }
+      if (lastShipment.etcTaxRegime) {
+        setEtcTaxRegime(lastShipment.etcTaxRegime as EtcTaxRegime);
+      }
+    } else if (linkedVehicle) {
+      if (linkedVehicle.plate) setHorsePlate(linkedVehicle.plate);
+      if (linkedVehicle.setType) setVehicleSetType(linkedVehicle.setType);
+      if (linkedVehicle.bodyType) setVehicleBodyType(linkedVehicle.bodyType);
+      setSelectedVehicle(linkedVehicle);
+      if (selectedDriver.cpf) {
+        if (!anttModality || anttModality === AnttModality.TAC) {
+          setAnttOwnerIdentifier(selectedDriver.cpf);
+          setOwnerName(selectedDriver.name || '');
+          setOwnerAutoFillSource('Motorista do Embarque');
+        }
+      }
+    } else if (selectedDriver.cpf) {
+      if (!anttModality || anttModality === AnttModality.TAC) {
+        setAnttOwnerIdentifier(selectedDriver.cpf);
+        setOwnerName(selectedDriver.name || '');
+        setOwnerAutoFillSource('Motorista do Embarque');
+      }
+    }
+  };
+
+  // Plate autofill helper
+  const applyPlateAutofill = (plateVal: string) => {
+    const cleanPlate = plateVal.trim().toUpperCase();
+    setHorsePlate(cleanPlate);
+
+    const vehicle = vehicles.find(v => v.plate.trim().toUpperCase() === cleanPlate);
+    if (vehicle) {
+      setSelectedVehicle(vehicle);
+      if (vehicle.setType) setVehicleSetType(vehicle.setType);
+      if (vehicle.bodyType) setVehicleBodyType(vehicle.bodyType);
+      
+      // If vehicle has ownerId, try to find owner
+      if (vehicle.ownerId) {
+        const vehicleOwner = (owners || []).find(o => o.id === vehicle.ownerId);
+        if (vehicleOwner) {
+          if (!anttOwnerIdentifier) {
+            setAnttOwnerIdentifier(vehicleOwner.cpfCnpj);
+            setOwnerName(vehicleOwner.name);
+            setOwnerAutoFillSource('Proprietário do Veículo');
+            if (vehicleOwner.phone && !ownerContact) setOwnerContact(vehicleOwner.phone);
+            if (vehicleOwner.bankDetails && !bankDetails) setBankDetails(vehicleOwner.bankDetails);
+          }
+        }
+      }
+    } else {
+      setSelectedVehicle(null);
+    }
+
+    if (cleanPlate.length >= 7) {
+      const lastShipment = findLastShipmentByPlate(cleanPlate);
+      if (lastShipment) {
+        if (lastShipment.trailer1Plate) setTrailer1Plate(lastShipment.trailer1Plate);
+        if (lastShipment.trailer2Plate) setTrailer2Plate(lastShipment.trailer2Plate);
+        if (lastShipment.trailer3Plate) setTrailer3Plate(lastShipment.trailer3Plate);
+        if (lastShipment.vehicleSetType && !vehicleSetType) setVehicleSetType(lastShipment.vehicleSetType);
+        if (lastShipment.vehicleBodyType && !vehicleBodyType) setVehicleBodyType(lastShipment.vehicleBodyType);
+        if (lastShipment.anttOwnerIdentifier && !anttOwnerIdentifier) {
+          setAnttOwnerIdentifier(lastShipment.anttOwnerIdentifier);
+          if (lastShipment.ownerName) setOwnerName(lastShipment.ownerName);
+          if (lastShipment.anttModality) setAnttModality(lastShipment.anttModality as AnttModality);
+        }
+      }
+    }
+  };
+
+  // Safe input handlers with debounced match checks
+  const handleDriverNameChange = (val: string) => {
+    setDriverName(val);
+    setShowDriverSuggestions(true);
+    const clean = val.trim().toLowerCase();
+    if (clean.length >= 3) {
+      const exactDriver = drivers.find(d => d.name.trim().toLowerCase() === clean);
+      if (exactDriver) {
+        applyDriverAutofill(exactDriver);
+      } else {
+        const atuaFound = findDriverExistingAtua(driverCpf, val, driverContact);
+        if (atuaFound) {
+          setCodigoAtua(atuaFound);
+          setHasPreloadedAtua(true);
+        }
+      }
+    }
+  };
+
+  const handleDriverCpfChange = (val: string) => {
+    const formatted = autoFormatInput('cpf', val);
+    setDriverCpf(formatted);
+    const clean = formatted.replace(/\D/g, '');
+    if (clean.length === 11) {
+      const exactDriver = drivers.find(d => d.cpf && d.cpf.replace(/\D/g, '') === clean);
+      if (exactDriver) {
+        applyDriverAutofill(exactDriver);
+      } else {
+        const atuaFound = findDriverExistingAtua(formatted, driverName, driverContact);
+        if (atuaFound) {
+          setCodigoAtua(atuaFound);
+          setHasPreloadedAtua(true);
+        }
+        if (anttModality === AnttModality.TAC && (!anttOwnerIdentifier || anttOwnerIdentifier === driverCpf)) {
+          setAnttOwnerIdentifier(formatted);
+          if (driverName) {
+            setOwnerName(driverName);
+            setOwnerAutoFillSource('Motorista do Embarque');
+          }
+        }
+      }
+    }
+  };
+
+  const handleHorsePlateChange = (val: string) => {
+    const upper = val.toUpperCase();
+    setHorsePlate(upper);
+    setShowPlateSuggestions(true);
+    const cleanPlate = upper.trim();
+    if (cleanPlate.length >= 7) {
+      applyPlateAutofill(cleanPlate);
+    } else {
+      const vehicle = vehicles.find(v => v.plate.trim().toUpperCase() === cleanPlate);
+      setSelectedVehicle(vehicle || null);
+      if (vehicle) {
+        if (vehicle.setType) setVehicleSetType(vehicle.setType);
+        if (vehicle.bodyType) setVehicleBodyType(vehicle.bodyType);
+      }
+    }
+  };
+
+  // Fast filtered suggestions (capped to 8 results for ultra-smooth mobile rendering)
+  const driverSuggestions = useMemo(() => {
+    const clean = driverName.trim().toLowerCase();
+    if (!clean || clean.length < 2) return [];
+    return drivers
+      .filter(d => (d.name && d.name.toLowerCase().includes(clean)) || (d.cpf && d.cpf.replace(/\D/g, '').includes(clean)))
+      .slice(0, 8);
+  }, [driverName, drivers]);
+
+  const plateSuggestions = useMemo(() => {
+    const clean = horsePlate.trim().toUpperCase();
+    if (!clean || clean.length < 2) return [];
+    return vehicles
+      .filter(v => v.plate && v.plate.toUpperCase().includes(clean))
+      .slice(0, 8);
+  }, [horsePlate, vehicles]);
 
   // Automatic CNPJ Tax Regime Lookup
   const searchCnpjTaxRegime = async (cnpjInput: string) => {
@@ -348,6 +708,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setAnttModality(AnttModality.ETC);
       setEtcTaxRegime(detectedRegime);
       setDriverFreightType('PJ');
+      setIsManualEtcRegime(false);
 
       const companyName = data.razao_social || data.nome_fantasia || '';
       setCnpjSearchResult({
@@ -356,12 +717,16 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         regimeFound: desc
       });
 
+      if (companyName) {
+        setOwnerName(companyName);
+        setOwnerAutoFillSource('Receita Federal / BrasilAPI');
+      }
+
       showToast(`CNPJ Identificado: ${companyName} (${desc})`, 'success');
     } catch (err: any) {
       console.warn('Erro na busca do CNPJ:', err);
-      setEtcTaxRegime('');
-      setCnpjSearchResult(null);
-      showToast(`CNPJ não localizado na Receita Federal: ${err.message || 'Verifique o CNPJ digitado e tente novamente'}.`, 'error');
+      setIsManualEtcRegime(true);
+      showToast(`CNPJ não localizado na Receita Federal: ${err.message || 'Verifique o CNPJ digitado'}. Você pode selecionar o regime tributário manualmente abaixo.`, 'warning');
     } finally {
       setIsSearchingCnpj(false);
     }
@@ -371,44 +736,40 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     if (anttModality === AnttModality.TAC) {
       const formatted = autoFormatInput('cpf', value);
       setAnttOwnerIdentifier(formatted);
+      const clean = formatted.replace(/\D/g, '');
+      if (clean.length === 11) {
+        const found = lookupOwnerInfo(formatted, AnttModality.TAC);
+        if (found && found.name) {
+          setOwnerName(found.name);
+          setOwnerAutoFillSource(found.source);
+          if (found.phone && !ownerContact) setOwnerContact(found.phone);
+          if (found.bankDetails && !bankDetails) setBankDetails(found.bankDetails);
+          if (found.pixKey && !pixKey) setPixKey(found.pixKey);
+          if (found.paymentMethod && !paymentMethod) setPaymentMethod(found.paymentMethod);
+        } else {
+          setOwnerAutoFillSource('');
+        }
+      }
     } else {
       const formatted = autoFormatInput('cnpj', value);
       setAnttOwnerIdentifier(formatted);
       const clean = formatted.replace(/\D/g, '');
-      if (clean.length === 14 && !isSearchingCnpj) {
-        searchCnpjTaxRegime(formatted);
+      if (clean.length === 14) {
+        const found = lookupOwnerInfo(formatted, AnttModality.ETC);
+        if (found && found.name) {
+          setOwnerName(found.name);
+          setOwnerAutoFillSource(found.source);
+          if (found.phone && !ownerContact) setOwnerContact(found.phone);
+          if (found.bankDetails && !bankDetails) setBankDetails(found.bankDetails);
+          if (found.pixKey && !pixKey) setPixKey(found.pixKey);
+          if (found.paymentMethod && !paymentMethod) setPaymentMethod(found.paymentMethod);
+        }
+        if (!isSearchingCnpj) {
+          searchCnpjTaxRegime(formatted);
+        }
       }
     }
   };
-  
-  useEffect(() => {
-    const cleanPlate = horsePlate.trim().toLowerCase();
-    const vehicle = vehicles.find(v => v.plate.trim().toLowerCase() === cleanPlate);
-    setSelectedVehicle(vehicle || null);
-    
-    if (vehicle) {
-        setVehicleSetType(vehicle.setType);
-        setVehicleBodyType(vehicle.bodyType);
-    } else {
-        setVehicleSetType('');
-        setVehicleBodyType('');
-    }
-
-    if (cleanPlate && cleanPlate.length >= 7 && lastAutofilledPlate !== cleanPlate) {
-        const lastShipmentByPlate = shipments
-            .filter(s => s.horsePlate && s.horsePlate.trim().toLowerCase() === cleanPlate)
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-
-        if (lastShipmentByPlate) {
-            setTrailer1Plate(lastShipmentByPlate.trailer1Plate || '');
-            setTrailer2Plate(lastShipmentByPlate.trailer2Plate || '');
-            setTrailer3Plate(lastShipmentByPlate.trailer3Plate || '');
-        }
-        setLastAutofilledPlate(cleanPlate);
-    } else if (!cleanPlate) {
-        setLastAutofilledPlate('');
-    }
-  }, [horsePlate, vehicles, shipments, lastAutofilledPlate]);
 
   const currentCargo = activeCargo || cargo;
 
@@ -457,8 +818,32 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     }
   };
 
+  const canAllowVehicleOnCargo = useMemo(() => {
+    if (!currentUser) return false;
+    const profile = currentUser.profile;
+    // Oculta e bloqueia para Embarcador e Agenciador / Agenciador de Embarque
+    if (profile === UserProfile.Embarcador || (profile as string) === 'Embarcador') {
+      return false;
+    }
+    if (profile === UserProfile.Agenciador || (profile as string) === 'Agenciador') {
+      return false;
+    }
+    if ((currentUser as any).agencyRole === 'embarque') {
+      return false;
+    }
+    if (profile === UserProfile.Motorista || profile === UserProfile.Cliente) {
+      return false;
+    }
+    return true;
+  }, [currentUser]);
+
   // 1-Click Allow Vehicle Type on Cargo
   const handleAllowCurrentVehicleOnCargo = async () => {
+    if (!canAllowVehicleOnCargo) {
+      showToast('Apenas a equipe interna possui permissão para liberar novos tipos de veículos na carga.', 'warning');
+      return;
+    }
+
     const target = currentCargo;
     if (!target) return;
     const currentSetType = vehicleSetType || selectedVehicle?.setType;
@@ -546,8 +931,9 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!currentCargo) {
       showToast('Esta carga não existe mais no sistema ou foi removida. Não é possível criar o embarque.', 'error');
       return;
@@ -597,9 +983,22 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             allowed.setType === vehicleInfo.setType && allowed.bodyTypes.includes(vehicleInfo.bodyType as VehicleBodyType)
         );
         if (!isAllowed) {
-            showToast(`O tipo do veículo selecionado (${vehicleInfo.setType} - ${vehicleInfo.bodyType}) não é permitido para esta carga. Use o botão "Permitir Este Veículo" acima para liberar.`, 'error');
+            const msg = canAllowVehicleOnCargo
+                ? `O tipo do veículo selecionado (${vehicleInfo.setType} - ${vehicleInfo.bodyType}) não é permitido para esta carga. Use o botão "Permitir Este Veículo" acima para liberar.`
+                : `O tipo do veículo selecionado (${vehicleInfo.setType} - ${vehicleInfo.bodyType}) não é permitido para esta carga. Solicite a autorização à equipe interna.`;
+            showToast(msg, 'error');
             return;
         }
+    }
+
+    // 1. TETO SOBERANO: Verificação do Saldo Total do Lote
+    // Independentemente de quanto esteja configurado na cadência diária (Fixo, Limite Diário ou Demanda Livre),
+    // o volume do embarque NUNCA pode ultrapassar o saldo total disponível do lote.
+    const cargoBalance = calculateCargoBalance(currentCargo, shipments);
+    const availableBalance = cargoBalance.availableVolume;
+    if (shipmentTonnage > (availableBalance + 0.001)) {
+        showToast(`SALDO TOTAL INSUFICIENTE: O lote possui apenas ${availableBalance.toLocaleString('pt-BR')} ton disponíveis no saldo total. Não é permitido criar embarques acima desse saldo (tentativa: ${shipmentTonnage.toLocaleString('pt-BR')} ton), independente da cadência diária.`, 'error');
+        return;
     }
 
     if (currentCargo?.dailySchedule) {
@@ -613,11 +1012,11 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             showToast('Atenção: A programação para este dia exige verificação com o comercial antes de marcar.', 'warning');
         } else if (scheduleRule.type === DailyScheduleType.Fixo && scheduleRule.tonnage) {
             const alreadyScheduledTonnage = shipments
-                .filter(s => s.cargoId === currentCargo.id && s.scheduledDate === scheduledDate)
+                .filter(s => (s.cargoId === currentCargo.id || (currentCargo.sequenceId && s.cargoId === String(currentCargo.sequenceId)) || (currentCargo.sequenceId && s.cargoId === `CRG-${currentCargo.sequenceId}`)) && s.scheduledDate === scheduledDate && s.status !== ShipmentStatus.Cancelado)
                 .reduce((sum, s) => sum + s.shipmentTonnage, 0);
             
-            if (alreadyScheduledTonnage + shipmentTonnage > scheduleRule.tonnage) {
-                showToast(`Erro: A tonelagem para este dia excede o limite programado de ${scheduleRule.tonnage} ton. Já existem ${alreadyScheduledTonnage} ton programadas.`, 'error');
+            if (alreadyScheduledTonnage + shipmentTonnage > scheduleRule.tonnage + 0.001) {
+                showToast(`LIMITE DIÁRIO EXCEDIDO: A tonelagem para este dia excede o limite programado na cadência diária de ${scheduleRule.tonnage} ton. Já existem ${alreadyScheduledTonnage.toLocaleString('pt-BR')} ton programadas.`, 'error');
                 return;
             }
         }
@@ -628,13 +1027,6 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     const inputDateTime = new Date(`${scheduledDate}T${scheduledTime}`);
     if (inputDateTime <= now) {
         showToast('Data/Hora Inválida: A data e hora programada deve ser posterior ao momento atual.', 'warning');
-        return;
-    }
-
-    // Hard Validation: Balance Check
-    const availableBalance = currentCargo.totalVolume - currentCargo.scheduledVolume;
-    if (shipmentTonnage > (availableBalance + 0.001)) {
-        showToast(`SALDO INSUFICIENTE: Esta carga possui apenas ${availableBalance.toLocaleString('pt-BR')} ton disponíveis. Você está tentando solicitar ${shipmentTonnage.toLocaleString('pt-BR')} ton.`, 'error');
         return;
     }
 
@@ -670,7 +1062,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     }
 
     if (anttModality === AnttModality.ETC && !etcTaxRegime) {
-        showToast('Para a modalidade ETC (Pessoa Jurídica), realize a consulta do CNPJ na Receita Federal para identificar o Regime Tributário.', 'warning');
+        showToast('Para a modalidade ETC (Pessoa Jurídica), realize a consulta do CNPJ ou selecione o Regime Tributário manualmente.', 'warning');
         return;
     }
 
@@ -678,6 +1070,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         showToast('O frete PF (Pessoa Física / TAC) foi desabilitado nesta carga. Selecione a modalidade ETC (Pessoa Jurídica).', 'warning');
         return;
     }
+
+
 
     const calc = calculateAdvanceAndBalance({
       driverFreightValue: calculatedFreight,
@@ -695,6 +1089,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       driverName,
       driverCpf,
       driverContact,
+      codigoAtua: codigoAtua ? codigoAtua.trim() : undefined,
+      ownerName: ownerName.trim() || undefined,
       ownerContact: ownerContact || undefined,
       horsePlate,
       trailer1Plate,
@@ -716,14 +1112,20 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       vehicleSetType: vehicleSetType || undefined,
       vehicleBodyType: vehicleBodyType || undefined,
       paymentMethod,
-      pixKey: paymentMethod === DriverPaymentMethod.PixEFrete ? pixKey : undefined,
-      bankDetails: (paymentMethod === DriverPaymentMethod.DepositoConta || bankDetails) ? bankDetails : undefined,
+      pixKey: (paymentMethod === DriverPaymentMethod.PixEFrete || paymentMethod === DriverPaymentMethod.PagamentoLivre) ? (pixKey.trim() || undefined) : undefined,
+      bankDetails: (paymentMethod === DriverPaymentMethod.DepositoConta || paymentMethod === DriverPaymentMethod.PagamentoLivre || bankDetails) ? (bankDetails.trim() || undefined) : undefined,
       advancePercentage: calc.advancePercentage,
       advanceValue: calc.advanceInAccountValue,
       tollValue: 0,
       balanceToReceiveValue: calc.balanceToReceiveValue,
       vehicleTag: vehicleTag || undefined,
       filesToAttach: filesToAttach.length > 0 ? filesToAttach : undefined,
+      financialCostMonthlyRate: currentCargo.financialCostEnabled ? (currentCargo.financialCostMonthlyRate || 0) : undefined,
+      financialCostDaysTerm: currentCargo.financialCostEnabled ? (currentCargo.financialCostDaysTerm || 30) : undefined,
+      financialCostRate: currentCargo.financialCostEnabled ? (currentCargo.financialCostEffectiveRate || (currentCargo.financialCostBaseDays && currentCargo.financialCostBaseDays > 0 ? Number((((currentCargo.financialCostMonthlyRate || 0) * (currentCargo.financialCostDaysTerm || 30)) / currentCargo.financialCostBaseDays).toFixed(4)) : 0)) : undefined,
+      financialCostValue: (currentCargo.financialCostEnabled && companyFreightRate > 0 && shipmentTonnage > 0)
+        ? Number(((companyFreightRate * shipmentTonnage) * ((currentCargo.financialCostEffectiveRate || 0) / 100)).toFixed(2))
+        : undefined,
     };
 
     // Check for active shipments for this driver
@@ -750,15 +1152,35 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       return;
     }
 
-    onSave(shipmentData);
+    try {
+      setIsSubmitting(true);
+      await onSave(shipmentData);
+      onClose();
+    } catch (err: any) {
+      console.error('Falha ao salvar embarque:', err);
+      const msg = err?.message || 'Erro ao processar solicitação de embarque.';
+      showToast(msg, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleConfirmSave = () => {
+  const handleConfirmSave = async () => {
     if (pendingPayload) {
-      onSave(pendingPayload);
-      setPendingPayload(null);
-      setShowConfirmModal(false);
-      setActiveShipmentsFound([]);
+      try {
+        setIsSubmitting(true);
+        await onSave(pendingPayload);
+        setPendingPayload(null);
+        setShowConfirmModal(false);
+        setActiveShipmentsFound([]);
+        onClose();
+      } catch (err: any) {
+        console.error('Falha ao confirmar embarque:', err);
+        const msg = err?.message || 'Erro ao processar solicitação de embarque.';
+        showToast(msg, 'error');
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -781,6 +1203,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
               </p>
             </div>
             <button
+              type="button"
               onClick={onClose}
               className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
             >
@@ -796,8 +1219,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const isExistingDriver = !!drivers.find(d => d.name.trim().toLowerCase() === driverName.trim().toLowerCase() && driverName.trim() !== '');
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-3xl w-full max-h-[92vh] overflow-y-auto border border-gray-100 dark:border-gray-700">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4 overscroll-contain">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-6xl w-full max-h-[92vh] overflow-y-auto overscroll-contain border border-gray-100 dark:border-gray-700">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Solicitação de Embarque</h2>
           <button
@@ -815,7 +1238,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
             <p className="text-gray-600 dark:text-gray-400">Cliente: <span className="font-bold text-gray-900 dark:text-gray-100">{clientName}</span></p>
             <p className="text-gray-600 dark:text-gray-400">Rota: <span className="font-bold text-gray-900 dark:text-gray-100">{currentCargo.origin} → {currentCargo.destination}</span></p>
-            <p className="text-gray-600 dark:text-gray-400">Saldo Disponível: <span className="font-bold text-emerald-600 dark:text-emerald-400">{(currentCargo.totalVolume - currentCargo.scheduledVolume).toLocaleString('pt-BR')} ton</span></p>
+            <p className="text-gray-600 dark:text-gray-400">Saldo Disponível: <span className="font-bold text-emerald-600 dark:text-emerald-400">{calculateCargoBalance(currentCargo, shipments).availableVolume.toLocaleString('pt-BR')} ton</span></p>
           </div>
           {currentCargo.allowedVehicleTypes && currentCargo.allowedVehicleTypes.length > 0 ? (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
@@ -828,7 +1251,15 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
           )}
         </div>
         
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form 
+          onSubmit={handleSubmit} 
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+              e.preventDefault();
+            }
+          }}
+          className="space-y-5"
+        >
             {/* Date & Time */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -856,34 +1287,153 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             </div>
 
             {/* Driver info */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">CPF do Motorista</label>
-                <input type="text" value={driverCpf} onChange={(e) => setDriverCpf(e.target.value)} placeholder="Digite o CPF do motorista" className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" required />
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  CPF do Motorista <span className="text-red-500">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  value={driverCpf} 
+                  onChange={(e) => handleDriverCpfChange(e.target.value)} 
+                  placeholder="Digite o CPF do motorista" 
+                  className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+                  required 
+                />
               </div>
               <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Contato (WhatsApp)</label>
-                  <input type="text" value={driverContact} onChange={(e) => setDriverContact(e.target.value)} placeholder="Contato (auto-preenchido)" className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" disabled={isExistingDriver} required />
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Contato (WhatsApp) <span className="text-red-500">*</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    value={driverContact} 
+                    onChange={(e) => setDriverContact(autoFormatInput('phone', e.target.value))} 
+                    placeholder="Contato (WhatsApp)" 
+                    className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+                    required 
+                  />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <span>Código ATUA</span>
+                    <span className="text-xs font-normal text-gray-500">(Cadastro ATUA)</span>
+                  </span>
+                  {hasPreloadedAtua ? (
+                    <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                      ✓ Vinculado
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                      Obrigatório em Ag. Cadastro
+                    </span>
+                  )}
+                </label>
+                <input 
+                  type="text" 
+                  value={codigoAtua} 
+                  onChange={(e) => {
+                    setCodigoAtua(e.target.value);
+                    setHasPreloadedAtua(false);
+                  }} 
+                  placeholder="Ex: 104523 ou Cód. Cadastro" 
+                  className={`p-3 w-full border rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-medium ${
+                    !codigoAtua.trim()
+                      ? 'border-amber-300 dark:border-amber-600'
+                      : 'border-emerald-400 dark:border-emerald-500'
+                  }`} 
+                />
+                {!codigoAtua.trim() && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                    ℹ️ Se não informado agora, o embarque parará em "Ag. Cadastro" para inclusão obrigatória do código.
+                  </p>
+                )}
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
+              <div className="relative" ref={driverInputContainerRef}>
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Motorista</label>
-                  <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="Digite o nome do motorista" className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" required list="driver-names" />
-                  <datalist id="driver-names">{drivers.map(d => <option key={d.id} value={d.name} />)}</datalist>
+                  <input 
+                    value={driverName} 
+                    onChange={(e) => handleDriverNameChange(e.target.value)} 
+                    onFocus={() => { if (driverSuggestions.length > 0) setShowDriverSuggestions(true); }}
+                    placeholder="Digite o nome do motorista" 
+                    className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+                    required 
+                    autoComplete="off"
+                  />
+                  {showDriverSuggestions && driverSuggestions.length > 0 && (
+                    <div className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl max-h-56 overflow-y-auto overflow-x-hidden divide-y divide-gray-100 dark:divide-gray-700/60">
+                      {driverSuggestions.map((d) => (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => {
+                            applyDriverAutofill(d);
+                            setShowDriverSuggestions(false);
+                          }}
+                          className="w-full text-left px-3.5 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                        >
+                          <div className="truncate">
+                            <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{d.name}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">CPF: {d.cpf || 'Não cadastrado'} {d.phone ? `• ${d.phone}` : ''}</p>
+                          </div>
+                          {!d.active && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 shrink-0">
+                              Restrito
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Contato do Proprietário</label>
-                <input type="text" value={ownerContact} onChange={(e) => setOwnerContact(e.target.value)} placeholder="Telefone/WhatsApp do proprietário" className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                <input 
+                  type="text" 
+                  value={ownerContact} 
+                  onChange={(e) => setOwnerContact(autoFormatInput('phone', e.target.value))} 
+                  placeholder="Telefone/WhatsApp do proprietário" 
+                  className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+                />
               </div>
             </div>
 
             {/* Vehicle Plates & Types */}
-            <div>
+            <div className="relative" ref={plateInputContainerRef}>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Placa Cavalo</label>
-                <input value={horsePlate} onChange={(e) => setHorsePlate(e.target.value.toUpperCase())} placeholder="AAA-1234" className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" required list="vehicle-plates" />
-                <datalist id="vehicle-plates">{vehicles.map(v => <option key={v.id} value={v.plate} />)}</datalist>
+                <input 
+                  value={horsePlate} 
+                  onChange={(e) => handleHorsePlateChange(e.target.value)} 
+                  onFocus={() => { if (plateSuggestions.length > 0) setShowPlateSuggestions(true); }}
+                  placeholder="AAA-1234 ou ABC1D23" 
+                  className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white uppercase" 
+                  required 
+                  autoComplete="off"
+                />
+                {showPlateSuggestions && plateSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl max-h-56 overflow-y-auto overflow-x-hidden divide-y divide-gray-100 dark:divide-gray-700/60">
+                    {plateSuggestions.map((v) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => {
+                          applyPlateAutofill(v.plate);
+                          setShowPlateSuggestions(false);
+                        }}
+                        className="w-full text-left px-3.5 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                      >
+                        <div>
+                          <p className="text-sm font-mono font-bold text-gray-900 dark:text-white">{v.plate}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{v.setType || 'Cavalo'} {v.bodyType ? `• ${v.bodyType}` : ''}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
             </div>
           
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -930,16 +1480,18 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                         <RefreshCw className={`w-3 h-3 ${isSyncingCargo ? 'animate-spin text-primary' : ''}`} />
                         <span>{isSyncingCargo ? 'Checando...' : 'Sincronizar'}</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={handleAllowCurrentVehicleOnCargo}
-                        disabled={isUpdatingCargoPermission}
-                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold flex items-center gap-1.5 shadow-xs transition-all text-xs"
-                        title="Adiciona este tipo de veículo nas regras da carga agora sem recarregar a tela"
-                      >
-                        <Zap className="w-3.5 h-3.5" />
-                        <span>{isUpdatingCargoPermission ? 'Liberando...' : 'Permitir Este Veículo'}</span>
-                      </button>
+                      {canAllowVehicleOnCargo && (
+                        <button
+                          type="button"
+                          onClick={handleAllowCurrentVehicleOnCargo}
+                          disabled={isUpdatingCargoPermission}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold flex items-center gap-1.5 shadow-xs transition-all text-xs"
+                          title="Adiciona este tipo de veículo nas regras da carga agora sem recarregar a tela"
+                        >
+                          <Zap className="w-3.5 h-3.5" />
+                          <span>{isUpdatingCargoPermission ? 'Liberando...' : 'Permitir Este Veículo'}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 ) : (vehicleValidationInfo.setType && vehicleValidationInfo.bodyType ? (
@@ -980,7 +1532,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <button
                         type="button"
                         onClick={() => setPaymentMethod(DriverPaymentMethod.PixEFrete)}
@@ -999,11 +1551,11 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                         onClick={() => setPaymentMethod(DriverPaymentMethod.DepositoConta)}
                         className={`p-3 rounded-xl border text-center transition-all text-xs font-bold flex flex-col items-center justify-center gap-1 ${
                             paymentMethod === DriverPaymentMethod.DepositoConta
-                            ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/20'
+                            ? 'border-amber-600 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 ring-2 ring-amber-500/20'
                             : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300'
                         }`}
                     >
-                        <span className="text-sm">🏦 DEPÓSITO EM CONTA</span>
+                        <span className="text-sm">🏦 DEPÓSITO CONTA</span>
                         <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">Dados Bancários</span>
                     </button>
 
@@ -1018,6 +1570,19 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                     >
                         <span className="text-sm">📱 SMS CARTA FRETE</span>
                         <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">Carta Frete</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setPaymentMethod(DriverPaymentMethod.PagamentoLivre)}
+                        className={`p-3 rounded-xl border text-center transition-all text-xs font-bold flex flex-col items-center justify-center gap-1 ${
+                            paymentMethod === DriverPaymentMethod.PagamentoLivre
+                            ? 'border-amber-600 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 ring-2 ring-amber-500/20'
+                            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300'
+                        }`}
+                    >
+                        <span className="text-sm">🔓 PAGAMENTO LIVRE</span>
+                        <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">Negociação Direta</span>
                     </button>
                 </div>
 
@@ -1058,6 +1623,40 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                         <span>ℹ️ Pagamento via SMS Carta Frete para o condutor.</span>
                     </div>
                 )}
+
+                {paymentMethod === DriverPaymentMethod.PagamentoLivre && (
+                    <div className="space-y-3">
+                        <div className="p-3 bg-amber-50/50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                            <span>ℹ️ Pagamento Livre: modalidade flexível / negociada diretamente com o motorista. Chave Pix e dados bancários são opcionais.</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                    Chave Pix (Opcional)
+                                </label>
+                                <input 
+                                    type="text" 
+                                    value={pixKey} 
+                                    onChange={(e) => setPixKey(e.target.value)} 
+                                    placeholder="Chave Pix se houver..." 
+                                    className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                    Dados Bancários / Observações (Opcional)
+                                </label>
+                                <input 
+                                    type="text" 
+                                    value={bankDetails} 
+                                    onChange={(e) => setBankDetails(e.target.value)} 
+                                    placeholder="Banco/conta ou obs..." 
+                                    className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Document Attachment & Scan */}
@@ -1084,7 +1683,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                             className={`ml-3 text-xs font-bold uppercase py-1.5 px-3 rounded-lg border transition-all ${
                                 isScanning 
                                 ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
-                                : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-600 hover:text-white'
+                                : 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-600 hover:text-white'
                             }`}
                         >
                             {isScanning ? 'Processando...' : 'Digitalizar com IA'}
@@ -1216,6 +1815,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                               onClick={() => {
                                 setAnttModality(AnttModality.TAC);
                                 setEtcTaxRegime('');
+                                setIsManualEtcRegime(false);
                                 setCnpjSearchResult(null);
                                 if (!anttOwnerIdentifier || anttOwnerIdentifier.replace(/\D/g, '').length > 11) {
                                   setAnttOwnerIdentifier(driverCpf || '');
@@ -1255,6 +1855,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                 if (anttOwnerIdentifier.replace(/\D/g, '').length === 11) {
                                   setAnttOwnerIdentifier('');
                                   setEtcTaxRegime('');
+                                  setIsManualEtcRegime(false);
                                   setCnpjSearchResult(null);
                                 }
                               }}
@@ -1279,27 +1880,53 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                             </button>
                         </div>
 
-                        {/* When TAC is selected: CPF do Titular */}
+                        {/* When TAC is selected: CPF do Titular & Nome do Proprietário */}
                         {anttModality === AnttModality.TAC && (
-                            <div className="pt-2 space-y-1.5 animate-fade-in border-t border-gray-200 dark:border-gray-700/80">
-                                <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                                    CPF do Titular da ANTT (TAC) <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={anttOwnerIdentifier}
-                                    onChange={(e) => handleAnttOwnerIdentifierChange(e.target.value)}
-                                    placeholder="000.000.000-00"
-                                    className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-orange-500"
-                                    required
-                                />
-                                <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                                    CPF do transportador autônomo titular do RNTRC
-                                </p>
+                            <div className="pt-2 space-y-3 animate-fade-in border-t border-gray-200 dark:border-gray-700/80">
+                                <div className="space-y-1.5">
+                                    <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                                        CPF do Titular da ANTT (TAC) <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={anttOwnerIdentifier}
+                                        onChange={(e) => handleAnttOwnerIdentifierChange(e.target.value)}
+                                        placeholder="000.000.000-00"
+                                        className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-orange-500"
+                                        required
+                                    />
+                                    <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                                        CPF do transportador autônomo titular do RNTRC
+                                    </p>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                                            Nome do Proprietário / Titular da ANTT <span className="text-red-500">*</span>
+                                        </label>
+                                        {ownerAutoFillSource && (
+                                            <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                                ✓ {ownerAutoFillSource}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={ownerName}
+                                        onChange={(e) => {
+                                            setOwnerName(e.target.value);
+                                            setOwnerAutoFillSource('');
+                                        }}
+                                        placeholder="Nome completo do proprietário"
+                                        className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-orange-500"
+                                        required
+                                    />
+                                </div>
                             </div>
                         )}
 
-                        {/* When ETC is selected: CNPJ with Lookup and Regime Tributário */}
+                        {/* When ETC is selected: CNPJ with Lookup, Nome da Empresa and Regime Tributário */}
                         {anttModality === AnttModality.ETC && (
                             <div className="pt-2 space-y-3 animate-fade-in border-t border-gray-200 dark:border-gray-700/80">
                                 <div className="space-y-1.5">
@@ -1353,13 +1980,78 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                     )}
                                 </div>
 
-                                {/* Regime Tributário (ETC) - Definido exclusivamente pela consulta */}
-                                <div className="space-y-1.5 animate-fade-in">
-                                    <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                                        Regime Tributário (ETC) <span className="text-red-500">*</span>
-                                    </label>
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                                            Razão Social / Nome do Proprietário (PJ) <span className="text-red-500">*</span>
+                                        </label>
+                                        {ownerAutoFillSource && (
+                                            <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                                ✓ {ownerAutoFillSource}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={ownerName}
+                                        onChange={(e) => {
+                                            setOwnerName(e.target.value);
+                                            setOwnerAutoFillSource('');
+                                        }}
+                                        placeholder="Razão Social ou Nome Fantasia da Empresa"
+                                        className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-emerald-600"
+                                        required
+                                    />
+                                </div>
 
-                                    {etcTaxRegime ? (
+                                {/* Regime Tributário (ETC) - Consulta ou Informação Manual */}
+                                <div className="space-y-1.5 animate-fade-in">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                                            Regime Tributário (ETC) <span className="text-red-500">*</span>
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsManualEtcRegime(!isManualEtcRegime)}
+                                            className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline font-bold"
+                                        >
+                                            {isManualEtcRegime ? '🔍 Consultar CNPJ' : '✏️ Informar Manualmente'}
+                                        </button>
+                                    </div>
+
+                                    {isManualEtcRegime ? (
+                                        <div className="space-y-2 p-3 bg-amber-50/70 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-xl">
+                                            <p className="text-[11px] font-bold text-amber-900 dark:text-amber-200">
+                                                Selecione o Regime Tributário da transportadora:
+                                            </p>
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                {[
+                                                    { regime: EtcTaxRegime.SimplesNacional, label: 'Simples Nacional' },
+                                                    { regime: EtcTaxRegime.LucroPresumido, label: 'Lucro Presumido' },
+                                                    { regime: EtcTaxRegime.LucroReal, label: 'Lucro Real' },
+                                                    { regime: EtcTaxRegime.MEI, label: 'MEI' },
+                                                ].map((item) => (
+                                                    <button
+                                                        key={item.regime}
+                                                        type="button"
+                                                        onClick={() => setEtcTaxRegime(item.regime)}
+                                                        className={`p-2 rounded-lg border text-center transition-all ${
+                                                            etcTaxRegime === item.regime
+                                                                ? 'border-emerald-600 bg-emerald-600 text-white font-black shadow-xs ring-2 ring-emerald-500/20'
+                                                                : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-400 font-semibold'
+                                                        }`}
+                                                    >
+                                                        <div className="text-xs leading-tight">{item.label}</div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            {etcTaxRegime && (
+                                                <p className="text-[10px] text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-1">
+                                                    ✓ Regime selecionado: <strong>{etcTaxRegime}</strong> (Informado Manualmente)
+                                                </p>
+                                            )}
+                                        </div>
+                                    ) : etcTaxRegime ? (
                                         <div className="p-3 bg-emerald-50/90 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-700/60 rounded-xl flex items-center justify-between shadow-sm">
                                             <div className="flex items-center gap-2.5">
                                                 <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
@@ -1374,19 +2066,38 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                                     </p>
                                                 </div>
                                             </div>
-                                            <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-emerald-200/80 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-200">
-                                                Confirmado
-                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-emerald-200/80 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-200">
+                                                    Confirmado
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsManualEtcRegime(true)}
+                                                    className="text-[10px] text-emerald-700 dark:text-emerald-300 hover:underline font-semibold"
+                                                >
+                                                    Alterar
+                                                </button>
+                                            </div>
                                         </div>
                                     ) : (
-                                        <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-xl flex items-start gap-2 text-amber-800 dark:text-amber-200 text-xs">
-                                            <span className="text-sm shrink-0">ℹ️</span>
-                                            <div>
-                                                <p className="font-semibold text-[11px]">Identificação Automática Obrigatória</p>
-                                                <p className="text-[10px] text-amber-700/90 dark:text-amber-300/80 mt-0.5">
-                                                    Informe o CNPJ acima e clique em <strong>Consultar</strong> para obter o regime tributário oficial da empresa.
-                                                </p>
+                                        <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-xl space-y-2 text-xs">
+                                            <div className="flex items-start gap-2 text-amber-800 dark:text-amber-200">
+                                                <span className="text-sm shrink-0">ℹ️</span>
+                                                <div>
+                                                    <p className="font-semibold text-[11px]">Identificação do Regime Tributário</p>
+                                                    <p className="text-[10px] text-amber-700/90 dark:text-amber-300/80 mt-0.5">
+                                                        Informe o CNPJ acima e clique em <strong>Consultar</strong>. Se o serviço da Receita estiver fora do ar ou o CNPJ não for localizado, você pode informar manualmente.
+                                                    </p>
+                                                </div>
                                             </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsManualEtcRegime(true)}
+                                                className="w-full py-2 px-3 bg-amber-200 hover:bg-amber-300 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-950 dark:text-amber-100 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+                                            >
+                                                <Edit3 className="w-3.5 h-3.5" />
+                                                <span>Não localizou na Receita? Informar Regime Manualmente</span>
+                                            </button>
                                         </div>
                                     )}
                                 </div>
@@ -1401,15 +2112,24 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
               <button 
                 type="button" 
                 onClick={onClose} 
-                className="py-2.5 px-6 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-semibold rounded-xl transition-all"
+                disabled={isSubmitting}
+                className="py-2.5 px-6 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-gray-800 dark:text-gray-200 font-semibold rounded-xl transition-all"
               >
                 Cancelar
               </button>
               <button 
                 type="submit" 
-                className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] text-white font-bold rounded-xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95"
+                disabled={isSubmitting}
+                className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95 flex items-center gap-2"
               >
-                Solicitar Embarque
+                {isSubmitting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Solicitando Embarque...</span>
+                  </>
+                ) : (
+                  <span>Solicitar Embarque</span>
+                )}
               </button>
             </div>
         </form>
@@ -1483,17 +2203,28 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
               <button
                 type="button"
                 onClick={() => setShowConfirmModal(false)}
-                className="px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-semibold text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                disabled={isSubmitting}
+                className="px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 disabled:opacity-50 text-gray-700 dark:text-gray-300 font-semibold text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={handleConfirmSave}
-                className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-lg shadow-amber-600/30 transition-all flex items-center gap-2 active:scale-95"
+                disabled={isSubmitting}
+                className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold text-sm shadow-lg shadow-amber-600/30 transition-all flex items-center gap-2 active:scale-95"
               >
-                <CheckCircle2 className="w-4 h-4" />
-                Sim, Criar Embarque
+                {isSubmitting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Criando Embarque...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Sim, Criar Embarque</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

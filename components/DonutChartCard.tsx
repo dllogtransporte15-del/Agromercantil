@@ -59,9 +59,9 @@ const DonutChartCard: React.FC<DonutChartCardProps> = ({ title, data, unit = '',
               
               // This is a workaround for Tailwind JIT not picking up dynamic classes
               const colorMap: Record<string, string> = {
-                'bg-blue-500': 'stroke-blue-500',
-                'bg-blue-400': 'stroke-blue-400',
-                'bg-blue-300': 'stroke-blue-300',
+                'bg-amber-500': 'stroke-amber-500',
+                'bg-amber-400': 'stroke-amber-400',
+                'bg-amber-300': 'stroke-amber-300',
                 'bg-gray-500': 'stroke-gray-500',
                 'bg-gray-400': 'stroke-gray-400',
                 'bg-emerald-500': 'stroke-emerald-500',
@@ -70,7 +70,7 @@ const DonutChartCard: React.FC<DonutChartCardProps> = ({ title, data, unit = '',
                 'bg-red-500': 'stroke-red-500',
                 'bg-yellow-500': 'stroke-yellow-500',
                 'bg-pink-500': 'stroke-pink-500',
-                'bg-indigo-500': 'stroke-indigo-500',
+                'bg-amber-600': 'stroke-amber-600',
               };
               const strokeColor = colorMap[item.color] || 'stroke-gray-500';
 
@@ -123,8 +123,8 @@ const DonutChartCard: React.FC<DonutChartCardProps> = ({ title, data, unit = '',
                           onClick={() => toggleExpand(index)}
                           className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer shadow-2xs shrink-0 whitespace-nowrap ${
                             isExpanded
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:hover:bg-blue-900/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                              ? 'bg-amber-600 text-white'
+                              : 'bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:hover:bg-amber-900/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
                           }`}
                           title="Clique para ver o volume e histórico por filial"
                         >
@@ -137,7 +137,7 @@ const DonutChartCard: React.FC<DonutChartCardProps> = ({ title, data, unit = '',
                           <button
                             type="button"
                             onClick={() => onViewClientHistory(item.clientId!)}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-300 hover:text-white bg-blue-50 hover:bg-blue-600 dark:bg-blue-900/40 dark:hover:bg-blue-600 border border-blue-200 dark:border-blue-800 rounded-md transition-all cursor-pointer shadow-2xs shrink-0 whitespace-nowrap group"
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300 hover:text-white bg-amber-50 hover:bg-amber-600 dark:bg-amber-900/40 dark:hover:bg-amber-600 border border-amber-200 dark:border-amber-800 rounded-md transition-all cursor-pointer shadow-2xs shrink-0 whitespace-nowrap group"
                             title={`Ver histórico completo de ${item.label}`}
                           >
                             <History className="w-2.5 h-2.5 group-hover:rotate-[-20deg] transition-transform" />
@@ -153,17 +153,17 @@ const DonutChartCard: React.FC<DonutChartCardProps> = ({ title, data, unit = '',
 
                   {/* Expanded Sub-items (Filiais) */}
                   {isExpanded && hasSubItems && (
-                    <div className="mt-2 ml-4 pl-3 border-l-2 border-blue-400 dark:border-blue-500 space-y-1.5 py-1.5 bg-blue-50/40 dark:bg-blue-950/20 rounded-r-lg animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="mt-2 ml-4 pl-3 border-l-2 border-amber-400 dark:border-amber-500 space-y-1.5 py-1.5 bg-amber-50/40 dark:bg-amber-950/20 rounded-r-lg animate-in fade-in slide-in-from-top-1 duration-150">
                       <div className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 mb-1.5 flex items-center justify-between pr-2">
                         <span className="flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                          <Building2 className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                           Detalhamento por Filial:
                         </span>
                         {item.clientId && onViewClientHistory && (
                           <button
                             type="button"
                             onClick={() => onViewClientHistory(item.clientId!)}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-white hover:bg-blue-600 dark:hover:bg-blue-600 bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-800 rounded-md transition-all cursor-pointer shadow-2xs"
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:text-white hover:bg-amber-600 dark:hover:bg-amber-600 bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-800 rounded-md transition-all cursor-pointer shadow-2xs"
                             title={`Ver histórico completo de ${item.label}`}
                           >
                             <History className="w-2.5 h-2.5" />
@@ -176,9 +176,9 @@ const DonutChartCard: React.FC<DonutChartCardProps> = ({ title, data, unit = '',
                       {item.subItems!.map((sub, sIdx) => {
                         const branchPct = item.value > 0 ? (sub.value / item.value) * 100 : 0;
                         return (
-                          <div key={sIdx} className="flex items-center justify-between text-xs pr-2 py-0.5 hover:bg-blue-100/40 dark:hover:bg-blue-900/30 rounded px-1 transition-colors">
+                          <div key={sIdx} className="flex items-center justify-between text-xs pr-2 py-0.5 hover:bg-amber-100/40 dark:hover:bg-amber-900/30 rounded px-1 transition-colors">
                             <div className="flex items-center gap-1.5 truncate flex-1 mr-2" title={`${sub.label}${sub.cnpj ? ` — CNPJ: ${sub.cnpj}` : ''}`}>
-                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>
                               <span className="text-gray-700 dark:text-gray-200 font-semibold truncate">{sub.label}</span>
                             </div>
                             <div className="flex items-center gap-2 shrink-0 ml-auto">

@@ -12,25 +12,25 @@ interface CancellationReasonChartProps {
 }
 
 const COLORS = [
-  'bg-blue-500',
+  'bg-amber-500',
   'bg-emerald-500',
   'bg-orange-500',
   'bg-purple-500',
   'bg-red-500',
   'bg-yellow-500',
   'bg-pink-500',
-  'bg-indigo-500',
+  'bg-amber-600',
 ];
 
 const STROKE_COLORS: Record<string, string> = {
-  'bg-blue-500': 'stroke-blue-500',
+  'bg-amber-500': 'stroke-amber-500',
   'bg-emerald-500': 'stroke-emerald-500',
   'bg-orange-500': 'stroke-orange-500',
   'bg-purple-500': 'stroke-purple-500',
   'bg-red-500': 'stroke-red-500',
   'bg-yellow-500': 'stroke-yellow-500',
   'bg-pink-500': 'stroke-pink-500',
-  'bg-indigo-500': 'stroke-indigo-500',
+  'bg-amber-600': 'stroke-amber-600',
 };
 
 const CancellationReasonChart: React.FC<CancellationReasonChartProps> = ({ data }) => {

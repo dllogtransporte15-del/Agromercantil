@@ -38,29 +38,29 @@ const TransferShipmentModal: React.FC<TransferShipmentModalProps> = ({ isOpen, o
 
   if (!isOpen || !shipment) return null;
 
-  const currentEmbarcadorName = users.find(u => u.id === shipment.embarcadorId)?.name || 'Não atribuído';
+  const currentEmbarcadorName = users.find(u => u.id === shipment.embarcadorId || u.id === shipment.createdById)?.name || 'Não atribuído';
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-lg w-full">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 sm:p-8 max-w-lg w-full border border-gray-200 dark:border-gray-700">
         <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Transferir Embarque</h2>
-        <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">Embarque ID: <b>{shipment.id}</b></p>
-        <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">Embarcador Atual: <b>{currentEmbarcadorName}</b></p>
+        <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">Embarque ID: <b className="font-mono text-gray-800 dark:text-gray-200">{shipment.id}</b></p>
+        <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">Solicitante / Embarcador Atual: <b className="text-gray-800 dark:text-gray-200">{currentEmbarcadorName}</b></p>
         
         <div className="space-y-4">
           <div>
-            <label htmlFor="embarcador-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Novo Embarcador Responsável
+            <label htmlFor="embarcador-select" className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
+              Novo Solicitante / Embarcador Responsável
             </label>
             <select
               id="embarcador-select"
               value={selectedEmbarcadorId}
               onChange={(e) => setSelectedEmbarcadorId(e.target.value)}
-              className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600"
+              className="mt-1.5 p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
               required
             >
               <option value="" disabled>Selecione um novo responsável...</option>
-              {embarcadores.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              {embarcadores.map(e => <option key={e.id} value={e.id}>{e.name} ({e.profile})</option>)}
             </select>
           </div>
         </div>

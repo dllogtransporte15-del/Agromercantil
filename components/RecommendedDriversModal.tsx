@@ -131,8 +131,8 @@ const RecommendedDriversModal: React.FC<RecommendedDriversModalProps> = ({
 
         {/* Content */}
         <div className="p-6 overflow-y-auto flex-1 bg-gray-50 dark:bg-gray-900/20">
-          <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800">
-            <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-2">
+          <div className="mb-6 bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-100 dark:border-amber-800">
+            <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-2 flex items-center gap-2">
               <MapPin className="w-4 h-4" />
               Referência da Carga
             </h3>
@@ -173,7 +173,7 @@ const RecommendedDriversModal: React.FC<RecommendedDriversModalProps> = ({
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => setSelectedDriverForHistory(driver)}
-                      className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50 rounded-lg transition-colors"
+                      className="p-2.5 bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50 rounded-lg transition-colors"
                       title="Ver Histórico do Motorista"
                     >
                       <History className="w-4 h-4" />

@@ -5,7 +5,7 @@ import { Download, FileSpreadsheet } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { addPdfLogo } from "../../utils/pdfGenerator";
-import { getShipmentEffectiveDate } from "../../utils";
+import { getShipmentEffectiveDate, hasCteAttached } from "../../utils";
 
 interface DemandForecastReportProps {
   cargos: Cargo[];
@@ -73,6 +73,7 @@ const DemandForecastReport: React.FC<DemandForecastReportProps> = ({ cargos, cli
   const attendedTonnageByCargoAndDate = useMemo(() => {
     const map = new Map<string, Map<string, number>>();
     shipments.forEach((s) => {
+      if (s.status === ShipmentStatus.Cancelado || !hasCteAttached(s)) return;
       const effDate = getShipmentEffectiveDate(s) ?? s.scheduledDate;
       if (!effDate || effDate < startDate || effDate > endDate) return;
       if (!map.has(s.cargoId)) map.set(s.cargoId, new Map());
@@ -170,7 +171,7 @@ const DemandForecastReport: React.FC<DemandForecastReportProps> = ({ cargos, cli
         ],
         theme: "grid",
         styles: { fontSize: 8 },
-        headStyles: { fillColor: [29, 59, 141], textColor: 255 },
+        headStyles: { fillColor: [166, 113, 66], textColor: 255 },
         didParseCell: (data) => {
           if (data.cell.section === 'body') {
             const rawRow = data.row.raw;
@@ -203,7 +204,7 @@ const DemandForecastReport: React.FC<DemandForecastReportProps> = ({ cargos, cli
         ],
         theme: "grid",
         styles: { fontSize: 7 },
-        headStyles: { fillColor: [29, 59, 141], textColor: 255 },
+        headStyles: { fillColor: [166, 113, 66], textColor: 255 },
         didParseCell: (data) => {
           if (data.cell.section === 'body') {
             const rawRow = data.row.raw;
@@ -309,7 +310,7 @@ const DemandForecastReport: React.FC<DemandForecastReportProps> = ({ cargos, cli
                         {col.label}
                       </th>
                     ))}
-                  <th className="px-4 py-3 text-center text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Previsto<br />(Ton)</th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Previsto<br />(Ton)</th>
                   <th className="px-4 py-3 text-center text-xs font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wider">Atendido<br />(Ton)</th>
                   <th className="px-4 py-3 text-center text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Saldo<br />Pendente</th>
                 </tr>
@@ -327,7 +328,7 @@ const DemandForecastReport: React.FC<DemandForecastReportProps> = ({ cargos, cli
                             {!hasSchedule ? (
                               <span className="text-gray-300 dark:text-gray-600">-</span>
                             ) : ton > 0 ? (
-                              <span className="font-semibold text-blue-600 dark:text-blue-400">{ton.toLocaleString("pt-BR")}</span>
+                              <span className="font-semibold text-amber-600 dark:text-amber-400">{ton.toLocaleString("pt-BR")}</span>
                             ) : (
                               <span className="text-gray-400 dark:text-gray-500 text-xs">prog.</span>
                             )}
@@ -335,7 +336,7 @@ const DemandForecastReport: React.FC<DemandForecastReportProps> = ({ cargos, cli
                         );
                       })}
                     <td className="px-4 py-4 text-center">
-                      <span className="text-sm font-bold text-blue-600 dark:text-blue-400">{row.previsto.toLocaleString("pt-BR")}</span>
+                      <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{row.previsto.toLocaleString("pt-BR")}</span>
                     </td>
                     <td className="px-4 py-4 text-center">
                       <span className={`text-sm font-bold ${row.atendido > 0 ? "text-teal-600 dark:text-teal-400" : "text-gray-400 dark:text-gray-500"}`}>
@@ -367,7 +368,7 @@ const DemandForecastReport: React.FC<DemandForecastReportProps> = ({ cargos, cli
                         {tot > 0 ? tot.toLocaleString("pt-BR") : "-"}
                       </td>
                     ))}
-                  <td className="px-4 py-3 text-center text-sm font-bold text-blue-600 dark:text-blue-400">{totalPrevisto.toLocaleString("pt-BR")}</td>
+                  <td className="px-4 py-3 text-center text-sm font-bold text-amber-600 dark:text-amber-400">{totalPrevisto.toLocaleString("pt-BR")}</td>
                   <td className="px-4 py-3 text-center text-sm font-bold text-teal-600 dark:text-teal-400">{totalAtendido.toLocaleString("pt-BR")}</td>
                   <td className="px-4 py-3 text-center">
                     <span

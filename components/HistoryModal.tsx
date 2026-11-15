@@ -14,6 +14,7 @@ const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose, history, u
   if (!isOpen) return null;
 
   const getUserName = (userId: string) => {
+    if (userId === 'system' || userId === 'sistema') return 'Sistema';
     return users.find(u => u.id === userId)?.name || 'Usuário Desconhecido';
   };
 
@@ -27,15 +28,17 @@ const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose, history, u
     });
   };
 
+  const visibleHistory = (history || []).filter((log) => !String(log?.id || '').startsWith('meta_'));
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] flex flex-col">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-4xl w-full max-h-[90vh] flex flex-col">
         <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-white">{title}</h2>
         
         <div className="flex-1 overflow-y-auto pr-2">
-          {history.length > 0 ? (
+          {visibleHistory.length > 0 ? (
             <ol className="relative border-l border-gray-200 dark:border-gray-700">
-              {history.map((log) => (
+              {visibleHistory.map((log) => (
                 <li key={log.id} className="mb-6 ml-4">
                   <div className="absolute w-3 h-3 bg-gray-200 rounded-full mt-1.5 -left-1.5 border border-white dark:border-gray-900 dark:bg-gray-700"></div>
                   <time className="mb-1 text-sm font-normal leading-none text-gray-400 dark:text-gray-500">

@@ -93,9 +93,9 @@ const RiskQueryTypeFormModal: React.FC<RiskQueryTypeFormModalProps> = ({
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 dark:border-gray-700 relative">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-blue-50/50 via-indigo-50/30 to-transparent dark:from-gray-800 dark:to-gray-800">
+        <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-amber-50/50 via-amber-50/30 to-transparent dark:from-gray-800 dark:to-gray-800">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-amber-600/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
@@ -134,7 +134,7 @@ const RiskQueryTypeFormModal: React.FC<RiskQueryTypeFormModalProps> = ({
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="Ex: SIGA, Consulta + Biometria, Vitimologia..."
-              className="w-full px-3.5 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-sm transition-all"
+              className="w-full px-3.5 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium text-sm transition-all"
               required
               autoFocus
             />
@@ -159,7 +159,7 @@ const RiskQueryTypeFormModal: React.FC<RiskQueryTypeFormModalProps> = ({
                   value={cost}
                   onChange={e => setCost(e.target.value === '' ? '' : Number(e.target.value))}
                   placeholder="0,00"
-                  className="w-full pl-10 pr-3.5 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono font-bold text-sm"
+                  className="w-full pl-10 pr-3.5 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono font-bold text-sm"
                   required
                 />
               </div>
@@ -168,7 +168,7 @@ const RiskQueryTypeFormModal: React.FC<RiskQueryTypeFormModalProps> = ({
             {/* Ordem de Exibição */}
             <div>
               <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                <ListOrdered className="w-3.5 h-3.5 text-blue-500" />
+                <ListOrdered className="w-3.5 h-3.5 text-amber-500" />
                 Ordem no Dropdown
               </label>
               <input
@@ -178,7 +178,7 @@ const RiskQueryTypeFormModal: React.FC<RiskQueryTypeFormModalProps> = ({
                 value={orderIndex}
                 onChange={e => setOrderIndex(e.target.value === '' ? '' : Number(e.target.value))}
                 placeholder="1"
-                className="w-full px-3.5 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono font-bold text-sm"
+                className="w-full px-3.5 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono font-bold text-sm"
               />
             </div>
           </div>
@@ -194,7 +194,7 @@ const RiskQueryTypeFormModal: React.FC<RiskQueryTypeFormModalProps> = ({
               onChange={e => setDescription(e.target.value)}
               placeholder="Descreva quando utilizar esta modalidade ou critérios de contratação..."
               rows={2}
-              className="w-full px-3.5 py-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+              className="w-full px-3.5 py-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs"
             />
           </div>
 
@@ -211,7 +211,7 @@ const RiskQueryTypeFormModal: React.FC<RiskQueryTypeFormModalProps> = ({
             <button
               type="button"
               onClick={() => setActive(prev => !prev)}
-              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 ${
                 active ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'
               }`}
             >
@@ -224,11 +224,11 @@ const RiskQueryTypeFormModal: React.FC<RiskQueryTypeFormModalProps> = ({
           </div>
 
           {/* Preview Box */}
-          <div className="p-3.5 bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-800 rounded-xl">
-            <p className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-widest mb-1.5">
+          <div className="p-3.5 bg-amber-50/60 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-800 rounded-xl">
+            <p className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-widest mb-1.5">
               Pré-visualização no Select de Embarque:
             </p>
-            <div className="p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-blue-200 dark:border-blue-700 font-medium text-xs text-gray-800 dark:text-gray-200 flex items-center justify-between">
+            <div className="p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-amber-200 dark:border-amber-700 font-medium text-xs text-gray-800 dark:text-gray-200 flex items-center justify-between">
               <span>
                 {orderIndex || 1} - {name.trim() || 'Nome da Modalidade'} (Valor: {formattedPreviewCost})
               </span>

@@ -83,7 +83,7 @@ const MergeClientsModal: React.FC<MergeClientsModalProps> = ({ isOpen, onClose, 
         {/* Header */}
         <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50/50 dark:bg-gray-800/50">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl dark:bg-indigo-900/40 dark:text-indigo-400">
+            <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl dark:bg-amber-900/40 dark:text-amber-400">
               <Merge className="w-6 h-6" />
             </div>
             <div>
@@ -132,7 +132,7 @@ const MergeClientsModal: React.FC<MergeClientsModalProps> = ({ isOpen, onClose, 
                 setTargetClientId(newTarget);
                 setSourceClientIds(prev => prev.filter(id => id !== newTarget));
               }}
-              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-sm font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-600 shadow-xs"
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-sm font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-600 shadow-xs"
             >
               <option value="">-- Selecione o cliente principal que receberá as filiais --</option>
               {clients.map(c => (
@@ -143,13 +143,13 @@ const MergeClientsModal: React.FC<MergeClientsModalProps> = ({ isOpen, onClose, 
             </select>
 
             {targetClient && (
-              <div className="p-3 bg-indigo-50/50 dark:bg-indigo-900/20 border border-indigo-200/60 dark:border-indigo-800/50 rounded-xl flex items-center justify-between text-xs text-indigo-900 dark:text-indigo-200">
+              <div className="p-3 bg-amber-50/50 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/50 rounded-xl flex items-center justify-between text-xs text-amber-900 dark:text-amber-200">
                 <div className="flex items-center gap-2">
-                  <Building2 className="w-4 h-4 text-indigo-600" />
+                  <Building2 className="w-4 h-4 text-amber-600" />
                   <span className="font-bold">{targetClient.nomeFantasia || targetClient.razaoSocial}</span>
                   <span className="font-mono text-gray-500 dark:text-gray-400">({targetClient.cnpj})</span>
                 </div>
-                <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-800 text-indigo-800 dark:text-indigo-200 font-bold rounded-md">
+                <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-800 text-amber-800 dark:text-amber-200 font-bold rounded-md">
                   Cliente Principal
                 </span>
               </div>
@@ -166,7 +166,7 @@ const MergeClientsModal: React.FC<MergeClientsModalProps> = ({ isOpen, onClose, 
                 <button
                   type="button"
                   onClick={handleSelectAllSources}
-                  className="text-indigo-600 hover:underline font-semibold"
+                  className="text-amber-600 hover:underline font-semibold"
                 >
                   Selecionar Todos
                 </button>
@@ -189,7 +189,7 @@ const MergeClientsModal: React.FC<MergeClientsModalProps> = ({ isOpen, onClose, 
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Buscar por nome, razão social ou CNPJ..."
-                className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-xs text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-600 shadow-xs"
+                className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-xs text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-600 shadow-xs"
               />
             </div>
 
@@ -210,12 +210,12 @@ const MergeClientsModal: React.FC<MergeClientsModalProps> = ({ isOpen, onClose, 
                         isTarget
                           ? 'bg-gray-100 dark:bg-gray-800/80 opacity-50 cursor-not-allowed'
                           : isSelected
-                          ? 'bg-indigo-50/70 dark:bg-indigo-900/30 cursor-pointer'
+                          ? 'bg-amber-50/70 dark:bg-amber-900/30 cursor-pointer'
                           : 'hover:bg-gray-50 dark:hover:bg-gray-750 cursor-pointer'
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="text-indigo-600">
+                        <div className="text-amber-600">
                           {isTarget ? (
                             <Building2 className="w-4 h-4 text-gray-400" />
                           ) : isSelected ? (
@@ -244,7 +244,7 @@ const MergeClientsModal: React.FC<MergeClientsModalProps> = ({ isOpen, onClose, 
                       </div>
 
                       {isSelected && !isTarget && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-300 rounded-md">
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300 rounded-md">
                           Será unificado como filial
                         </span>
                       )}
@@ -274,7 +274,7 @@ const MergeClientsModal: React.FC<MergeClientsModalProps> = ({ isOpen, onClose, 
             type="button"
             onClick={handleExecuteMerge}
             disabled={isSubmitting || !targetClientId || sourceClientIds.length === 0}
-            className="flex items-center gap-2 py-2 px-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-xs disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 py-2 px-5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-bold shadow-xs disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Merge className="w-4 h-4" />
             {isSubmitting ? 'Unificando Cadastros...' : `Unir ${sourceClientIds.length} Cadastro(s)`}

@@ -2,8 +2,7 @@
 import React, { useMemo } from 'react';
 import { ShipmentStatus, UserProfile } from '../types';
 import type { Shipment, User } from '../types';
-
-import { formatShipmentStatus } from '../utils';
+import { formatShipmentStatusLabel } from '../utils/formatters';
 
 interface ShipmentStatusFilterProps {
   shipments: Shipment[];
@@ -43,7 +42,7 @@ const ShipmentStatusFilter: React.FC<ShipmentStatusFilterProps> = ({ shipments, 
 
   const getStatusLabel = (status: ShipmentStatus | 'all') => {
     if (status === 'all') return 'Todos';
-    return formatShipmentStatus(status);
+    return formatShipmentStatusLabel(status);
   };
 
   return (
@@ -55,8 +54,8 @@ const ShipmentStatusFilter: React.FC<ShipmentStatusFilterProps> = ({ shipments, 
             onClick={() => onStatusChange(status)}
             className={`whitespace-nowrap py-2.5 px-5 rounded-xl font-bold text-[13px] transition-all duration-300 flex items-center gap-2 flex-shrink-0 border border-transparent ${
               activeStatus === status
-                ? 'bg-primary text-white shadow-md shadow-blue-500/20 transform scale-[1.02] border-blue-400 dark:border-blue-500'
-                : 'bg-gray-50/50 dark:bg-gray-900/20 text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700/50 hover:text-primary dark:hover:text-blue-400 border-gray-100 dark:border-gray-800'
+                ? 'bg-primary text-white shadow-md shadow-amber-500/20 transform scale-[1.02] border-amber-400 dark:border-amber-500'
+                : 'bg-gray-50/50 dark:bg-gray-900/20 text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700/50 hover:text-primary dark:hover:text-amber-400 border-gray-100 dark:border-gray-800'
             }`}
           >
             <span>{getStatusLabel(status)}</span>

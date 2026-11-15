@@ -116,7 +116,7 @@ const ShipmentHistoryFilter: React.FC<ShipmentHistoryFilterProps> = ({
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">ID:</label>
             <div className="relative flex items-center">
-              <Search className="w-3.5 h-3.5 text-blue-500 absolute left-2.5 pointer-events-none" />
+              <Search className="w-3.5 h-3.5 text-amber-500 absolute left-2.5 pointer-events-none" />
               <input 
                 type="text" 
                 placeholder="Buscar ID..."
@@ -141,7 +141,7 @@ const ShipmentHistoryFilter: React.FC<ShipmentHistoryFilterProps> = ({
         {onFilterSolicitanteChange && (
           <div className="flex flex-col gap-1.5 min-w-[180px]">
             <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1 flex items-center gap-1">
-              <UserCheck className="w-3.5 h-3.5 text-blue-500" />
+              <UserCheck className="w-3.5 h-3.5 text-amber-500" />
               Solicitante:
             </label>
             <select
@@ -219,13 +219,13 @@ const ShipmentHistoryFilter: React.FC<ShipmentHistoryFilterProps> = ({
       {onFilterCteChange && (
         <div className="flex items-center gap-2 px-1 mb-2">
           <div className="relative flex items-center">
-            <FileText className="w-3.5 h-3.5 text-blue-500 absolute left-2.5 pointer-events-none" />
+            <FileText className="w-3.5 h-3.5 text-amber-500 absolute left-2.5 pointer-events-none" />
             <input
               type="text"
               placeholder="Filtrar por CT-e..."
               value={filterCte || ''}
               onChange={e => onFilterCteChange(e.target.value)}
-              className="pl-8 pr-7 py-1 text-xs font-semibold border border-blue-200 dark:border-blue-800/60 rounded-lg bg-blue-50/40 dark:bg-blue-900/20 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 w-36 transition-all shadow-sm"
+              className="pl-8 pr-7 py-1 text-xs font-semibold border border-amber-200 dark:border-amber-800/60 rounded-lg bg-amber-50/40 dark:bg-amber-900/20 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30 w-36 transition-all shadow-sm"
             />
             {filterCte && (
               <button
@@ -248,7 +248,7 @@ const ShipmentHistoryFilter: React.FC<ShipmentHistoryFilterProps> = ({
               onClick={() => onStatusChange(status)}
               className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200 ${
                 activeStatus === status
-                  ? 'border-primary text-primary dark:border-blue-400 dark:text-blue-400'
+                  ? 'border-primary text-primary dark:border-amber-400 dark:text-amber-400'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-500'
               }`}
             >

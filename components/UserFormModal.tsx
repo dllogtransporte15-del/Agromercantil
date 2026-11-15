@@ -2,9 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import type { User, Client, Branch } from '../types';
 import { UserProfile } from '../types';
+import { isDeveloperUser, filterVisibleUsers, filterVisibleProfiles } from '../auth';
 import { useToast } from '../hooks/useToast';
-import { autoFormatInput } from '../utils/formatters';
-import { X, Copy, CheckCircle2 } from 'lucide-react';
+import { autoFormatInput, formatCPF } from '../utils/formatters';
+import { X, Copy, CheckCircle2, Mail, Key, Building2 } from 'lucide-react';
+import { corporateEmailService } from '../services/corporateEmailService';
 
 interface UserFormModalProps {
   isOpen: boolean;
@@ -15,9 +17,22 @@ interface UserFormModalProps {
   branches: Branch[];
   users?: User[];
   defaultProfile?: UserProfile;
+  availableProfiles?: UserProfile[];
+  currentUser?: User | null;
 }
 
-const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, userToEdit, clients, branches, users, defaultProfile }) => {
+const UserFormModal: React.FC<UserFormModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSave, 
+  userToEdit, 
+  clients, 
+  branches, 
+  users, 
+  defaultProfile,
+  availableProfiles,
+  currentUser
+}) => {
   const { showToast } = useToast();
   const [selectedUserToMirror, setSelectedUserToMirror] = useState<string>('');
   const getInitialState = (): Omit<User, 'id'> => ({
@@ -33,19 +48,38 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
     availableForDriverRequests: true,
     agencyRole: 'lider',
     agencyCommissionPercentage: 30,
+    operatorCommissionPercentage: undefined,
     agencyLeaderId: undefined,
+    corporateEmail: '',
+    corporateEmailPassword: '',
+    corporateEmailQuotaMb: 5120,
+    corporateEmailStatus: 'Ativo',
   });
 
   const [user, setUser] = useState<Omit<User, 'id' | 'password'> & { password?: string; customPermissions?: any }>(getInitialState());
+
+  const isMotorista = user.profile === UserProfile.Motorista || defaultProfile === UserProfile.Motorista;
+  const isExternalClient = user.profile === UserProfile.Cliente || defaultProfile === UserProfile.Cliente;
+  const isAluno = user.profile === UserProfile.Aluno || defaultProfile === UserProfile.Aluno;
+  const showCorporateFeatures = !isMotorista && !isExternalClient && !isAluno;
 
   useEffect(() => {
     if (isOpen) {
         setSelectedUserToMirror('');
         if(userToEdit) {
             const { password, ...userWithoutPass } = userToEdit;
+            const existingCorpAccount = corporateEmailService.getEmailAccounts().find(a => a.userId === userToEdit.id || (userToEdit.email && a.email.toLowerCase() === userToEdit.email.toLowerCase()));
             setUser({ 
               ...userWithoutPass, 
+              branchId: userToEdit.branchId || (userToEdit as any).filialId || undefined,
               availableForDriverRequests: userToEdit.availableForDriverRequests !== false,
+              operatorCommissionPercentage: userToEdit.operatorCommissionPercentage !== undefined 
+                ? userToEdit.operatorCommissionPercentage 
+                : (userToEdit.agencyRole === 'embarque' && userToEdit.agencyCommissionPercentage !== undefined && userToEdit.agencyCommissionPercentage < 30 ? userToEdit.agencyCommissionPercentage : undefined),
+              corporateEmail: userToEdit.corporateEmail || existingCorpAccount?.email || '',
+              corporateEmailPassword: userToEdit.corporateEmailPassword || existingCorpAccount?.password || '',
+              corporateEmailQuotaMb: userToEdit.corporateEmailQuotaMb || (existingCorpAccount ? existingCorpAccount.quotaMb : 5120),
+              corporateEmailStatus: userToEdit.corporateEmailStatus || existingCorpAccount?.status || 'Ativo',
               password: '' 
             }); // Don't load existing password
         } else {
@@ -54,21 +88,26 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
     }
   }, [userToEdit, isOpen, defaultProfile]);
 
+  const visibleUsersForModal = filterVisibleUsers(users || [], currentUser);
+  const selectableProfiles = filterVisibleProfiles(availableProfiles || Object.values(UserProfile), currentUser);
+
   const handleMirrorUser = (sourceUserId: string) => {
     setSelectedUserToMirror(sourceUserId);
     if (!sourceUserId) return;
-    const sourceUser = (users || []).find(u => u.id === sourceUserId);
+    const sourceUser = visibleUsersForModal.find(u => u.id === sourceUserId);
     if (!sourceUser) return;
+    if (!isDeveloperUser(currentUser) && sourceUser.profile === UserProfile.Desenvolvedor) return;
 
     setUser(prev => ({
       ...prev,
       profile: sourceUser.profile,
       clientId: sourceUser.clientId,
-      branchId: sourceUser.branchId,
+      branchId: sourceUser.branchId || (sourceUser as any).filialId || undefined,
       hasCommercialCommission: sourceUser.hasCommercialCommission,
       availableForDriverRequests: sourceUser.availableForDriverRequests !== false,
       agencyRole: sourceUser.agencyRole,
       agencyCommissionPercentage: sourceUser.agencyCommissionPercentage,
+      operatorCommissionPercentage: sourceUser.operatorCommissionPercentage,
       agencyLeaderId: sourceUser.agencyLeaderId,
       customPermissions: sourceUser.customPermissions ? JSON.parse(JSON.stringify(sourceUser.customPermissions)) : undefined,
     }));
@@ -78,7 +117,17 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
-    const formattedValue = autoFormatInput(name, value);
+    let formattedValue = autoFormatInput(name, value);
+
+    // Se estiver digitando no campo de login e for dígitos de CPF (ou motorista), formata como CPF
+    if (name === 'email') {
+      const cleanDigits = value.replace(/\D/g, '');
+      if ((isMotorista || cleanDigits.length >= 3) && cleanDigits.length <= 11 && !value.includes('@') && !value.includes('.')) {
+        if (/^\d+$/.test(value.replace(/\D/g, ''))) {
+          formattedValue = formatCPF(value);
+        }
+      }
+    }
 
     let updatedValue: any = formattedValue;
     if (type === 'checkbox') {
@@ -99,6 +148,11 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!isDeveloperUser(currentUser) && user.profile === UserProfile.Desenvolvedor) {
+      showToast('Perfil inválido para o operador atual.', 'error');
+      return;
+    }
     
     if (user.profile === UserProfile.Cliente && !user.clientId) {
       showToast('Por favor, selecione um cliente para associar a este usuário.', 'warning');
@@ -110,7 +164,12 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
       return;
     }
 
-    const userToSave: any = { ...user };
+    const cleanBranchId = user.branchId && user.branchId.trim() !== '' ? user.branchId.trim() : undefined;
+    const userToSave: any = { 
+      ...user,
+      branchId: cleanBranchId,
+      filialId: cleanBranchId,
+    };
 
     if (userToEdit) {
       userToSave.id = userToEdit.id;
@@ -126,12 +185,25 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
       }
     }
 
+    if (user.corporateEmail && user.corporateEmail.trim()) {
+      corporateEmailService.saveEmailAccount({
+        email: user.corporateEmail.trim(),
+        displayName: user.name,
+        userId: userToEdit?.id,
+        userName: user.name,
+        department: corporateEmailService.mapProfileToDepartment(user.profile),
+        password: user.corporateEmailPassword || undefined,
+        status: user.corporateEmailStatus || 'Ativo',
+        quotaMb: user.corporateEmailQuotaMb || 5120,
+      });
+    }
+
     onSave(userToSave);
   };
 
   if (!isOpen) return null;
 
-  const agencyLeaders = (users || []).filter(u => 
+  const agencyLeaders = visibleUsersForModal.filter(u => 
     u.profile === UserProfile.Agenciador && 
     (u.agencyRole === 'lider' || !u.agencyRole) && 
     u.id !== userToEdit?.id
@@ -139,12 +211,12 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-gray-100 dark:border-gray-700 my-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-gray-100 dark:border-gray-700 my-auto">
         <div className="p-5 sm:p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50 flex-shrink-0">
           <h2 className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-3">
             {userToEdit ? 'Editar Usuário' : 'Novo Usuário'}
             {userToEdit && (
-              <span className="text-xs sm:text-sm font-mono font-bold px-2.5 py-0.5 bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 rounded-md border border-blue-200 dark:border-blue-800">
+              <span className="text-xs sm:text-sm font-mono font-bold px-2.5 py-0.5 bg-amber-50 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300 rounded-md border border-amber-200 dark:border-amber-800">
                 ID: {userToEdit.id}
               </span>
             )}
@@ -159,50 +231,201 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
         </div>
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1">
-            <input name="name" value={user.name} onChange={handleChange} placeholder="Nome Completo" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
-            <input name="email" value={user.email} onChange={handleChange} type="email" placeholder="Email de Acesso" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
-            <input name="phone" value={user.phone || ''} onChange={handleChange} placeholder="Telefone" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
-            <input name="password" value={user.password} onChange={handleChange} type="password" placeholder={userToEdit ? 'Nova Senha (deixe em branco para manter)' : 'Senha'} className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
-          
-            {/* Campo: Espelhar Acesso de Outro Usuário */}
-            <div className="p-3.5 bg-gradient-to-r from-blue-50/90 to-indigo-50/90 dark:from-blue-950/40 dark:to-indigo-950/40 rounded-xl border border-blue-200/90 dark:border-blue-800/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
-                  <Copy className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                  Espelhar Acesso de Outro Usuário
-                </label>
-                <span className="text-[10px] text-blue-700/80 dark:text-blue-300 font-medium">Opcional</span>
-              </div>
-              <p className="text-[11px] text-blue-800/80 dark:text-blue-300/80">
-                Selecione um usuário para clonar automaticamente seu perfil, permissões personalizadas, filial e vínculos.
-              </p>
-              <select
-                value={selectedUserToMirror}
-                onChange={(e) => handleMirrorUser(e.target.value)}
-                className="p-2 w-full text-xs font-medium border border-blue-300 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer shadow-xs"
-              >
-                <option value="">Selecione um usuário para espelhar acessos...</option>
-                {(users || [])
-                  .filter(u => u.id !== userToEdit?.id)
-                  .map(u => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} ({u.profile}) {u.branchId ? `• Filial: ${u.branchId}` : ''} {u.customPermissions ? '• (Permissões Personalizadas)' : ''}
-                    </option>
-                  ))
-                }
-              </select>
-              {selectedUserToMirror && (
-                <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium pt-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Acessos espelhados de: <strong>{(users || []).find(u => u.id === selectedUserToMirror)?.name}</strong></span>
-                </div>
-              )}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1">
+                Nome Completo
+              </label>
+              <input 
+                name="name" 
+                value={user.name} 
+                onChange={handleChange} 
+                placeholder="Nome Completo do Usuário" 
+                className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm" 
+                required 
+              />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Perfil de Acesso</label>
-              <select name="profile" value={user.profile} onChange={handleChange} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600">
-                {Object.values(UserProfile).map(p => <option key={p} value={p}>{p}</option>)}
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1">
+                {isMotorista ? 'CPF / Usuário de Acesso' : 'Usuário / E-mail de Acesso'}
+              </label>
+              <input 
+                name="email" 
+                value={user.email} 
+                onChange={handleChange} 
+                type="text" 
+                placeholder={isMotorista ? "000.000.000-00 (CPF do Motorista)" : "Usuário, CPF ou E-mail de Acesso"} 
+                className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm font-mono" 
+                required 
+              />
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                {isMotorista 
+                  ? 'Login do motorista no aplicativo (utilize o CPF ou identificador sem necessidade de "@").' 
+                  : 'Identificador para login (pode ser nome de usuário, CPF ou e-mail, sem obrigatoriedade de "@").'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1">
+                  Telefone / WhatsApp
+                </label>
+                <input 
+                  name="phone" 
+                  value={user.phone || ''} 
+                  onChange={handleChange} 
+                  placeholder="(00) 00000-0000" 
+                  className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm" 
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1">
+                  Senha de Acesso
+                </label>
+                <input 
+                  name="password" 
+                  value={user.password} 
+                  onChange={handleChange} 
+                  type="password" 
+                  placeholder={userToEdit ? 'Nova Senha (em branco para manter)' : 'Senha de Acesso'} 
+                  className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm" 
+                />
+              </div>
+            </div>
+
+            {/* Campo & Configuração: E-mail Corporativo (@transcunhaoficial.com.br) - Apenas para Usuários Internos */}
+            {showCorporateFeatures && (
+              <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 uppercase tracking-wider">
+                    <Mail className="w-4 h-4 text-amber-600" />
+                    E-mail Corporativo (@transcunhaoficial.com.br)
+                  </label>
+                  <span className="text-[10px] text-slate-500 font-medium">Administração Integrada</span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Configure a caixa postal institucional deste colaborador para envio de ordens, cotações e acesso ao Webmail.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                      Endereço de E-mail Corporativo
+                    </label>
+                    <input
+                      name="corporateEmail"
+                      value={user.corporateEmail || ''}
+                      onChange={handleChange}
+                      type="text"
+                      placeholder="colaborador@transcunhaoficial.com.br"
+                      className="p-2 w-full text-xs font-mono border rounded dark:bg-gray-700 dark:border-gray-600"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                        Senha da Caixa Postal
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setUser(prev => ({ ...prev, corporateEmailPassword: corporateEmailService.generateSecurePassword(12) }))}
+                        className="text-[10px] text-amber-600 dark:text-amber-400 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                      >
+                        <Key className="w-3 h-3" />
+                        Gerar Senha
+                      </button>
+                    </div>
+                    <input
+                      name="corporateEmailPassword"
+                      value={user.corporateEmailPassword || ''}
+                      onChange={handleChange}
+                      type="text"
+                      placeholder="Senha de acesso ao Webmail"
+                      className="p-2 w-full text-xs font-mono border rounded dark:bg-gray-700 dark:border-gray-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                      Status da Caixa
+                    </label>
+                    <select
+                      name="corporateEmailStatus"
+                      value={user.corporateEmailStatus || 'Ativo'}
+                      onChange={handleChange}
+                      className="p-2 w-full text-xs border rounded dark:bg-gray-700 dark:border-gray-600"
+                    >
+                      <option value="Ativo">Ativo</option>
+                      <option value="Inativo">Inativo</option>
+                      <option value="Bloqueado">Bloqueado</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                      Cota de Armazenamento
+                    </label>
+                    <select
+                      name="corporateEmailQuotaMb"
+                      value={String(user.corporateEmailQuotaMb || 5120)}
+                      onChange={(e) => setUser(prev => ({ ...prev, corporateEmailQuotaMb: parseInt(e.target.value, 10) }))}
+                      className="p-2 w-full text-xs border rounded dark:bg-gray-700 dark:border-gray-600"
+                    >
+                      <option value="2048">2 GB</option>
+                      <option value="5120">5 GB (Padrão)</option>
+                      <option value="10240">10 GB</option>
+                      <option value="20480">20 GB</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+          
+            {/* Campo: Espelhar Acesso de Outro Usuário - Apenas para Usuários Internos */}
+            {showCorporateFeatures && (
+              <div className="p-3.5 bg-gradient-to-r from-amber-50/90 to-amber-50/90 dark:from-amber-950/40 dark:to-amber-950/40 rounded-xl border border-amber-200/90 dark:border-amber-800/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                    <Copy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    Espelhar Acesso de Outro Usuário
+                  </label>
+                  <span className="text-[10px] text-amber-700/80 dark:text-amber-300 font-medium">Opcional</span>
+                </div>
+                <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">
+                  Selecione um usuário para clonar automaticamente seu perfil, permissões personalizadas, filial e vínculos.
+                </p>
+                <select
+                  value={selectedUserToMirror}
+                  onChange={(e) => handleMirrorUser(e.target.value)}
+                  className="p-2 w-full text-xs font-medium border border-amber-300 dark:border-amber-700 rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all cursor-pointer shadow-xs"
+                >
+                  <option value="">Selecione um usuário para espelhar acessos...</option>
+                  {visibleUsersForModal
+                    .filter(u => u.id !== userToEdit?.id)
+                    .map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.profile}) {u.branchId ? `• Filial: ${u.branchId}` : ''} {u.customPermissions ? '• (Permissões Personalizadas)' : ''}
+                      </option>
+                    ))
+                  }
+                </select>
+                {selectedUserToMirror && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium pt-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Acessos espelhados de: <strong>{visibleUsersForModal.find(u => u.id === selectedUserToMirror)?.name}</strong></span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1">Perfil de Acesso</label>
+              <select name="profile" value={user.profile} onChange={handleChange} className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm">
+                {selectableProfiles.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
 
@@ -216,14 +439,36 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Filial Associada</label>
-            <select name="branchId" value={user.branchId || ''} onChange={handleChange} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600">
-              <option value="">Sem filial (Padrão)</option>
-              {branches.map(b => <option key={b.id} value={b.id}>{b.name} ({b.city}-{b.state})</option>)}
-            </select>
-            <p className="text-[10px] text-gray-500 mt-1">Usuários sem filial verão dados de todas as filiais (perfil admin/diretor).</p>
-          </div>
+          {showCorporateFeatures && (
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1 flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-primary" />
+                Filial
+              </label>
+              <select 
+                name="branchId" 
+                value={user.branchId || ''} 
+                onChange={handleChange} 
+                className="p-2 w-full border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none cursor-pointer"
+              >
+                <option value="">Todas as Filiais / Sem Filial (Acesso Geral)</option>
+                {branches && branches.length > 0 ? (
+                  branches.map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.city} - {b.state})
+                    </option>
+                  ))
+                ) : (
+                  <option value="" disabled>Nenhuma filial cadastrada no sistema</option>
+                )}
+              </select>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                {user.branchId 
+                  ? `Usuário vinculado à filial ${branches?.find(b => b.id === user.branchId)?.name || user.branchId}.` 
+                  : 'Usuários sem filial vinculada possuem acesso geral (visão de todas as unidades).'}
+              </p>
+            </div>
+          )}
 
           {/* INFORMATIVO E CONFIGURAÇÃO: PERFIL AGENCIADOR (LÍDER vs EMBARQUE) */}
           {user.profile === UserProfile.Agenciador && (
@@ -350,13 +595,47 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
                           const branch = branches.find(b => b.id === leader.branchId);
                           return (
                             <option key={leader.id} value={leader.id}>
-                              {leader.name} {branch ? `(${branch.name} - ${branch.city}/${branch.state})` : '(Sem Filial)'} - Comissão: {leader.agencyCommissionPercentage ?? 30}%
+                              {leader.name} {branch ? `(${branch.name} - ${branch.city}/${branch.state})` : '(Sem Filial)'} - Comissão da Agência: {leader.agencyCommissionPercentage ?? 30}%
                             </option>
                           );
                         })}
                       </select>
                     )}
                   </div>
+
+                  {/* CAMPO DE COMISSÃO DO AGECIADOR DE EMBARQUE */}
+                  <div className="p-3 bg-purple-50/70 dark:bg-purple-950/40 rounded-xl border border-purple-200/80 dark:border-purple-800/80 space-y-2">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <label className="text-xs font-bold text-purple-900 dark:text-purple-200">
+                        Porcentagem de Comissão do Operador (%):
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          max="100"
+                          name="operatorCommissionPercentage"
+                          value={user.operatorCommissionPercentage ?? (user.agencyCommissionPercentage !== undefined && user.agencyCommissionPercentage < 30 ? user.agencyCommissionPercentage : '')}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? undefined : (parseFloat(e.target.value) || 0);
+                            setUser(prev => ({ 
+                              ...prev, 
+                              operatorCommissionPercentage: val,
+                              agencyCommissionPercentage: val ?? 30
+                            }));
+                          }}
+                          placeholder="Ex: 10"
+                          className="p-1.5 text-xs w-20 border rounded dark:bg-gray-700 dark:border-gray-600 font-mono font-bold text-center"
+                        />
+                        <span className="text-xs text-purple-700 dark:text-purple-300 font-bold">%</span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-purple-800 dark:text-purple-300">
+                      Defina a porcentagem de comissão deste operador (ex: 1% a 20%) calculada sobre o <strong>Lucro Real Líquido</strong> dos embarques operados por ele, repassada a partir da comissão da agência ({agencyLeaders.find(l => l.id === user.agencyLeaderId)?.agencyCommissionPercentage ?? 30}%).
+                    </p>
+                  </div>
+
                   <p className="text-[11px] text-purple-800 dark:text-purple-300">
                     Todo embarque solicitado por este agenciador será contabilizado automaticamente no faturamento, lucro líquido e comissão da agência do <strong>Agenciador Líder</strong> selecionado.
                   </p>
@@ -391,9 +670,11 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
             </div>
           )}
 
-          {/* ATIVAR COMISSÃO COMERCIAL (GERENTE COMERCIAL) - Disponível apenas para Comercial */}
-          {user.profile === UserProfile.Comercial && (
-            <div className="p-3 bg-blue-50/70 dark:bg-blue-950/40 rounded-xl border border-blue-200/80 dark:border-blue-800/80 space-y-2">
+          {/* ATIVAR COMISSÃO COMERCIAL (GERENTE COMERCIAL / AGENCIADOR LÍDER) */}
+          {(user.profile === UserProfile.Comercial || 
+            user.profile === UserProfile.GerenteComercial || 
+            (user.profile === UserProfile.Agenciador && (user.agencyRole || 'lider') === 'lider')) && (
+            <div className="p-3 bg-amber-50/70 dark:bg-amber-950/40 rounded-xl border border-amber-200/80 dark:border-amber-800/80 space-y-2">
               <div className="flex items-center">
                 <input 
                   type="checkbox" 
@@ -404,15 +685,19 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
                   className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
                 />
                 <label htmlFor="hasCommercialCommission" className="ml-2 block text-sm font-bold text-gray-900 dark:text-gray-200 cursor-pointer">
-                  Ativar Comissão Comercial (Gerente Comercial)
+                  {user.profile === UserProfile.Agenciador 
+                    ? 'Ativar Comissão Comercial (Agenciador Líder)' 
+                    : 'Ativar Comissão Comercial (Gerente Comercial)'}
                 </label>
               </div>
               <p className="text-[11px] text-gray-600 dark:text-gray-400 pl-6">
-                Personalize a base de cálculo individual deste comercial (Fixo R$, % Matriz e % Filiais):
+                {user.profile === UserProfile.Agenciador 
+                  ? 'Personalize a base de cálculo individual de comissão deste Agenciador Líder (Fixo R$, % Matriz e % Filiais):'
+                  : 'Personalize a base de cálculo individual deste comercial (Fixo R$, % Matriz e % Filiais):'}
               </p>
 
               {user.hasCommercialCommission && (
-                <div className="space-y-3 pt-2 border-t border-blue-200/60 dark:border-blue-800/60">
+                <div className="space-y-3 pt-2 border-t border-amber-200/60 dark:border-amber-800/60">
                   <div>
                     <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-1">
                       Tipo de Base de Cálculo do Faturamento:
@@ -567,7 +852,13 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
               <label htmlFor="active" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">Usuário Ativo</label>
             </div>
 
-            {user.profile !== UserProfile.Cliente && user.profile !== UserProfile.Motorista && (
+            {isAluno && (
+              <div className="p-3 rounded-lg bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800/60 text-xs text-violet-800 dark:text-violet-200">
+                <strong>Perfil Aluno (Acesso Exclusivo ao Curso):</strong> Ao entrar no sistema, este usuário terá acesso <strong>somente</strong> ao Curso para Embarcador (Fase 1 &amp; Fase 2), sem acesso a cargas, embarques, financeiro ou demais módulos do ERP.
+              </div>
+            )}
+
+            {user.profile !== UserProfile.Cliente && user.profile !== UserProfile.Motorista && user.profile !== UserProfile.Aluno && (
               <div className="flex items-center p-2.5 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50">
                 <input 
                   type="checkbox" 
@@ -591,8 +882,8 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
                 <button 
                   type="button" 
                   onClick={() => {
-                    setUser(prev => ({ ...prev, password: 'agromercantil2026', requirePasswordChange: true }));
-                    showToast('Senha resetada para "agromercantil2026". Atenção: A alteração só será gravada ao clicar em "SALVAR".', 'info', 6000);
+                    setUser(prev => ({ ...prev, password: 'transcunha2026', requirePasswordChange: true }));
+                    showToast('Senha resetada para "transcunha2026". Atenção: A alteração só será gravada ao clicar em "SALVAR".', 'info', 6000);
                   }} 
                   className="py-2 px-3 sm:px-4 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors font-medium text-xs sm:text-sm flex items-center gap-1.5 shadow-sm"
                 >

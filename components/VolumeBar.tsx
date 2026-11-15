@@ -29,12 +29,12 @@ const VolumeBar: React.FC<VolumeBarProps> = ({
       <div
         className={`${loadedColor} h-2.5 transition-all duration-300`}
         style={{ width: `${loadedPercentage}%` }}
-        title={`Carregado: ${loaded.toLocaleString('pt-BR')} ton`}
+        title={`Volume Carregado: ${loaded.toLocaleString('pt-BR')} ton`}
       ></div>
       <div
         className={`${scheduledColor} h-2.5 transition-all duration-300`}
         style={{ width: `${scheduledPercentage}%` }}
-        title={`Agendado: ${scheduled.toLocaleString('pt-BR')} ton`}
+        title={`Volume Programado: ${scheduled.toLocaleString('pt-BR')} ton`}
       ></div>
     </div>
   );

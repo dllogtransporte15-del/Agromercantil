@@ -23,14 +23,14 @@ const ToastItem: React.FC<{ toast: Toast; onClose: () => void }> = ({ toast, onC
   const icons: Record<ToastType, React.ReactNode> = {
     success: <CheckCircle className="w-5 h-5 text-emerald-500" />,
     error: <AlertCircle className="w-5 h-5 text-rose-500" />,
-    info: <Info className="w-5 h-5 text-blue-500" />,
+    info: <Info className="w-5 h-5 text-amber-500" />,
     warning: <AlertTriangle className="w-5 h-5 text-amber-500" />,
   };
 
   const bgStyles: Record<ToastType, string> = {
     success: 'border-emerald-500/20 bg-emerald-50/90 dark:bg-emerald-950/90',
     error: 'border-rose-500/20 bg-rose-50/90 dark:bg-rose-950/90',
-    info: 'border-blue-500/20 bg-blue-50/90 dark:bg-blue-950/90',
+    info: 'border-amber-500/20 bg-amber-50/90 dark:bg-amber-950/90',
     warning: 'border-amber-500/20 bg-amber-50/90 dark:bg-amber-950/90',
   };
 

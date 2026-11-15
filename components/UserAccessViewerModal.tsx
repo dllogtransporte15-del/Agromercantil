@@ -5,7 +5,7 @@ import type {
   Vehicle, Product, Cargo, Shipment, Branch, FreightOffer, RiskQueryOption, Ticket
 } from '../types';
 import { UserProfile, CargoStatus, ShipmentStatus } from '../types';
-import { can, INITIAL_PERMISSIONS } from '../auth';
+import { can, INITIAL_PERMISSIONS, isDeveloperUser, isDemoUser, isAdminUser, filterVisibleUsers } from '../auth';
 import { 
   Eye, 
   Shield, 
@@ -49,6 +49,8 @@ import SystemMonitorPage from '../pages/SystemMonitorPage';
 import RiskManagementPage from '../pages/RiskManagementPage';
 import RiskQueryTypesPage from '../pages/RiskQueryTypesPage';
 import AppearancePage from '../pages/AppearancePage';
+import LocationsPage from '../pages/LocationsPage';
+import { getExpedidoresRecebedores } from '../utils/locationStorage';
 import DriverPortal from './DriverPortal';
 import { useToast } from '../hooks/useToast';
 
@@ -84,6 +86,7 @@ const PAGE_NAMES: Record<Page, string> = {
   'drivers': 'Motoristas',
   'vehicles': 'Veículos',
   'loads': 'Cargas (Cadastro)',
+  'locations': 'Expedidor/Recebedor',
   'products': 'Produtos',
   'shipments': 'Embarques',
   'shipment-history': 'Histórico de Embarques',
@@ -93,10 +96,12 @@ const PAGE_NAMES: Record<Page, string> = {
   'operational-loads': 'Cargas (Operacional)',
   'operational-map': 'Mapa Operacional',
   'users-register': 'Gerenciar Usuários',
+  'corporate-email': 'E-mail Corporativo',
   'commissions': 'Comissões',
   'appearance': 'Aparência',
   'layover-calculator': 'Cálculo de Estadias',
   'freight-quote': 'Cotação de Frete',
+  'atua-reconciliation': 'Auditoria Atua TMS',
   'ai-assistant': 'Assistente de IA',
   'tools-history': 'Histórico de Ferramentas',
   'freight-offers-history': 'Histórico de Ofertas',
@@ -104,6 +109,12 @@ const PAGE_NAMES: Record<Page, string> = {
   'system-monitor': 'Monitoramento do Sistema',
   'risk-management': 'Gerenciadora de Risco',
   'risk-query-types': 'Tipos de Consulta GR',
+  'whatsapp': 'WhatsApp',
+  'messenger': 'Mensageiro',
+  'apresentacao': 'Apresentação Comercial',
+  'apresentacao-comercial': 'Apresentação Comercial (Completa)',
+  'site': 'Website Institucional',
+  'website': 'Website Institucional (transcunhaoficial.com.br)',
 };
 
 const CATEGORIES = [
@@ -111,9 +122,9 @@ const CATEGORIES = [
   { name: 'Operacional', pages: ['loads', 'shipments', 'operational-map', 'shipment-history', 'load-history', 'operational-loads', 'risk-management'] as Page[] },
   { name: 'Financeiro', pages: ['financial', 'commissions'] as Page[] },
   { name: 'Relatórios', pages: ['reports'] as Page[] },
-  { name: 'Cadastros', pages: ['clients', 'owners', 'embarcadores', 'drivers', 'vehicles', 'products', 'users-register', 'branches', 'risk-query-types'] as Page[] },
+  { name: 'Cadastros', pages: ['clients', 'owners', 'embarcadores', 'drivers', 'vehicles', 'locations', 'products', 'users-register', 'branches', 'risk-query-types'] as Page[] },
   { name: 'Configurações', pages: ['appearance'] as Page[] },
-  { name: 'Ferramentas', pages: ['layover-calculator', 'freight-quote', 'ai-assistant', 'freight-offers-history', 'tools-history', 'system-monitor'] as Page[] }
+  { name: 'Ferramentas', pages: ['layover-calculator', 'freight-quote', 'atua-reconciliation', 'ai-assistant', 'freight-offers-history', 'tools-history', 'system-monitor', 'messenger'] as Page[] }
 ];
 
 const READ_ONLY_PAGES = [
@@ -199,6 +210,10 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
     };
   }, [targetUser, editableUserPermissions]);
 
+  const simulatedVisibleUsers = useMemo(() => {
+    return filterVisibleUsers(users, simulatedUser);
+  }, [users, simulatedUser]);
+
   // Read-only filterings for simulated data matching App.tsx exactly
   const simulatedVisibleLoads = useMemo(() => {
     if (!simulatedUser) return [];
@@ -222,11 +237,25 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
     if (simulatedUser.profile === UserProfile.Embarcador || simulatedUser.profile === UserProfile.Agenciador) {
       return shipments.filter(s => s.embarcadorId === simulatedUser.id || s.createdById === simulatedUser.id || (simulatedUser.branchId && s.branchId === simulatedUser.branchId));
     }
+    if (
+      isDeveloperUser(simulatedUser) ||
+      simulatedUser.profile === UserProfile.Desenvolvedor ||
+      simulatedUser.profile === UserProfile.Admin ||
+      simulatedUser.profile === UserProfile.GerenciadoraDeRisco ||
+      (simulatedUser.profile as string) === 'Gerenciadora de Risco' ||
+      simulatedUser.profile === UserProfile.Financeiro ||
+      simulatedUser.profile === UserProfile.Demonstracao ||
+      (simulatedUser.profile as string) === 'Demo' ||
+      Boolean(simulatedUser.name && (simulatedUser.name.toLowerCase().includes('samanta') || simulatedUser.name.toLowerCase().includes('samantha'))) ||
+      Boolean(simulatedUser.email && (simulatedUser.email.toLowerCase().includes('samanta') || simulatedUser.email.toLowerCase().includes('samantha')))
+    ) {
+      return shipments;
+    }
     const visibleCargoIds = new Set(simulatedVisibleLoads.map(c => c.id));
     if (simulatedUser.profile === UserProfile.Cliente && simulatedUser.clientId) {
       return shipments.filter(s => visibleCargoIds.has(s.cargoId));
     }
-    if (simulatedUser.branchId && ![UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco].includes(simulatedUser.profile as UserProfile)) {
+    if (simulatedUser.branchId && ![UserProfile.Desenvolvedor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.Financeiro].includes(simulatedUser.profile as UserProfile)) {
       return shipments.filter(s => visibleCargoIds.has(s.cargoId) && (s.branchId === simulatedUser.branchId || !s.branchId));
     }
     return shipments.filter(s => visibleCargoIds.has(s.cargoId));
@@ -255,12 +284,12 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
 
   const simulatedVisibleEmbarcadores = useMemo(() => {
     if (!simulatedUser) return [];
-    const allEmbarcadorUsers = users.filter(u => u.profile === UserProfile.Embarcador || u.profile === UserProfile.Agenciador);
+    const allEmbarcadorUsers = simulatedVisibleUsers.filter(u => u.profile === UserProfile.Embarcador || u.profile === UserProfile.Agenciador);
     if (simulatedUser.profile === UserProfile.Embarcador || simulatedUser.profile === UserProfile.Agenciador) {
       return allEmbarcadorUsers.filter(u => u.id === simulatedUser.id);
     }
     return allEmbarcadorUsers;
-  }, [simulatedUser, users]);
+  }, [simulatedUser, simulatedVisibleUsers]);
 
   // Read-only block notifications
   const handleReadOnlyActionAttempt = async (..._args: any[]): Promise<void> => {
@@ -392,7 +421,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
           <button
             type="button"
             onClick={() => setIsPermissionsDrawerOpen(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all flex items-center gap-2"
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all flex items-center gap-2"
           >
             <ShieldCheck className="w-4 h-4" />
             <span>Liberar Acesso na Matriz de Permissões</span>
@@ -407,7 +436,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
           <DashboardPage
             cargos={cargos}
             shipments={simulatedVisibleShipments}
-            users={users}
+            users={simulatedVisibleUsers}
             currentUser={simulatedUser}
             clients={clients}
             products={products}
@@ -492,7 +521,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             onUpdatePrice={handleReadOnlyActionAttempt}
             currentUser={simulatedUser}
             profilePermissions={profilePermissions}
-            users={users}
+            users={simulatedVisibleUsers}
             shipments={simulatedVisibleShipments}
             allShipments={shipments}
             onDeleteLoad={handleReadOnlyActionAttempt}
@@ -508,6 +537,16 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             setOfferToConvert={() => {}}
             onCreateShipment={handleReadOnlyActionAttempt}
             onSwapCargo={handleReadOnlyActionAttempt}
+          />
+        );
+      case 'locations':
+        return (
+          <LocationsPage
+            locations={getExpedidoresRecebedores()}
+            onSaveLocation={handleReadOnlyActionAttempt}
+            onDeleteLocation={handleReadOnlyActionAttempt}
+            currentUser={simulatedUser}
+            profilePermissions={profilePermissions}
           />
         );
       case 'products':
@@ -531,7 +570,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             vehicles={vehicles}
             currentUser={simulatedUser}
             profilePermissions={profilePermissions}
-            users={users}
+            users={simulatedVisibleUsers}
             onUpdateAttachment={handleReadOnlyActionAttempt}
             onAddAttachments={handleReadOnlyActionAttempt}
             onUpdatePrice={handleReadOnlyActionAttempt}
@@ -571,7 +610,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             profilePermissions={profilePermissions}
             shipments={simulatedVisibleShipments}
             allShipments={shipments}
-            users={users}
+            users={simulatedVisibleUsers}
             onDeleteLoad={handleReadOnlyActionAttempt}
             onUpdatePrice={handleReadOnlyActionAttempt}
             onUpdateShipmentData={handleReadOnlyActionAttempt}
@@ -598,7 +637,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             vehicles={vehicles}
             onCreateShipment={handleReadOnlyActionAttempt}
             currentUser={simulatedUser}
-            users={users}
+            users={simulatedVisibleUsers}
             onModalStateChange={() => {}}
             onDeleteAttachment={handleReadOnlyActionAttempt}
           />
@@ -608,7 +647,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
           <CommissionsPage
             shipments={simulatedVisibleShipments}
             cargos={cargos}
-            users={users}
+            users={simulatedVisibleUsers}
             stays={stays}
             clients={clients}
           />
@@ -619,7 +658,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             shipments={simulatedVisibleShipments}
             embarcadores={simulatedVisibleEmbarcadores}
             cargos={cargos}
-            users={users}
+            users={simulatedVisibleUsers}
             currentUser={simulatedUser}
             clients={clients}
             branches={branches}
@@ -640,7 +679,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             shipments={simulatedVisibleShipments}
             cargos={cargos}
             drivers={drivers}
-            users={users}
+            users={simulatedVisibleUsers}
             currentUser={simulatedUser}
             clients={clients}
             products={products}
@@ -653,6 +692,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             onUpdateAttachment={handleReadOnlyActionAttempt}
             stays={stays}
             riskQueryOptions={riskQueryOptions}
+            onCreateShipment={handleReadOnlyActionAttempt}
           />
         );
       case 'load-history':
@@ -661,7 +701,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             loads={simulatedClosedLoads}
             clients={clients}
             products={products}
-            users={users}
+            users={simulatedVisibleUsers}
             currentUser={simulatedUser}
             shipments={shipments}
             onDeleteLoad={handleReadOnlyActionAttempt}
@@ -712,7 +752,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             products={products}
             drivers={drivers}
             vehicles={vehicles}
-            users={users}
+            users={simulatedVisibleUsers}
             currentUser={simulatedUser}
             companyLogo={companyLogo}
             riskQueryOptions={riskQueryOptions}
@@ -747,7 +787,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             clients={clients}
             products={products}
             cargos={cargos}
-            users={users}
+            users={simulatedVisibleUsers}
             onSaveFreightOffer={handleReadOnlyActionAttempt}
             onDeleteFreightOffer={handleReadOnlyActionAttempt}
             onConvertToCargo={handleReadOnlyActionAttempt}
@@ -777,7 +817,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
           <DashboardPage
             cargos={cargos}
             shipments={simulatedVisibleShipments}
-            users={users}
+            users={simulatedVisibleUsers}
             currentUser={simulatedUser}
             clients={clients}
             products={products}
@@ -814,7 +854,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
     >
       {/* Sub-Window Container Overlaid on Top of Principal Screen */}
       <div 
-        className={`relative flex flex-col transition-all duration-300 bg-[#f8fafc] dark:bg-[#070c18] border-2 border-blue-500/60 shadow-[0_25px_90px_rgba(0,0,0,0.95)] overflow-hidden font-sans portal-theme-bg ring-1 ring-white/20 ${
+        className={`relative flex flex-col transition-all duration-300 bg-[#FAF8F6] dark:bg-[#12100F] border-2 border-amber-500/60 shadow-[0_25px_90px_rgba(0,0,0,0.95)] overflow-hidden font-sans portal-theme-bg ring-1 ring-white/20 ${
           isMaximized 
             ? 'w-full h-full rounded-none' 
             : 'w-[95vw] h-[92vh] max-w-[1680px] rounded-2xl'
@@ -826,17 +866,17 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
           className="absolute inset-0 pointer-events-none z-0"
           style={{
             backgroundImage: `
-              linear-gradient(to right, rgba(59, 130, 246, 0.05) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(59, 130, 246, 0.05) 1px, transparent 1px)
+              linear-gradient(to right, rgba(166, 113, 66, 0.05) 1px, transparent 1px),
+              linear-gradient(to bottom, rgba(166, 113, 66, 0.05) 1px, transparent 1px)
             `,
             backgroundSize: '48px 48px'
           }}
         />
-        <div className="absolute top-0 left-1/4 w-[600px] h-[500px] bg-blue-600/10 rounded-full blur-[140px] pointer-events-none z-0" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-sky-500/10 rounded-full blur-[140px] pointer-events-none z-0" />
+        <div className="absolute top-0 left-1/4 w-[600px] h-[500px] bg-amber-600/10 rounded-full blur-[140px] pointer-events-none z-0" />
+        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-[140px] pointer-events-none z-0" />
 
         {/* Sub-Window Top Header (Barra Superior de Controle da Sub-Janela) */}
-        <header className="relative z-40 flex-shrink-0 px-4 sm:px-6 py-2.5 bg-slate-900 text-white border-b border-blue-500/40 shadow-xl backdrop-blur-md flex items-center justify-between gap-4 select-none">
+        <header className="relative z-40 flex-shrink-0 px-4 sm:px-6 py-2.5 bg-slate-900 text-white border-b border-amber-500/40 shadow-xl backdrop-blur-md flex items-center justify-between gap-4 select-none">
           
           {/* OS Window Traffic Light Controls & User Identity */}
           <div className="flex items-center gap-3">
@@ -868,7 +908,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             </div>
 
             <div className="relative">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-sky-400 flex items-center justify-center text-white font-bold text-xs shadow-md border border-white/20">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-600 to-amber-400 flex items-center justify-center text-white font-bold text-xs shadow-md border border-white/20">
                 {targetUser.name.charAt(0).toUpperCase()}
               </div>
               <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-900 ${targetUser.active ? 'bg-emerald-500' : 'bg-rose-500'}`} />
@@ -876,12 +916,12 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
 
             <div className="flex flex-col">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                <span className="text-[11px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1">
                   <Monitor className="w-3 h-3" /> Sub-Janela de Espelhamento:
                 </span>
                 <span className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
                   {targetUser.name}
-                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40">
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
                     {targetUser.id}
                   </span>
                 </span>
@@ -900,7 +940,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             <button
               type="button"
               onClick={() => setIsPermissionsDrawerOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-md transition-all active:scale-95 cursor-pointer border border-blue-400/40"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-semibold shadow-md transition-all active:scale-95 cursor-pointer border border-amber-400/40"
             >
               <ShieldCheck className="w-3.5 h-3.5" />
               <span>Revisar / Ajustar Permissões</span>
@@ -960,7 +1000,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
               clients={clients}
               products={products}
               vehicles={vehicles}
-              users={users}
+              users={simulatedVisibleUsers}
               themeMode={document.documentElement.classList.contains('dark') ? 'dark' : 'light'}
               onThemeModeChange={(mode) => {
                 if (mode === 'dark') {
@@ -991,7 +1031,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
               {/* Modal Header */}
               <div className="flex-shrink-0 px-6 py-4 bg-slate-900 text-white border-b border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-600/30 text-blue-400 border border-blue-500/40 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-xl bg-amber-600/30 text-amber-400 border border-amber-500/40 flex items-center justify-center">
                     <ShieldCheck className="w-5 h-5" />
                   </div>
                   <div>
@@ -1017,9 +1057,9 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
 
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* Espelhar de Outro Usuário */}
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 dark:bg-blue-950/40 rounded-lg border border-blue-200 dark:border-blue-800">
-                    <span className="text-xs text-blue-900 dark:text-blue-200 font-bold flex items-center gap-1">
-                      <Copy className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 dark:bg-amber-950/40 rounded-lg border border-amber-200 dark:border-amber-800">
+                    <span className="text-xs text-amber-900 dark:text-amber-200 font-bold flex items-center gap-1">
+                      <Copy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                       Espelhar de:
                     </span>
                     <select
@@ -1027,12 +1067,12 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
                         handleMirrorUserPermissions(e.target.value);
                         e.target.value = '';
                       }}
-                      className="px-2 py-0.5 text-xs border border-blue-300 dark:border-blue-700 rounded bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200 cursor-pointer"
+                      className="px-2 py-0.5 text-xs border border-amber-300 dark:border-amber-700 rounded bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200 cursor-pointer"
                       defaultValue=""
                     >
                       <option value="" disabled>Selecione um usuário...</option>
-                      {users
-                        .filter(u => u.id !== targetUser.id)
+                      {filterVisibleUsers(users, currentUser)
+                        .filter(u => u.id !== targetUser.id && !isDeveloperUser(u) && (isAdminUser(currentUser) || !isDemoUser(u)))
                         .map(u => (
                           <option key={u.id} value={u.id}>
                             {u.name} ({u.profile})
@@ -1056,7 +1096,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
                     onClick={handleSetAllReadOnly}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 bg-slate-200/80 hover:bg-slate-300 dark:bg-slate-750 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                   >
-                    <Eye className="w-3.5 h-3.5 text-blue-500" />
+                    <Eye className="w-3.5 h-3.5 text-amber-500" />
                     <span>Liberar Leitura Geral</span>
                   </button>
                 </div>
@@ -1075,7 +1115,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
                         <button 
                           type="button"
                           onClick={() => handleSelectAllCategory(category.pages, true)} 
-                          className="text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium cursor-pointer"
+                          className="text-amber-600 hover:text-amber-700 dark:text-amber-400 font-medium cursor-pointer"
                         >
                           Marcar Todos
                         </button>
@@ -1115,7 +1155,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
                                 <td className="px-6 py-3 text-sm font-medium text-slate-900 dark:text-slate-200 flex items-center gap-2">
                                   <span>{pageName}</span>
                                   {isReadOnly && (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
                                       Somente Leitura
                                     </span>
                                   )}
@@ -1128,7 +1168,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
                                     ) : (
                                       <input
                                         type="checkbox"
-                                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:bg-slate-700 dark:border-slate-600 cursor-pointer"
+                                        className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500 dark:bg-slate-700 dark:border-slate-600 cursor-pointer"
                                         checked={Boolean(pagePerms[action])}
                                         onChange={() => handleUserCheckboxChange(page, action)}
                                       />
@@ -1158,7 +1198,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
                 <button
                   type="button"
                   onClick={handleSavePermissions}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all flex items-center gap-2 active:scale-95 cursor-pointer"
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all flex items-center gap-2 active:scale-95 cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
                   <span>Salvar Permissões do Usuário</span>

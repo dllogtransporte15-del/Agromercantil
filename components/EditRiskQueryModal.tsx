@@ -58,14 +58,16 @@ const EditRiskQueryModal: React.FC<EditRiskQueryModalProps> = ({
       setSelectedType(currentType);
 
       // Determine initial cost
-      if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null) {
+      if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && Number(shipment.riskQueryCost) > 0) {
         setCost(Number(shipment.riskQueryCost));
-      } else if (costMap.has(currentType)) {
-        setCost(costMap.get(currentType)!);
-      } else if (RISK_QUERY_COST_MAP[currentType] !== undefined) {
-        setCost(RISK_QUERY_COST_MAP[currentType]);
-      } else if (RISK_QUERY_COST_MAP[currentType.toLowerCase().trim()] !== undefined) {
-        setCost(RISK_QUERY_COST_MAP[currentType.toLowerCase().trim()]);
+      } else if (currentType && currentType !== 'Pendente de Definição') {
+        const mappedCost = costMap.get(currentType) ?? 
+                           costMap.get(currentType.toLowerCase().trim()) ?? 
+                           RISK_QUERY_COST_MAP[currentType] ?? 
+                           RISK_QUERY_COST_MAP[currentType.toLowerCase().trim()];
+        setCost(mappedCost !== undefined ? mappedCost : (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null ? Number(shipment.riskQueryCost) : 0));
+      } else if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null) {
+        setCost(Number(shipment.riskQueryCost));
       } else {
         setCost(0);
       }
@@ -137,9 +139,9 @@ const EditRiskQueryModal: React.FC<EditRiskQueryModalProps> = ({
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-blue-50/60 via-indigo-50/40 to-transparent dark:from-gray-800 dark:to-gray-800">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-amber-50/60 via-amber-50/40 to-transparent dark:from-gray-800 dark:to-gray-800">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-inner">
+            <div className="w-10 h-10 rounded-xl bg-amber-600/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-inner">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
@@ -147,7 +149,7 @@ const EditRiskQueryModal: React.FC<EditRiskQueryModalProps> = ({
                 Editar Modalidade de Consulta
               </h2>
               <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
-                Embarque: <span className="font-bold text-primary dark:text-blue-400">{shipment.id}</span>
+                Embarque: <span className="font-bold text-primary dark:text-amber-400">{shipment.id}</span>
               </p>
             </div>
           </div>
@@ -274,8 +276,8 @@ const EditRiskQueryModal: React.FC<EditRiskQueryModalProps> = ({
             </p>
           </div>
 
-          <div className="p-3 bg-blue-50/60 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/40 rounded-xl flex items-start gap-2 text-[11px] text-blue-700 dark:text-blue-300">
-            <Info className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+          <div className="p-3 bg-amber-50/60 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/40 rounded-xl flex items-start gap-2 text-[11px] text-amber-700 dark:text-amber-300">
+            <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
             <span>
               Ao salvar, a listagem operacional, os cálculos de custos e os relatórios de desperdício serão atualizados com os novos dados.
             </span>
@@ -294,7 +296,7 @@ const EditRiskQueryModal: React.FC<EditRiskQueryModalProps> = ({
             <button
               type="submit"
               disabled={isSaving}
-              className="px-4 py-2 text-xs font-bold text-white bg-primary hover:bg-blue-700 rounded-xl transition-colors shadow-md shadow-blue-500/20 flex items-center gap-1.5 disabled:opacity-50"
+              className="px-4 py-2 text-xs font-bold text-white bg-primary hover:bg-amber-700 rounded-xl transition-colors shadow-md shadow-amber-500/20 flex items-center gap-1.5 disabled:opacity-50"
             >
               {isSaving ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />

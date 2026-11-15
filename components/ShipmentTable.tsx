@@ -12,8 +12,12 @@ import { ExternalLinkIcon } from './icons/ExternalLinkIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
-import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, UserCheck, Building, Pencil, Check, Loader2, ExternalLink, Paperclip } from 'lucide-react';
-import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, formatShipmentStatus } from '../utils';
+import { Search, Filter, X, Trash2, RotateCcw, RotateCw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, UserCheck, Building, Pencil, Check, Loader2, ExternalLink, Paperclip, Copy, Repeat } from 'lucide-react';
+import { ReembarqueModal } from './ReembarqueModal';
+import { ComplementarShipmentModal, ComplementarShipmentPayload } from './ComplementarShipmentModal';
+import { FilePlus2 } from 'lucide-react';
+import { StatusPendingModal } from './StatusPendingModal';
+import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, getCargoMapUrl } from '../utils';
 import { backfillShipmentFiscalNumbers, uploadShipmentAttachment, getShipmentAttachmentUrl, upsertShipment } from '../lib/db';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 import { useToast } from '../hooks/useToast';
@@ -21,50 +25,16 @@ import { StayRecord } from '../utils/toolStorage';
 import type { Ticket, Driver } from '../types';
 import { TicketStatus } from '../types';
 import { useDriverLocations, normalizeDriverKey } from '../hooks/useDriverLocations';
-import { isDemoUser } from '../auth';
+import { isDemoUser, isDeveloperUser } from '../auth';
 
 import MultiSelectDropdown from './MultiSelectDropdown';
 import ShipmentDetailsModal from './ShipmentDetailsModal';
 
-export const getShipmentTmsOrderUrl = (shipment: Shipment): string | null => {
-  if (!shipment.documents || typeof shipment.documents !== 'object') return null;
-
-  const possibleKeys = [
-    'Ordem de Carregamento TMS',
-    'Ordem de Carregamento',
-    'Ordem de Carregamento (TMS)',
-    'Ordem Carregamento',
-    'Ordem TMS',
-    'ordem_carregamento_tms',
-    'ordem_carregamento',
-    'OC TMS',
-    'OC'
-  ];
-
-  for (const k of possibleKeys) {
-    const val = shipment.documents[k];
-    if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && val[0].trim()) {
-      return val[0];
-    }
-    if (typeof val === 'string' && val.trim()) {
-      return val;
-    }
-  }
-
-  for (const [k, val] of Object.entries(shipment.documents)) {
-    const kLower = k.toLowerCase();
-    if (kLower.includes('ordem') && (kLower.includes('carregamento') || kLower.includes('tms') || kLower.includes('oc'))) {
-      if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && val[0].trim()) {
-        return val[0];
-      }
-      if (typeof val === 'string' && val.trim()) {
-        return val;
-      }
-    }
-  }
-
-  return null;
-};
+import { getShipmentTmsOrderUrl, getShipmentCteFileUrl, getShipmentDischargeTicketUrl } from '../utils/documentViewer';
+import { extractDetailedDocData } from '../utils/fiscalDocParser';
+import { extractOcNumberFromText } from '../utils/ocParser';
+import { formatShipmentStatusLabel } from '../utils/formatters';
+export { getShipmentTmsOrderUrl, getShipmentCteFileUrl, getShipmentDischargeTicketUrl };
 
 interface ShipmentTableProps {
   shipments: Shipment[];
@@ -87,7 +57,7 @@ interface ShipmentTableProps {
   onRevertStatus?: (shipmentId: string) => void;
   canUserAdvanceStatus?: (shipment: Shipment) => { allowed: boolean; reason: string };
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => void;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onOpenEditScheduledDateTime?: (shipment: Shipment) => void;
   currentUser: User;
@@ -100,9 +70,12 @@ interface ShipmentTableProps {
   tickets?: Ticket[];
   filterCte?: string;
   onFilterCteChange?: (val: string) => void;
+  onCreateShipment?: (data: any) => Promise<void> | void;
+  onReembarcar?: (shipment: Shipment) => void;
+  onEmbarqueComplementar?: (shipment: Shipment) => void;
 }
 
-const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, stays = [], companyLogo, onDeleteAttachment, onSwapCargo, onPerformSwapCargo, tickets = [], filterCte = '', onFilterCteChange }) => {
+const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, stays = [], companyLogo, onDeleteAttachment, onSwapCargo, onPerformSwapCargo, tickets = [], filterCte = '', onFilterCteChange, onCreateShipment, onReembarcar, onEmbarqueComplementar }) => {
 
 
   const isDemo = isDemoUser(currentUser);
@@ -117,6 +90,208 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
     timestamp?: string;
     isOffline?: boolean;
   } | null>(null);
+
+  // Modal de Observação de Pendência do Status
+  const [pendingModalShipment, setPendingModalShipment] = useState<Shipment | null>(null);
+
+  const handleOpenPendingModal = (shipment: Shipment) => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    setPendingModalShipment(shipment);
+  };
+
+  const handleSavePendingObservation = async (shipmentId: string, pendingObservation: string) => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    if (onUpdateShipmentData) {
+      await onUpdateShipmentData(shipmentId, { statusPendingObservation: pendingObservation });
+    }
+  };
+
+  // Modal de Reembarque de Veículo
+  const [reembarqueShipment, setReembarqueShipment] = useState<Shipment | null>(null);
+
+  const handleConfirmReembarque = async (data: {
+    selectedCargo: Cargo;
+    scheduledDate: string;
+    scheduledTime?: string;
+    shipmentTonnage: number;
+    driverFreightRate: number;
+    driverFreightValue: number;
+    notes?: string;
+  }) => {
+    if (!reembarqueShipment) return;
+
+    if (!onCreateShipment) {
+      showToast('Ação de criação de novo embarque não disponível nesta visualização.', 'error');
+      return;
+    }
+
+    const payload: any = {
+      isReembarque: true,
+      cargoId: data.selectedCargo.id,
+      driverName: reembarqueShipment.driverName,
+      driverContact: reembarqueShipment.driverContact,
+      driverCpf: reembarqueShipment.driverCpf,
+      driverCnh: reembarqueShipment.driverCnh,
+      codigoAtua: reembarqueShipment.codigoAtua,
+      horsePlate: reembarqueShipment.horsePlate,
+      trailer1Plate: reembarqueShipment.trailer1Plate,
+      trailer2Plate: reembarqueShipment.trailer2Plate,
+      trailer3Plate: reembarqueShipment.trailer3Plate,
+      shipmentTonnage: data.shipmentTonnage,
+      driverFreightValue: data.driverFreightValue,
+      driverFreightRateSnapshot: data.driverFreightRate,
+      companyFreightRateSnapshot: data.selectedCargo.companyFreightValuePerTon || 0,
+      driverFreightType: reembarqueShipment.driverFreightType || 'PJ',
+      embarcadorId: reembarqueShipment.embarcadorId,
+      scheduledDate: data.scheduledDate,
+      scheduledTime: data.scheduledTime,
+      paymentMethod: reembarqueShipment.paymentMethod,
+      pixKey: reembarqueShipment.pixKey,
+      bankDetails: reembarqueShipment.bankDetails,
+      advancePercentage: reembarqueShipment.advancePercentage ?? 70,
+      anttOwnerIdentifier: reembarqueShipment.anttOwnerIdentifier,
+      anttModality: reembarqueShipment.anttModality,
+      etcTaxRegime: reembarqueShipment.etcTaxRegime,
+      ownerName: reembarqueShipment.ownerName,
+      ownerContact: reembarqueShipment.ownerContact,
+      vehicleTag: reembarqueShipment.vehicleTag,
+      vehicleSetType: reembarqueShipment.vehicleSetType,
+      vehicleBodyType: reembarqueShipment.vehicleBodyType,
+      history: [
+        {
+          id: `log_reembarque_${Date.now()}`,
+          userId: currentUser.id,
+          timestamp: new Date().toISOString(),
+          description: `Reembarque programado a partir do Embarque anterior #${reembarqueShipment.id} (${reembarqueShipment.horsePlate} - ${reembarqueShipment.driverName}). Carga vinculada: ${data.selectedCargo.sequenceId ? 'CRG-' + data.selectedCargo.sequenceId : data.selectedCargo.id}.${data.notes ? ` Observação: ${data.notes}` : ''}`
+        }
+      ]
+    };
+
+    await onCreateShipment(payload);
+    showToast(`Novo embarque programado com sucesso para o motorista ${reembarqueShipment.driverName}!`, 'success');
+    setReembarqueShipment(null);
+  };
+
+  const [complementarShipment, setComplementarShipment] = useState<Shipment | null>(null);
+
+  const handleConfirmComplementar = async (data: ComplementarShipmentPayload) => {
+    if (!complementarShipment) return;
+    if (!onCreateShipment) {
+      showToast('Ação de criação de novo embarque não disponível nesta visualização.', 'error');
+      return;
+    }
+
+    const todayStr = data.paymentDate || new Date().toISOString().split('T')[0];
+    const nowTimeStr = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    const payload: any = {
+      isComplementar: true,
+      parentShipmentId: complementarShipment.id,
+      cargoId: complementarShipment.cargoId,
+      driverName: complementarShipment.driverName,
+      driverContact: complementarShipment.driverContact,
+      driverCpf: complementarShipment.driverCpf,
+      driverCnh: complementarShipment.driverCnh,
+      codigoAtua: complementarShipment.codigoAtua,
+      horsePlate: complementarShipment.horsePlate,
+      trailer1Plate: complementarShipment.trailer1Plate,
+      trailer2Plate: complementarShipment.trailer2Plate,
+      trailer3Plate: complementarShipment.trailer3Plate,
+      embarcadorId: complementarShipment.embarcadorId,
+      driverFreightType: complementarShipment.driverFreightType || 'PJ',
+      paymentMethod: complementarShipment.paymentMethod,
+      pixKey: complementarShipment.pixKey,
+      bankDetails: complementarShipment.bankDetails,
+      ownerName: complementarShipment.ownerName,
+      ownerContact: complementarShipment.ownerContact,
+      anttOwnerIdentifier: complementarShipment.anttOwnerIdentifier,
+      anttModality: complementarShipment.anttModality,
+      etcTaxRegime: complementarShipment.etcTaxRegime,
+      vehicleTag: complementarShipment.vehicleTag,
+      vehicleSetType: complementarShipment.vehicleSetType,
+      vehicleBodyType: complementarShipment.vehicleBodyType,
+      scheduledDate: todayStr,
+      scheduledTime: nowTimeStr,
+      shipmentTonnage: data.tonnage || 0,
+      loadedTonnage: data.tonnage || 0,
+      unloadedTonnage: data.tonnage || 0,
+      driverFreightValue: data.driverFreightValue,
+      driverFreightRateSnapshot: (data.tonnage && data.tonnage > 0) ? Number((data.driverFreightValue / data.tonnage).toFixed(2)) : undefined,
+      companyFreightRateSnapshot: (data.tonnage && data.tonnage > 0) ? Number((data.companyFreightValue / data.tonnage).toFixed(2)) : data.companyFreightValue,
+      advancePercentage: data.advancePercentage !== undefined ? data.advancePercentage : 0,
+      advanceValue: (data.advancePercentage && data.advancePercentage > 0) ? Number(((data.driverFreightValue * data.advancePercentage) / 100).toFixed(2)) : 0,
+      balanceToReceiveValue: (data.advancePercentage && data.advancePercentage >= 100) ? 0 : Number((data.driverFreightValue - ((data.advancePercentage && data.advancePercentage > 0) ? ((data.driverFreightValue * data.advancePercentage) / 100) : 0)).toFixed(2)),
+      status: ShipmentStatus.AguardandoFiscal,
+      federalTax: data.isFederalTaxManual ? data.manualFederalTaxValue : (data.deductions?.impostoFederal || 0),
+      isFederalTaxManual: data.isFederalTaxManual || false,
+      cteNumber: data.cteNumber,
+      complementarCteNumber: data.cteNumber,
+      complementarCompanyFreight: data.companyFreightValue,
+      complementarDriverFreight: data.driverFreightValue,
+      complementarOriginType: data.originType,
+      nfeNumber: data.nfNumber || complementarShipment.nfeNumber,
+      nfeValue: data.nfValue !== undefined ? data.nfValue : complementarShipment.nfeValue,
+      complementarNfeNumber: data.nfNumber,
+      complementarNfeValue: data.nfValue,
+      documents: {
+        'CT-e Complementar': data.cteFileUrl ? [data.cteFileUrl] : [],
+        'CT-e': data.cteFileUrl ? [data.cteFileUrl] : [],
+        'Nota Fiscal': data.nfFileUrl ? [data.nfFileUrl] : (complementarShipment.documents?.['Nota Fiscal'] || []),
+        'Nota Fiscal (NF-e)': data.nfFileUrl ? [data.nfFileUrl] : (complementarShipment.documents?.['Nota Fiscal (NF-e)'] || []),
+        'Nota Fiscal Complementar': data.nfFileUrl ? [data.nfFileUrl] : [],
+        'Comprovante de Pagamento': data.receiptFileUrl ? [data.receiptFileUrl] : [],
+        'Comprovante de Pagamento de Saldo': data.receiptFileUrl ? [data.receiptFileUrl] : [],
+        'Comprovante de Adiantamento': data.receiptFileUrl ? [data.receiptFileUrl] : [],
+        is_complementar: true,
+        parent_shipment_id: complementarShipment.id,
+        complementar_cte_number: data.cteNumber,
+        complementar_nfe_number: data.nfNumber,
+        complementar_nfe_value: data.nfValue,
+        complementar_company_freight: data.companyFreightValue,
+        complementar_driver_freight: data.driverFreightValue,
+        complementar_origin_type: data.originType,
+        nfe_number: data.nfNumber,
+        cte_number: data.cteNumber,
+        cteNumber: data.cteNumber,
+        real_profit_data: {
+          companyFreight: data.companyFreightValue,
+          driverFreight: data.driverFreightValue,
+          netMargin: Number((data.companyFreightValue - data.driverFreightValue).toFixed(2)),
+          notes: data.notes || `Embarque Complementar referente ao Embarque #${complementarShipment.id} (${data.originType}).`,
+        }
+      },
+      history: [
+        {
+          id: `log_comp_${Date.now()}`,
+          userId: currentUser.id,
+          timestamp: new Date().toISOString(),
+          description: `Embarque Complementar criado e finalizado referente ao Embarque anterior #${complementarShipment.id} (${complementarShipment.horsePlate} - ${complementarShipment.driverName}). Motivo: ${data.originType}. CT-e Complementar nº ${data.cteNumber}${data.nfNumber ? ` | NF nº ${data.nfNumber}` : ''}. Frete Empresa: R$ ${data.companyFreightValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Frete Motorista Pago: R$ ${data.driverFreightValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.${data.notes ? ` Obs: ${data.notes}` : ''}`
+        }
+      ]
+    };
+
+    await onCreateShipment(payload);
+
+    if (onUpdateShipmentData) {
+      const parentHistoryLog = {
+        id: `log_comp_ref_${Date.now()}`,
+        userId: currentUser.id,
+        timestamp: new Date().toISOString(),
+        description: `Gerado Embarque Complementar para este frete com CT-e Complementar nº ${data.cteNumber}${data.nfNumber ? ` | NF nº ${data.nfNumber}` : ''}. Motivo: ${data.originType}. Frete Empresa: R$ ${data.companyFreightValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Frete Motorista: R$ ${data.driverFreightValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`
+      };
+      await onUpdateShipmentData(complementarShipment.id, {
+        history: [...(complementarShipment.history || []), parentHistoryLog],
+      }, { silent: true });
+    }
+
+    setComplementarShipment(null);
+  };
   const actionMenuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -145,11 +320,26 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       const path = await uploadShipmentAttachment(shipmentId, 'Ordem de Carregamento TMS', file);
       const publicUrl = getShipmentAttachmentUrl(path);
 
+      let extractedOcNumber: string | undefined;
+      try {
+        const detailed = await extractDetailedDocData(file, 'Ordem de Carregamento TMS');
+        if (detailed.rawText) {
+          const num = extractOcNumberFromText(detailed.rawText);
+          if (num) extractedOcNumber = num;
+        }
+      } catch (err) {
+        console.warn('Não foi possível extrair número da OC:', err);
+      }
+
       const latestShipment = shipments.find(s => s.id === shipmentId) || targetShipmentForTmsUpload;
       const currentDocs = latestShipment.documents || {};
       const updatedDocuments = {
         ...currentDocs,
-        'Ordem de Carregamento TMS': [publicUrl]
+        'Ordem de Carregamento TMS': [publicUrl],
+        ...(extractedOcNumber ? {
+          ordem_carregamento_numero: extractedOcNumber,
+          oc_number: extractedOcNumber
+        } : {})
       };
 
       const newLog = {
@@ -224,6 +414,23 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
     }
     return '-';
   }, []);
+
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const handleCopyText = useCallback((text: string, key: string, e: React.MouseEvent, label?: string) => {
+    e.stopPropagation();
+    if (!text) return;
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      showToast(`${label || 'Texto'} copiado: ${text}`, 'success');
+      setTimeout(() => {
+        setCopiedKey(prev => (prev === key ? null : prev));
+      }, 2000);
+    } catch {
+      showToast('Não foi possível copiar para a área de transferência.', 'warning');
+    }
+  }, [showToast]);
 
   const [showFilters, setShowFilters] = useState(false);
   const [filterId, setFilterId] = useState<string>('');
@@ -303,6 +510,41 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
 
   const getClientName = (clientId: string) => clients.find(c => c.id === clientId)?.nomeFantasia || 'N/A';
 
+  const getDriverCodigoAtua = useCallback((s: Shipment): string => {
+    if (s.codigoAtua && s.codigoAtua.trim() !== '' && s.codigoAtua !== '-') return s.codigoAtua.trim();
+    const docAtua = (s.documents as any)?.codigo_atua || (s.documents as any)?.codg_atua || (s.documents as any)?.codigoAtua;
+    if (docAtua && String(docAtua).trim() !== '' && String(docAtua).trim() !== '-') return String(docAtua).trim();
+
+    // 1. Buscar no cadastro do motorista
+    const driver = drivers?.find(d => 
+      d.name === s.driverName || 
+      normalizeDriverKey(d.name) === normalizeDriverKey(s.driverName) || 
+      (d.cpf && s.driverCpf && d.cpf.replace(/\D/g, '') === s.driverCpf.replace(/\D/g, ''))
+    );
+    if (driver?.codigoAtua && String(driver.codigoAtua).trim() !== '') {
+      return String(driver.codigoAtua).trim();
+    }
+
+    // 2. Buscar em outros embarques desse mesmo motorista onde o código já foi informado
+    const driverCpfClean = (s.driverCpf || driver?.cpf || '').replace(/\D/g, '');
+    const driverNameClean = (s.driverName || '').trim().toLowerCase();
+    const matchShipment = shipments.find(other => {
+      const oCpf = (other.driverCpf || '').replace(/\D/g, '');
+      const oName = (other.driverName || '').trim().toLowerCase();
+      const isMatch = (driverCpfClean !== '' && oCpf === driverCpfClean) || (driverNameClean !== '' && oName === driverNameClean);
+      if (!isMatch) return false;
+      const atua = other.codigoAtua || (other.documents as any)?.codigo_atua || (other.documents as any)?.codg_atua;
+      return Boolean(atua && String(atua).trim() !== '' && String(atua).trim() !== '-');
+    });
+
+    if (matchShipment) {
+      const atua = matchShipment.codigoAtua || (matchShipment.documents as any)?.codigo_atua || (matchShipment.documents as any)?.codg_atua;
+      return String(atua).trim();
+    }
+
+    return '';
+  }, [drivers, shipments]);
+
   // Filter options
   const plateOptions = useMemo(() => Array.from(new Set(shipments.map(s => s.horsePlate))).filter(Boolean).sort(), [shipments]);
   const nameOptions = useMemo(() => Array.from(new Set(shipments.map(s => s.driverName))).filter(Boolean).sort(), [shipments]);
@@ -318,7 +560,8 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
           const q = filterId.trim().toLowerCase();
           const idMatch = shipment.id.toLowerCase().includes(q);
           const cargoSeqMatch = cargo?.sequenceId ? String(cargo.sequenceId).toLowerCase().includes(q) : false;
-          if (!idMatch && !cargoSeqMatch) return false;
+          const atuaMatch = getDriverCodigoAtua(shipment).toLowerCase().includes(q);
+          if (!idMatch && !cargoSeqMatch && !atuaMatch) return false;
         }
         if (filterPlate.length > 0 && !filterPlate.includes(shipment.horsePlate)) return false;
         if (filterName.length > 0 && !filterName.includes(shipment.driverName)) return false;
@@ -405,6 +648,10 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
   };
   
   const isClient = currentUser.profile === UserProfile.Cliente;
+  const isGerenciadora = currentUser.profile === UserProfile.GerenciadoraDeRisco ||
+    (currentUser.profile as string) === 'Gerenciadora de Risco' ||
+    Boolean(currentUser.name && (currentUser.name.toLowerCase().includes('samanta') || currentUser.name.toLowerCase().includes('samantha'))) ||
+    Boolean(currentUser.email && (currentUser.email.toLowerCase().includes('samanta') || currentUser.email.toLowerCase().includes('samantha')));
   const showActionsColumnForClient = isClient && activeStatus === ShipmentStatus.Finalizado;
 
   const ActionMenuItem: React.FC<{
@@ -425,7 +672,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       }}
       disabled={disabled}
       title={title}
-      className={`w-full text-left flex items-center gap-3 px-4 py-2 text-sm ${
+      className={`w-full text-left flex items-center gap-2 px-2.5 py-1 text-xs font-medium transition-colors ${
         disabled 
           ? 'text-gray-400 dark:text-gray-500 cursor-not-allowed' 
           : isDestructive 
@@ -434,20 +681,20 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       }`}
       role="menuitem"
     >
-      <Icon className="w-4 h-4" />
-      <span>{text}</span>
+      <Icon className="w-3.5 h-3.5 shrink-0" />
+      <span className="truncate">{text}</span>
     </button>
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-12 sm:pb-6">
       {currentUser.profile !== UserProfile.Motorista && (
       <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700">
         <div className="flex flex-col md:flex-row items-center justify-between p-3 gap-3">
           <div className="w-full md:w-auto flex items-center gap-2.5 flex-wrap">
             <button 
                 onClick={() => setShowFilters(!showFilters)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all shadow-sm ${showFilters || activeFiltersCount > 0 ? 'bg-blue-100/80 text-blue-900 border-blue-300 dark:bg-blue-900/40 dark:text-blue-200 dark:border-blue-700' : 'bg-blue-50/40 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300 border-blue-200 dark:border-blue-800/60 hover:bg-blue-50/70'}`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all shadow-sm ${showFilters || activeFiltersCount > 0 ? 'bg-amber-100/80 text-amber-900 border-amber-300 dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-700' : 'bg-amber-50/40 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300 border-amber-200 dark:border-amber-800/60 hover:bg-amber-50/70'}`}
             >
                 <Filter className="w-3.5 h-3.5" />
                 <span>Filtros Avançados {activeFiltersCount > 0 && `(${activeFiltersCount})`}</span>
@@ -455,13 +702,13 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
 
             {/* Filtro por ID */}
             <div className="relative flex items-center">
-              <Search className="w-3.5 h-3.5 text-blue-500 absolute left-2.5 pointer-events-none" />
+              <Search className="w-3.5 h-3.5 text-amber-500 absolute left-2.5 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Filtrar por ID..."
                 value={filterId}
                 onChange={e => setFilterId(e.target.value)}
-                className="pl-8 pr-7 py-1.5 text-xs font-semibold border border-blue-200 dark:border-blue-800/60 rounded-lg bg-blue-50/40 dark:bg-blue-900/20 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 w-32 sm:w-36 transition-all shadow-sm"
+                className="pl-8 pr-7 py-1.5 text-xs font-semibold border border-amber-200 dark:border-amber-800/60 rounded-lg bg-amber-50/40 dark:bg-amber-900/20 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30 w-32 sm:w-36 transition-all shadow-sm"
               />
               {filterId && (
                 <button
@@ -476,13 +723,13 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
 
             {onFilterCteChange && (
               <div className="relative flex items-center">
-                <FileText className="w-3.5 h-3.5 text-blue-500 absolute left-2.5 pointer-events-none" />
+                <FileText className="w-3.5 h-3.5 text-amber-500 absolute left-2.5 pointer-events-none" />
                 <input
                   type="text"
                   placeholder="Filtrar por CT-e..."
                   value={filterCte || ''}
                   onChange={e => onFilterCteChange(e.target.value)}
-                  className="pl-8 pr-7 py-1.5 text-xs font-semibold border border-blue-200 dark:border-blue-800/60 rounded-lg bg-blue-50/40 dark:bg-blue-900/20 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 w-36 sm:w-40 transition-all shadow-sm"
+                  className="pl-8 pr-7 py-1.5 text-xs font-semibold border border-amber-200 dark:border-amber-800/60 rounded-lg bg-amber-50/40 dark:bg-amber-900/20 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30 w-36 sm:w-40 transition-all shadow-sm"
                 />
                 {filterCte && (
                   <button
@@ -514,14 +761,14 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                 {/* Ordenação */}
                 <div className="mt-3 pt-3 border-t border-gray-200/60 dark:border-gray-700 flex flex-wrap items-center gap-3">
                     <div className="flex items-center gap-1.5">
-                        <ArrowUpDown className="w-3.5 h-3.5 text-blue-500" />
+                        <ArrowUpDown className="w-3.5 h-3.5 text-amber-500" />
                         <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Ordenar por:</span>
                     </div>
                     <div className="flex flex-wrap gap-2">
                         <select
                             value={sortKey}
                             onChange={e => setSortKey(e.target.value)}
-                            className="px-3 py-1 text-xs font-semibold border border-blue-200 dark:border-blue-800/60 rounded-lg bg-blue-50/40 dark:bg-blue-900/20 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none shadow-sm"
+                            className="px-3 py-1 text-xs font-semibold border border-amber-200 dark:border-amber-800/60 rounded-lg bg-amber-50/40 dark:bg-amber-900/20 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none shadow-sm"
                         >
                             <option value="default">Padrão (sem ordenação)</option>
                             <option value="id">ID do Embarque</option>
@@ -538,7 +785,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                             <select
                                 value={sortDir}
                                 onChange={e => setSortDir(e.target.value as 'asc' | 'desc')}
-                                className="px-3 py-1 text-xs font-semibold border border-blue-200 dark:border-blue-800/60 rounded-lg bg-blue-50/40 dark:bg-blue-900/20 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none shadow-sm"
+                                className="px-3 py-1 text-xs font-semibold border border-amber-200 dark:border-amber-800/60 rounded-lg bg-amber-50/40 dark:bg-amber-900/20 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none shadow-sm"
                             >
                                 <option value="asc">Crescente (A → Z)</option>
                                 <option value="desc">Decrescente (Z → A)</option>
@@ -581,14 +828,22 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       ) : (
                         <button 
                           onClick={() => setDetailsModalShipment(shipment)} 
-                          className="text-sm font-bold text-primary dark:text-blue-400 hover:underline"
+                          className="text-sm font-bold text-primary dark:text-amber-400 hover:underline"
                         >
                           {shipment.id}
                         </button>
                       )}
-                      {tickets.some(t => t.shipmentId === shipment.id && t.status !== TicketStatus.Fechado && t.status !== TicketStatus.Resolvido) && (
+                      {currentUser?.profile !== UserProfile.Cliente && tickets.some(t => t.shipmentId === shipment.id && t.status !== TicketStatus.Fechado && t.status !== TicketStatus.Resolvido) && (
                         <span className="text-red-500 inline-flex items-center" title="Chamado(s) Aberto(s)">
                           <AlertCircle className="w-4 h-4" />
+                        </span>
+                      )}
+                      {(shipment.isComplementar || (shipment.documents as any)?.is_complementar) && (
+                        <span 
+                          className="px-1.5 py-0.5 text-[9px] font-black uppercase rounded bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-300 dark:border-purple-800 ml-1 inline-flex items-center"
+                          title={shipment.parentShipmentId ? `Complementar do Embarque #${shipment.parentShipmentId}` : 'Embarque Complementar'}
+                        >
+                          Complementar{shipment.parentShipmentId ? ` (#${shipment.parentShipmentId})` : ''}
                         </span>
                       )}
                     </div>
@@ -663,16 +918,16 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                     )}
                   </div>
                   <div className="text-right">
-                    <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                      {shipment.status}
+                    <span className="text-xs font-bold px-2 py-1 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                      {formatShipmentStatusLabel(shipment.status)}
                     </span>
                     {shipment.status === ShipmentStatus.Cancelado && shipment.cancellationReason && (
                         <div className="text-[10px] text-red-500 font-semibold mt-1 max-w-[120px] break-words">
                           Motivo: {shipment.cancellationReason}
                         </div>
                     )}
-                    {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoFiscal, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
-                        <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">
+                    {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoFiscal, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.ValidacaoTicket, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
+                        <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold mt-1">
                           {(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton
                         </div>
                     )}
@@ -680,13 +935,66 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       <Clock className="w-3 h-3 text-gray-400 shrink-0" />
                       <span>Sol.: {formatRequestedDateTime(shipment)}</span>
                     </div>
+                    {shipment.status !== ShipmentStatus.Cancelado && (
+                      <div className="mt-1.5 flex justify-end">
+                        {shipment.statusPendingObservation ? (
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenPendingModal(shipment);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 shadow-xs hover:bg-amber-100 dark:hover:bg-amber-900/60 cursor-pointer max-w-[180px] transition-all"
+                            title="Clique para editar ou limpar a pendência do status"
+                          >
+                            <AlertCircle className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span className="truncate">{shipment.statusPendingObservation}</span>
+                            <Pencil className="w-2.5 h-2.5 shrink-0 text-amber-700 dark:text-amber-300" />
+                          </div>
+                        ) : (
+                          !isDemo && onUpdateShipmentData && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenPendingModal(shipment);
+                              }}
+                              className="text-[10px] font-medium text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-200 inline-flex items-center gap-1 py-0.5 px-1.5 rounded bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/50 dark:border-amber-800/40"
+                              title="Informar nota rápida de pendência para este status"
+                            >
+                              <AlertCircle className="w-2.5 h-2.5 text-amber-600" />
+                              <span>+ Pendência</span>
+                            </button>
+                          )
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <div className="text-[10px] text-gray-400 uppercase font-bold">Motorista</div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(() => {
+                        const atua = getDriverCodigoAtua(shipment);
+                        return atua ? (
+                          <span 
+                            onClick={(e) => handleCopyText(atua, `atua_m_${shipment.id}`, e, 'Código ATUA')}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black font-mono bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300 dark:border-amber-700/60 shadow-2xs shrink-0 cursor-pointer hover:bg-amber-200/80 dark:hover:bg-amber-800/80 transition-colors" 
+                            title={`Código ATUA: ${atua} (Clique para copiar)`}
+                          >
+                            <span>{atua}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopyText(atua, `atua_m_${shipment.id}`, e, 'Código ATUA')}
+                              className="text-amber-600 hover:text-amber-950 dark:text-amber-300 dark:hover:text-white transition-colors cursor-pointer p-0.5 rounded hover:bg-amber-200/50 dark:hover:bg-amber-800/50"
+                              title={`Copiar Código ATUA (${atua})`}
+                            >
+                              {copiedKey === `atua_m_${shipment.id}` ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                            </button>
+                          </span>
+                        ) : null;
+                      })()}
                       <div className="font-medium dark:text-gray-200">{shipment.driverName}</div>
                       {(() => {
                           const driver = drivers?.find(d => 
@@ -720,7 +1028,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           if (locationInfo && locationInfo.isAppActive) {
                               if (locationInfo.lat === 0 && locationInfo.lng === 0) {
                                 return (
-                                  <span title="Motorista ativo no aplicativo, buscando GPS..." className="text-blue-500 cursor-help">
+                                  <span title="Motorista ativo no aplicativo, buscando GPS..." className="text-amber-500 cursor-help">
                                       <Smartphone className="w-4 h-4 animate-pulse" />
                                   </span>
                                 );
@@ -736,7 +1044,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                         isOffline: false,
                                       })}
                                       title="App conectado. Clique para ver localização em tempo real."
-                                      className="text-blue-500 hover:text-blue-600 transition-colors focus:outline-none"
+                                      className="text-amber-500 hover:text-amber-600 transition-colors focus:outline-none"
                                   >
                                       <Smartphone className="w-4 h-4 animate-pulse" />
                                   </button>
@@ -779,7 +1087,25 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           return null;
                       })()}
                     </div>
-                    <div className="text-xs text-gray-500">{shipment.horsePlate}</div>
+                    {shipment.horsePlate ? (
+                      <div className="text-xs text-gray-600 dark:text-gray-400 flex items-center gap-1.5 font-medium mt-0.5">
+                        <span 
+                          onClick={(e) => handleCopyText(shipment.horsePlate, `plate_m_${shipment.id}`, e, 'Placa do Veículo')}
+                          className="font-mono tracking-wider cursor-pointer hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+                          title={`Clique para copiar a Placa (${shipment.horsePlate})`}
+                        >
+                          {shipment.horsePlate}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyText(shipment.horsePlate, `plate_m_${shipment.id}`, e, 'Placa do Veículo')}
+                          className="p-0.5 text-gray-400 hover:text-amber-600 dark:hover:text-amber-400 rounded transition-colors cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                          title={`Copiar Placa (${shipment.horsePlate})`}
+                        >
+                          {copiedKey === `plate_m_${shipment.id}` ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                        </button>
+                      </div>
+                    ) : null}
                     {(vehicle || shipment.vehicleSetType || shipment.vehicleBodyType) && (
                       <span className="mt-1 inline-block px-2 py-0.5 text-[10px] font-semibold rounded-full bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200">
                         {shipment.vehicleSetType || vehicle?.setType} / {shipment.vehicleBodyType || vehicle?.bodyType}
@@ -792,7 +1118,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                     <div className="font-bold dark:text-gray-200">
                       {isClient 
                         ? formatCurrency(cargo?.companyFreightValuePerTon || 0)
-                        : formatCurrency(shipment.driverFreightValue / (shipment.shipmentTonnage || 1))
+                        : formatCurrency(shipment.driverFreightRateSnapshot || (shipment.shipmentTonnage > 0 ? shipment.driverFreightValue / shipment.shipmentTonnage : cargo?.driverFreightValuePerTon || 0))
                       }
                     </div>
                   </div>
@@ -804,12 +1130,12 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           <div className="flex items-center gap-1.5">
                             <span className="text-[9px] text-gray-500 font-bold">MTR:</span>
                             <span className="text-xs font-bold dark:text-white">
-                              {formatCurrency(shipment.driverFreightValue / (shipment.shipmentTonnage || 1))}
+                              {formatCurrency(shipment.driverFreightRateSnapshot || (shipment.shipmentTonnage > 0 ? shipment.driverFreightValue / shipment.shipmentTonnage : cargo?.driverFreightValuePerTon || 0))}
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5">
                             <span className="text-[9px] text-gray-500 font-bold">EMP:</span>
-                            <span className="text-xs font-bold text-primary dark:text-blue-400">
+                            <span className="text-xs font-bold text-primary dark:text-amber-400">
                               {formatCurrency(shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0)}
                             </span>
                           </div>
@@ -817,7 +1143,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                             <span className="text-[9px] text-gray-500 font-bold">MARGEM:</span>
                             {(() => {
                                const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
-                               const driverRate = shipment.driverFreightValue / (shipment.shipmentTonnage || 1);
+                               const driverRate = shipment.driverFreightRateSnapshot || (shipment.shipmentTonnage > 0 ? shipment.driverFreightValue / shipment.shipmentTonnage : cargo?.driverFreightValuePerTon || 0);
                                const commissionRate = cargo?.salespersonCommissionPerTon || 0;
                                const demurrageProfit = stays.filter(s => s.shipmentId === shipment.id).reduce((sum, s) => sum + ((s.approvedValue || 0) - (s.driverPaidValue || 0)), 0);
                                const perTonProfit = companyRate - driverRate - commissionRate + (demurrageProfit / (shipment.shipmentTonnage || 1));
@@ -827,7 +1153,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                let colorClass = 'text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800';
                                if (marginPercent < 5) colorClass = 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30';
                                else if (marginPercent < 6) colorClass = 'text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/30';
-                               else if (marginPercent < 7) colorClass = 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30';
+                               else if (marginPercent < 7) colorClass = 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30';
                                else colorClass = 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30';
 
                                return (
@@ -844,12 +1170,53 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                 </div>
 
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg">
-                  <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Rota (Origem → Destino)</div>
+                  <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center justify-between">
+                    <span>Rota (Origem → Destino)</span>
+                    {cargo && getCargoMapUrl('route', cargo) && (
+                      <a
+                        href={getCargoMapUrl('route', cargo)!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] text-amber-600 dark:text-amber-400 hover:underline inline-flex items-center gap-0.5"
+                        title="Abrir rota completa no Google Maps"
+                      >
+                        <MapPin className="w-2.5 h-2.5 text-amber-500" /> Ver Mapa
+                      </a>
+                    )}
+                  </div>
                   {cargo ? (
-                    <div className="text-xs dark:text-gray-300">
-                      <span className="font-semibold">{cargo.origin}</span>
-                      <span className="mx-2 text-gray-400">→</span>
-                      <span className="font-semibold">{cargo.destination}</span>
+                    <div className="text-xs dark:text-gray-300 flex items-center gap-1.5 flex-wrap">
+                      <a
+                        href={getCargoMapUrl('origin', cargo) || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-gray-800 dark:text-gray-200 hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline truncate"
+                        title={`Abrir localização de Origem no Google Maps: ${cargo.origin}${cargo.originLocation ? ` (${cargo.originLocation})` : ''}`}
+                      >
+                        {cargo.origin}
+                      </a>
+                      {getCargoMapUrl('route', cargo) ? (
+                        <a
+                          href={getCargoMapUrl('route', cargo)!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-gray-400 hover:text-amber-600 dark:hover:text-amber-400 hover:scale-110 transition-transform"
+                          title="Traçar rota no Google Maps"
+                        >
+                          →
+                        </a>
+                      ) : (
+                        <span className="mx-1 text-gray-400">→</span>
+                      )}
+                      <a
+                        href={getCargoMapUrl('destination', cargo) || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-gray-800 dark:text-gray-200 hover:text-rose-600 dark:hover:text-rose-400 hover:underline truncate"
+                        title={`Abrir localização de Destino no Google Maps: ${cargo.destination}${cargo.destinationLocation ? ` (${cargo.destinationLocation})` : ''}`}
+                      >
+                        {cargo.destination}
+                      </a>
                     </div>
                   ) : (
                     <span className="text-red-500 font-bold text-[10px]">CARGA REMOVIDA</span>
@@ -863,14 +1230,14 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
 
                     if (isEditingThisCte) {
                       return (
-                        <div className="mt-2 p-2 bg-blue-50/70 dark:bg-blue-900/30 rounded border border-blue-200 dark:border-blue-800 flex flex-col gap-1.5 w-full sm:w-auto">
-                          <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold uppercase">Editar CT-e:</span>
+                        <div className="mt-2 p-2 bg-amber-50/70 dark:bg-amber-900/30 rounded border border-amber-200 dark:border-amber-800 flex flex-col gap-1.5 w-full sm:w-auto">
+                          <span className="text-[10px] text-amber-700 dark:text-amber-300 font-bold uppercase">Editar CT-e:</span>
                           <input
                             type="text"
                             value={editingCteValue}
                             onChange={(e) => setEditingCteValue(e.target.value)}
                             placeholder="Nº do CT-e (ex: 1753)"
-                            className="w-full sm:w-44 px-2 py-1 text-xs font-semibold border border-blue-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full sm:w-44 px-2 py-1 text-xs font-semibold border border-amber-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                             autoFocus
                           />
                           <input
@@ -878,7 +1245,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                             value={editingCteDateValue}
                             onChange={(e) => setEditingCteDateValue(e.target.value)}
                             placeholder="Emissão (ex: 13/08/2026 11:40)"
-                            className="w-full sm:w-44 px-2 py-1 text-[11px] font-medium border border-blue-300 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full sm:w-44 px-2 py-1 text-[11px] font-medium border border-amber-300 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();
@@ -911,22 +1278,43 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                     if (cteVal !== '-' || canEditCte) {
                       return (
                         <div className="mt-2 flex flex-col gap-0.5">
-                          <div className="flex items-center gap-1.5 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded border border-blue-200 dark:border-blue-800 w-fit group/cte">
-                            <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                            <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold uppercase">CTE:</span>
-                            <span 
-                              onClick={() => {
-                                if (canEditCte) {
-                                  setEditingCteId(shipment.id);
-                                  setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
-                                  setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
-                                }
-                              }}
-                              className={`text-xs font-bold text-blue-900 dark:text-blue-200 ${canEditCte ? 'cursor-pointer hover:underline' : ''}`}
-                              title={canEditCte ? "Clique para editar o CT-e" : undefined}
-                            >
-                              {cteVal !== '-' ? cteVal : 'Adicionar CT-e'}
-                            </span>
+                          <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 px-2 py-1 rounded border border-amber-200 dark:border-amber-800 w-fit group/cte">
+                            <FileText className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                            <span className="text-[10px] text-amber-700 dark:text-amber-300 font-bold uppercase">CTE:</span>
+                            {(() => {
+                              const cteFile = getShipmentCteFileUrl(shipment);
+                              return (
+                                <div className="flex items-center gap-1">
+                                  <span 
+                                    onClick={() => {
+                                      if (cteFile) {
+                                        openDocumentInNewTab(cteFile, `CTE_${cteVal}`);
+                                      } else if (canEditCte) {
+                                        setEditingCteId(shipment.id);
+                                        setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
+                                        setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
+                                      }
+                                    }}
+                                    className={`text-xs font-bold text-amber-900 dark:text-amber-200 ${
+                                      cteFile ? 'cursor-pointer hover:underline text-amber-600 dark:text-amber-400' : canEditCte ? 'cursor-pointer hover:underline' : ''
+                                    }`}
+                                    title={cteFile ? "Clique para abrir o PDF do CT-e em nova aba" : canEditCte ? "Clique para editar o CT-e" : undefined}
+                                  >
+                                    {cteVal !== '-' ? cteVal : 'Adicionar CT-e'}
+                                  </span>
+                                  {cteFile && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openDocumentInNewTab(cteFile, `CTE_${cteVal}`)}
+                                      className="p-0.5 rounded text-amber-600 hover:text-amber-800 transition-colors"
+                                      title="Abrir PDF do CT-e"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })()}
                             {canEditCte && (
                               <button
                                 onClick={() => {
@@ -934,7 +1322,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                   setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
                                   setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
                                 }}
-                                className="p-0.5 rounded text-blue-600 hover:bg-blue-200 dark:hover:bg-blue-800 transition-all ml-1"
+                                className="p-0.5 rounded text-amber-600 hover:bg-amber-200 dark:hover:bg-amber-800 transition-all ml-1"
                                 title="Editar CT-e"
                               >
                                 <Pencil className="w-3 h-3" />
@@ -1036,23 +1424,31 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                         ) : (
                             <button 
                                 onClick={() => setDetailsModalShipment(shipment)} 
-                                className="font-medium text-primary dark:text-blue-400 hover:underline text-left block"
+                                className="font-medium text-primary dark:text-amber-400 hover:underline text-left block"
                             >
                                 {shipment.id}
                             </button>
                         )}
-                        {tickets.some(t => t.shipmentId === shipment.id && t.status !== TicketStatus.Fechado && t.status !== TicketStatus.Resolvido) && (
+                        {currentUser?.profile !== UserProfile.Cliente && tickets.some(t => t.shipmentId === shipment.id && t.status !== TicketStatus.Fechado && t.status !== TicketStatus.Resolvido) && (
                           <span className="text-red-500 inline-flex items-center" title="Chamado(s) Aberto(s)">
                             <AlertCircle className="w-4 h-4" />
                           </span>
                         )}
-                      </div>
-                      {cargo && (
+                        {(shipment.isComplementar || (shipment.documents as any)?.is_complementar) && (
+                        <span 
+                          className="px-1.5 py-0.5 text-[9px] font-black uppercase rounded bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-300 dark:border-purple-800 ml-1 inline-flex items-center"
+                          title={shipment.parentShipmentId ? `Complementar do Embarque #${shipment.parentShipmentId}` : 'Embarque Complementar'}
+                        >
+                          Complementar{shipment.parentShipmentId ? ` (#${shipment.parentShipmentId})` : ''}
+                        </span>
+                      )}
+                    </div>
+                    {cargo && (
                         <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
                           <span>
                             Carga: 
                             {onShowCargoDetails ? (
-                              <button onClick={() => onShowCargoDetails(cargo)} className="ml-1 font-semibold text-primary dark:text-blue-400 hover:underline">
+                              <button onClick={() => onShowCargoDetails(cargo)} className="ml-1 font-semibold text-primary dark:text-amber-400 hover:underline">
                                 {cargo.sequenceId}
                               </button>
                             ) : (
@@ -1123,10 +1519,65 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           })()}
                         </div>
                       )}
+
+                      {/* PENDÊNCIA DO STATUS ATUAL */}
+                      {shipment.status !== ShipmentStatus.Cancelado && (
+                        <div className="mt-1.5">
+                          {shipment.statusPendingObservation ? (
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenPendingModal(shipment);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 shadow-xs hover:bg-amber-100 dark:hover:bg-amber-900/60 cursor-pointer max-w-[210px] group/pend transition-all"
+                              title="Clique para editar ou limpar a pendência do status"
+                            >
+                              <AlertCircle className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <span className="truncate">{shipment.statusPendingObservation}</span>
+                              <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/pend:opacity-100 shrink-0 text-amber-700 dark:text-amber-300 transition-opacity" />
+                            </div>
+                          ) : (
+                            !isDemo && onUpdateShipmentData && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenPendingModal(shipment);
+                                }}
+                                className="text-[11px] font-medium text-amber-700/80 dark:text-amber-400/80 hover:text-amber-900 dark:hover:text-amber-200 inline-flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity py-0.5 px-1.5 rounded hover:bg-amber-50/60 dark:hover:bg-amber-950/30"
+                                title="Informar nota rápida de pendência para este status"
+                              >
+                                <AlertCircle className="w-3 h-3 text-amber-600/70 shrink-0" />
+                                <span>+ Pendência</span>
+                              </button>
+                            )
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-[11px] whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <div className="text-sm text-gray-900 dark:text-white">{shipment.driverName}</div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {(() => {
+                          const atua = getDriverCodigoAtua(shipment);
+                          return atua ? (
+                            <span 
+                              onClick={(e) => handleCopyText(atua, `atua_${shipment.id}`, e, 'Código ATUA')}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-black font-mono bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300 dark:border-amber-700/60 shadow-2xs shrink-0 cursor-pointer hover:bg-amber-200/80 dark:hover:bg-amber-800/80 transition-colors" 
+                              title={`Código ATUA: ${atua} (Clique para copiar)`}
+                            >
+                              <span>{atua}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopyText(atua, `atua_${shipment.id}`, e, 'Código ATUA')}
+                                className="text-amber-600 hover:text-amber-950 dark:text-amber-300 dark:hover:text-white transition-colors cursor-pointer p-0.5 rounded hover:bg-amber-200/50 dark:hover:bg-amber-800/50"
+                                title={`Copiar Código ATUA (${atua})`}
+                              >
+                                {copiedKey === `atua_${shipment.id}` ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                              </button>
+                            </span>
+                          ) : null;
+                        })()}
+                        <div className="text-sm font-medium text-gray-900 dark:text-white">{shipment.driverName}</div>
                         {(() => {
                             const driver = drivers?.find(d => 
                               d.name === shipment.driverName || 
@@ -1159,7 +1610,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                             if (locationInfo && locationInfo.isAppActive) {
                                 if (locationInfo.lat === 0 && locationInfo.lng === 0) {
                                   return (
-                                    <span title="Motorista ativo no aplicativo, buscando GPS..." className="text-blue-500 cursor-help">
+                                    <span title="Motorista ativo no aplicativo, buscando GPS..." className="text-amber-500 cursor-help">
                                         <Smartphone className="w-4 h-4 animate-pulse" />
                                   </span>
                                 );
@@ -1175,7 +1626,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                           isOffline: false,
                                         })}
                                         title="App conectado. Clique para ver localização em tempo real."
-                                        className="text-blue-500 hover:text-blue-600 transition-colors focus:outline-none"
+                                        className="text-amber-500 hover:text-amber-600 transition-colors focus:outline-none"
                                     >
                                         <Smartphone className="w-4 h-4 animate-pulse" />
                                     </button>
@@ -1218,7 +1669,25 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                             return null;
                         })()}
                       </div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">{shipment.horsePlate}</div>
+                      {shipment.horsePlate ? (
+                        <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5 mt-0.5">
+                          <span 
+                            onClick={(e) => handleCopyText(shipment.horsePlate, `plate_${shipment.id}`, e, 'Placa do Veículo')}
+                            className="font-mono tracking-wider cursor-pointer hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+                            title={`Clique para copiar a Placa (${shipment.horsePlate})`}
+                          >
+                            {shipment.horsePlate}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyText(shipment.horsePlate, `plate_${shipment.id}`, e, 'Placa do Veículo')}
+                            className="p-0.5 text-gray-400 hover:text-amber-600 dark:hover:text-amber-400 rounded transition-colors cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                            title={`Copiar Placa (${shipment.horsePlate})`}
+                          >
+                            {copiedKey === `plate_${shipment.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      ) : null}
                       <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1">
                           Sol.: <span className="font-medium">{getEmbarcadorName(shipment.embarcadorId)}</span>
                           {(() => {
@@ -1252,8 +1721,28 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                     <td className="px-6 py-[11px] whitespace-nowrap text-sm text-gray-900 dark:text-white group relative">
                       {cargo ? (
                         <>
-                          <div>{cargo.origin}</div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">{cargo.destination}</div>
+                          <div>
+                            <a
+                              href={getCargoMapUrl('origin', cargo) || '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline inline-flex items-center gap-1"
+                              title={`Abrir localização de Origem no Google Maps: ${cargo.origin}${cargo.originLocation ? ` (${cargo.originLocation})` : ''}`}
+                            >
+                              <span>{cargo.origin}</span>
+                            </a>
+                          </div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                            <a
+                              href={getCargoMapUrl('destination', cargo) || '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:text-rose-600 dark:hover:text-rose-400 hover:underline inline-flex items-center gap-1"
+                              title={`Abrir localização de Destino no Google Maps: ${cargo.destination}${cargo.destinationLocation ? ` (${cargo.destinationLocation})` : ''}`}
+                            >
+                              <span>{cargo.destination}</span>
+                            </a>
+                          </div>
                         </>
                       ) : (
                         <div className="flex flex-col">
@@ -1281,14 +1770,14 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
 
                         if (isEditingThisCte) {
                           return (
-                            <div className="flex flex-col gap-1.5 p-2 bg-blue-50/70 dark:bg-blue-900/30 rounded border border-blue-200 dark:border-blue-800">
-                              <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold uppercase">Editar CT-e:</span>
+                            <div className="flex flex-col gap-1.5 p-2 bg-amber-50/70 dark:bg-amber-900/30 rounded border border-amber-200 dark:border-amber-800">
+                              <span className="text-[10px] text-amber-700 dark:text-amber-300 font-bold uppercase">Editar CT-e:</span>
                               <input
                                 type="text"
                                 value={editingCteValue}
                                 onChange={(e) => setEditingCteValue(e.target.value)}
                                 placeholder="Nº do CT-e (ex: 1753)"
-                                className="w-36 px-2 py-1 text-xs font-semibold border border-blue-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-36 px-2 py-1 text-xs font-semibold border border-amber-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                                 autoFocus
                               />
                               <input
@@ -1296,7 +1785,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                 value={editingCteDateValue}
                                 onChange={(e) => setEditingCteDateValue(e.target.value)}
                                 placeholder="Emissão (ex: 13/08/2026 11:40)"
-                                className="w-36 px-2 py-1 text-[11px] font-medium border border-blue-300 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-36 px-2 py-1 text-[11px] font-medium border border-amber-300 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
                                     e.preventDefault();
@@ -1329,22 +1818,31 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                         return (
                           <div className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-1.5 group/cte">
-                              {cteVal && cteVal !== '-' ? (
-                                <span 
-                                  onClick={() => {
-                                    if (canEditCte) {
-                                      setEditingCteId(shipment.id);
-                                      setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
-                                      setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
-                                    }
-                                  }}
-                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shadow-sm ${canEditCte ? 'cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/70 transition-colors' : ''}`}
-                                  title={canEditCte ? "Clique para editar o CT-e" : `CT-e nº ${cteVal}`}
-                                >
-                                  <FileText className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
-                                  {cteVal}
-                                </span>
-                              ) : (
+                              {cteVal && cteVal !== '-' ? (() => {
+                                const cteFile = getShipmentCteFileUrl(shipment);
+                                return (
+                                  <div className="inline-flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (cteFile) {
+                                          openDocumentInNewTab(cteFile, `CTE_${cteVal}`);
+                                        } else if (canEditCte) {
+                                          setEditingCteId(shipment.id);
+                                          setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
+                                          setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
+                                        }
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shadow-sm cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/70 transition-colors"
+                                      title={cteFile ? "Clique para abrir o PDF do CT-e em nova aba" : canEditCte ? "Clique para editar o CT-e" : `CT-e nº ${cteVal}`}
+                                    >
+                                      <FileText className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                                      <span>{cteVal}</span>
+                                      {cteFile && <ExternalLink className="w-2.5 h-2.5 opacity-80" />}
+                                    </button>
+                                  </div>
+                                );
+                              })() : (
                                 <span 
                                   onClick={() => {
                                     if (canEditCte) {
@@ -1353,7 +1851,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                       setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
                                     }
                                   }}
-                                  className={`text-gray-400 text-xs italic ${canEditCte ? 'cursor-pointer hover:text-blue-500 hover:underline' : ''}`}
+                                  className={`text-gray-400 text-xs italic ${canEditCte ? 'cursor-pointer hover:text-amber-500 hover:underline' : ''}`}
                                   title={canEditCte ? "Clique para adicionar o CT-e" : undefined}
                                 >
                                   -
@@ -1367,7 +1865,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                     setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
                                     setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
                                   }}
-                                  className="p-1 rounded text-gray-400 opacity-0 group-hover/cte:opacity-100 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
+                                  className="p-1 rounded text-gray-400 opacity-0 group-hover/cte:opacity-100 hover:text-amber-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
                                   title="Editar CT-e"
                                 >
                                   <Pencil className="w-3.5 h-3.5" />
@@ -1387,7 +1885,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       <td className="px-6 py-[11px] whitespace-nowrap text-sm">
                         {(() => {
                           const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
-                          const driverRate = shipment.driverFreightValue / (shipment.shipmentTonnage || 1);
+                          const driverRate = shipment.driverFreightRateSnapshot || (shipment.shipmentTonnage > 0 ? shipment.driverFreightValue / shipment.shipmentTonnage : cargo?.driverFreightValuePerTon || 0);
                           const commissionRate = cargo?.salespersonCommissionPerTon || 0;
                           const perTonProfit = companyRate - driverRate - commissionRate;
                           const marginPercent = companyRate > 0 ? (perTonProfit / companyRate) * 100 : 0;
@@ -1395,7 +1893,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           let colorClass = 'text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800';
                           if (marginPercent < 5) colorClass = 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30';
                           else if (marginPercent < 6) colorClass = 'text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/30';
-                          else if (marginPercent < 7) colorClass = 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30';
+                          else if (marginPercent < 7) colorClass = 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30';
                           else colorClass = 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30';
 
                           return (
@@ -1412,14 +1910,14 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           <div className="flex items-center gap-1.5">
                             <span className="text-[10px] text-gray-400 font-bold uppercase">Mtr:</span>
                             <span className="font-bold text-gray-900 dark:text-white">
-                              {formatCurrency(shipment.driverFreightValue / (shipment.shipmentTonnage || 1))}
+                              {formatCurrency(shipment.driverFreightRateSnapshot || (shipment.shipmentTonnage > 0 ? shipment.driverFreightValue / shipment.shipmentTonnage : cargo?.driverFreightValuePerTon || 0))}
                             </span>
                           </div>
                         )}
                         {currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista && (
                           <div className="flex items-center gap-1.5">
                             <span className="text-[10px] text-gray-400 font-bold uppercase">Emp:</span>
-                            <span className="font-medium text-primary dark:text-blue-400">
+                            <span className="font-medium text-primary dark:text-amber-400">
                               {formatCurrency(shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0)}
                             </span>
                           </div>
@@ -1427,14 +1925,14 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       </div>
                     </td>
                     <td className="px-6 py-[11px] whitespace-nowrap">
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">{formatShipmentStatus(shipment.status)}</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">{formatShipmentStatusLabel(shipment.status)}</p>
                       {shipment.status === ShipmentStatus.Cancelado && shipment.cancellationReason && (
                         <p className="text-[11px] text-red-600 dark:text-red-400 font-medium mt-1 max-w-[150px] whitespace-normal italic">
                           Motivo: {shipment.cancellationReason}
                         </p>
                       )}
-                      {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoFiscal, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
-                        <p className="text-xs text-blue-600 dark:text-blue-400 font-bold mt-1">
+                      {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoFiscal, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.ValidacaoTicket, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 font-bold mt-1">
                           Efetivado: {(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton
                         </p>
                       )}
@@ -1462,7 +1960,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       )}
                     </td>
                     <td 
-                      className="px-6 py-[11px] whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 cursor-pointer hover:text-primary dark:hover:text-blue-400 transition-colors group/date"
+                      className="px-6 py-[11px] whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 cursor-pointer hover:text-primary dark:hover:text-amber-400 transition-colors group/date"
                       onClick={() => onOpenEditScheduledDateTime && onOpenEditScheduledDateTime(shipment)}
                       title="Clique para alterar data/hora"
                     >
@@ -1506,12 +2004,12 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                       position: 'fixed',
                                                       top: menuPosition.isUp ? 'auto' : `${menuPosition.top + 8}px`,
                                                       bottom: menuPosition.isUp ? `${window.innerHeight - menuPosition.top + 8}px` : 'auto',
-                                                      left: `${menuPosition.left - 224}px`,
+                                                      left: `${menuPosition.left - 172}px`,
                                                       zIndex: 9999
                                                     }}
-                                                    className="w-56 bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 animate-in fade-in zoom-in duration-100"
+                                                    className="w-[172px] bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 animate-in fade-in zoom-in duration-100 py-0.5"
                                                   >
-                                                      <div className="py-1" role="menu" aria-orientation="vertical">
+                                                      <div className="py-0.5" role="menu" aria-orientation="vertical">
                                                           {shipment.status === ShipmentStatus.AguardandoCarregamento && (
                                                               <>
                                                                   <ActionMenuItem icon={MapPin} text="Informar Rota do Motorista" onClick={() => onAttach && onAttach(shipment)} />
@@ -1542,7 +2040,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                               </a>
                                           )}
           
-                                          {shipment.status === ShipmentStatus.Cancelado && currentUser.profile !== UserProfile.Admin && currentUser.profile !== UserProfile.Diretor ? (
+                                          {shipment.status === ShipmentStatus.Cancelado && !isDeveloperUser(currentUser) && currentUser.profile !== UserProfile.Desenvolvedor && currentUser.profile !== UserProfile.Admin && currentUser.profile !== UserProfile.Diretor && currentUser.profile !== UserProfile.GerenciadoraDeRisco && !isGerenciadora ? (
                                               <span className="text-xs text-gray-400 dark:text-gray-500 italic px-2">Cancelado</span>
                                           ) : (
                                               <div className="relative">
@@ -1561,12 +2059,12 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                           position: 'fixed',
                                                           top: menuPosition.isUp ? 'auto' : `${menuPosition.top + 8}px`,
                                                           bottom: menuPosition.isUp ? `${window.innerHeight - menuPosition.top + 8}px` : 'auto',
-                                                          left: `${menuPosition.left - 224}px`, // 224 is w-56 (14rem * 16px)
+                                                          left: `${menuPosition.left - 172}px`,
                                                           zIndex: 9999
                                                         }}
-                                                        className="w-56 bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 animate-in fade-in zoom-in duration-100"
+                                                        className="w-[172px] bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 animate-in fade-in zoom-in duration-100 py-0.5"
                                                       >
-                                                          <div className="py-1" role="menu" aria-orientation="vertical">
+                                                          <div className="py-0.5" role="menu" aria-orientation="vertical">
                                                               {onShowHistory && <ActionMenuItem icon={HistoryIcon} text="Ver Histórico" onClick={() => onShowHistory(shipment)} />}
                                                               {shipment.status !== ShipmentStatus.Cancelado && (
                                                                   <>
@@ -1580,15 +2078,61 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                                         />
                                                                       )}
                                                                       {shipment.status === ShipmentStatus.PreCadastro && onOpenCadastroAntt && <ActionMenuItem icon={ExternalLinkIcon} text="Fazer Cadastro" onClick={() => onOpenCadastroAntt(shipment)} />}
-                                                                      {isActionable && onEditPrice && <ActionMenuItem icon={DollarSignIcon} text="Alterar Preço" onClick={() => onEditPrice(shipment)} />}
+                                                                      {isActionable && onEditPrice && (isDeveloperUser(currentUser) || currentUser.profile === UserProfile.Desenvolvedor || currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.GerenciadoraDeRisco || isGerenciadora || (currentUser.profile as string) === 'Administrador do Sistema' || currentUser.profile === UserProfile.Embarcador || currentUser.profile === UserProfile.Agenciador || currentUser.profile === UserProfile.Comercial) && <ActionMenuItem icon={DollarSignIcon} text="Alterar Preço" onClick={() => onEditPrice(shipment)} />}
                                                                       {isActionable && onTransfer && <ActionMenuItem icon={TransferIcon} text="Transferir Embarque" onClick={() => onTransfer(shipment)} />}
-                                                                      {isActionable && (shipment.status === ShipmentStatus.PreCadastro || shipment.status === ShipmentStatus.AguardandoSeguradora) && onSwapCargo && <ActionMenuItem icon={Package} text="Remanejar Carga" onClick={() => onSwapCargo(shipment)} />}
+                                                                      {isActionable && (shipment.status === ShipmentStatus.PreCadastro || shipment.status === ShipmentStatus.AguardandoSeguradora || shipment.status === ShipmentStatus.AguardandoCarregamento) && onSwapCargo && <ActionMenuItem icon={Package} text="Remanejar Carga" onClick={() => onSwapCargo(shipment)} />}
                                                                       {onOpenEditScheduledDateTime && <ActionMenuItem icon={Clock} text="Alterar Data/Hora" onClick={() => onOpenEditScheduledDateTime(shipment)} />}
+                                                                      {onUpdateShipmentData && (shipment.status as any) !== ShipmentStatus.Cancelado && (
+                                                                          <ActionMenuItem 
+                                                                              icon={AlertCircle} 
+                                                                              text={shipment.statusPendingObservation ? "Editar Pendência" : "Informar Pendência"} 
+                                                                              onClick={() => {
+                                                                                  setOpenActionMenu(null);
+                                                                                  handleOpenPendingModal(shipment);
+                                                                              }} 
+                                                                          />
+                                                                      )}
                                                                       {shipment.status === ShipmentStatus.Finalizado && onAttach && <ActionMenuItem icon={PaperclipIcon} text="Gestor de Anexos" onClick={() => onAttach(shipment)} />}
+                                                                      {/* Ação de Reembarcar (Disponível em Ag. Descarga, Valid. Ticket, Ag. Saldo e Finalizado) */}
+                                                                      {(shipment.status === ShipmentStatus.AguardandoDescarga ||
+                                                                        shipment.status === ShipmentStatus.ValidacaoTicket ||
+                                                                        shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ||
+                                                                        shipment.status === ShipmentStatus.Finalizado) && (
+                                                                        <ActionMenuItem 
+                                                                            icon={RotateCw} 
+                                                                            text="Reembarcar" 
+                                                                            onClick={() => {
+                                                                                setOpenActionMenu(null);
+                                                                                if (onReembarcar) {
+                                                                                    onReembarcar(shipment);
+                                                                                } else {
+                                                                                    setReembarqueShipment(shipment);
+                                                                                }
+                                                                            }} 
+                                                                        />
+                                                                      )}
+                                                                      {/* Ação de Embarque Complementar (Disponível em Ag. Descarga, Valid. Ticket, Ag. Saldo e Finalizado) */}
+                                                                      {(shipment.status === ShipmentStatus.AguardandoDescarga ||
+                                                                        shipment.status === ShipmentStatus.ValidacaoTicket ||
+                                                                        shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ||
+                                                                        shipment.status === ShipmentStatus.Finalizado) && (
+                                                                        <ActionMenuItem 
+                                                                            icon={FilePlus2} 
+                                                                            text="Embarque Complementar" 
+                                                                            onClick={() => {
+                                                                                setOpenActionMenu(null);
+                                                                                if (onEmbarqueComplementar) {
+                                                                                    onEmbarqueComplementar(shipment);
+                                                                                } else {
+                                                                                    setComplementarShipment(shipment);
+                                                                                }
+                                                                            }} 
+                                                                        />
+                                                                      )}
                                                                       {isActionable && onCancel && (currentUser.profile !== UserProfile.Fiscal || shipment.status === ShipmentStatus.AguardandoSeguradora) && <ActionMenuItem icon={XIcon} text="Cancelar Embarque" onClick={() => onCancel(shipment)} isDestructive />}
                                                                   </>
                                                               )}
-                                                              {onRevertStatus && statusHistoryCount > 1 && (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.Diretor) && (
+                                                              {onRevertStatus && (statusHistoryCount > 1 || shipment.status !== ShipmentStatus.PreCadastro) && (isDeveloperUser(currentUser) || currentUser.profile === UserProfile.Desenvolvedor || currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.Diretor || currentUser.profile === UserProfile.GerenciadoraDeRisco || isGerenciadora) && (
                                                                   <ActionMenuItem 
                                                                       icon={RotateCcw} 
                                                                       text="Voltar Status Anterior" 
@@ -1599,7 +2143,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                                       }} 
                                                                   />
                                                               )}
-                                                              {onDelete && currentUser.profile === UserProfile.Admin && <ActionMenuItem icon={Trash2} text="Inativar Registro / Remover" onClick={() => onDelete(shipment.id)} isDestructive />}
+                                                              {onDelete && (currentUser.profile === UserProfile.Admin || isDeveloperUser(currentUser)) && <ActionMenuItem icon={Trash2} text="Inativar Registro / Remover" onClick={() => onDelete(shipment.id)} isDestructive />}
                                                           </div>
                                                       </div>,
                                                       document.body
@@ -1667,6 +2211,42 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       onDeleteAttachment={onDeleteAttachment}
     />
 
+    {/* Modal de Reembarque de Veículo */}
+    {reembarqueShipment && (
+      <ReembarqueModal
+        isOpen={Boolean(reembarqueShipment)}
+        onClose={() => setReembarqueShipment(null)}
+        shipment={reembarqueShipment}
+        cargos={cargos}
+        shipments={shipments}
+        clients={clients}
+        products={products}
+        currentUser={currentUser}
+        onConfirmReembarque={handleConfirmReembarque}
+      />
+    )}
+
+    {/* Modal de Embarque Complementar */}
+    {complementarShipment && (
+      <ComplementarShipmentModal
+        isOpen={Boolean(complementarShipment)}
+        onClose={() => setComplementarShipment(null)}
+        shipment={complementarShipment}
+        cargos={cargos}
+        clients={clients}
+        currentUser={currentUser}
+        onConfirmComplementar={handleConfirmComplementar}
+      />
+    )}
+
+    {/* Modal de Observação de Pendência do Status */}
+    <StatusPendingModal
+      isOpen={Boolean(pendingModalShipment)}
+      onClose={() => setPendingModalShipment(null)}
+      shipment={pendingModalShipment}
+      onSave={handleSavePendingObservation}
+    />
+
     {activeDriverMap && (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full flex flex-col p-6 relative">
@@ -1706,7 +2286,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
               href={`https://www.google.com/maps/search/?api=1&query=${activeDriverMap.lat},${activeDriverMap.lng}`}
               target="_blank" 
               rel="noopener noreferrer"
-              className="text-xs text-primary hover:underline dark:text-blue-400"
+              className="text-xs text-primary hover:underline dark:text-amber-400"
             >
               Abrir no Google Maps externo
             </a>

@@ -393,7 +393,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
         <div className="xl:col-span-4 space-y-6">
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
             <h2 className="text-base font-semibold flex items-center text-slate-800 mb-4">
-              <MapPin className="w-4 h-4 mr-2 text-indigo-500" /> Rota e Carga
+              <MapPin className="w-4 h-4 mr-2 text-amber-500" /> Rota e Carga
             </h2>
             <div className="space-y-3">
               <div className="space-y-1.5">
@@ -406,7 +406,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
                   value={formData.clientName}
                   onChange={handleInputChange}
                   list="clients-list"
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none"
                   placeholder="Nome do cliente (opcional)"
                 />
                 <datalist id="clients-list">
@@ -424,7 +424,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
                   value={formData.origin}
                   onChange={handleInputChange}
                   list="brazilian-cities-origin"
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none"
                   placeholder="Cidade - UF"
                 />
                 <datalist id="brazilian-cities-origin">
@@ -442,7 +442,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
                   value={formData.destination}
                   onChange={handleInputChange}
                   list="brazilian-cities-dest"
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none"
                   placeholder="Cidade - UF"
                 />
                 <datalist id="brazilian-cities-dest">
@@ -463,13 +463,13 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
 
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-700 flex items-center"><Navigation className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> Distância (km) *</label>
-              <input type="number" name="distance" value={formData.distance} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-indigo-50/30" placeholder="0.00" />
+              <input type="number" name="distance" value={formData.distance} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-amber-50/30" placeholder="0.00" />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-700 flex items-center"><Layers className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> Eixos</label>
-                <select name="axes" value={formData.axes} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                <select name="axes" value={formData.axes} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white">
                   <option value="2">2 Eixos</option>
                   <option value="3">3 Eixos</option>
                   <option value="4">4 Eixos</option>
@@ -482,7 +482,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-700 flex items-center"><Truck className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> Tipo Carga</label>
-                <select name="cargoType" value={formData.cargoType} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                <select name="cargoType" value={formData.cargoType} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white">
                   <option value="Geral">Geral</option>
                   <option value="Frigorificada">Frigorificada</option>
                   <option value="Perigosa">Perigosa</option>
@@ -494,7 +494,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
             
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-700 flex items-center">Peso da Carga (Toneladas) *</label>
-              <input type="number" step="0.1" name="weight" value={formData.weight} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: 32" />
+              <input type="number" step="0.1" name="weight" value={formData.weight} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="Ex: 32" />
             </div>
           </div>
         </div>
@@ -511,21 +511,21 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
                 <button
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, inputMode: 'PER_KM' }))}
-                  className={`flex-1 py-1.5 px-2 rounded-sm text-center transition-colors ${formData.inputMode === 'PER_KM' ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-slate-600 hover:bg-slate-50'}`}
+                  className={`flex-1 py-1.5 px-2 rounded-sm text-center transition-colors ${formData.inputMode === 'PER_KM' ? 'bg-amber-100 text-amber-700 font-medium' : 'text-slate-600 hover:bg-slate-50'}`}
                 >
                   Por KM
                 </button>
                 <button
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, inputMode: 'PER_TON' }))}
-                  className={`flex-1 py-1.5 px-2 rounded-sm text-center transition-colors ${formData.inputMode === 'PER_TON' ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-slate-600 hover:bg-slate-50'}`}
+                  className={`flex-1 py-1.5 px-2 rounded-sm text-center transition-colors ${formData.inputMode === 'PER_TON' ? 'bg-amber-100 text-amber-700 font-medium' : 'text-slate-600 hover:bg-slate-50'}`}
                 >
                   Por Ton
                 </button>
                 <button
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, inputMode: 'TOTAL' }))}
-                  className={`flex-1 py-1.5 px-2 rounded-sm text-center transition-colors ${formData.inputMode === 'TOTAL' ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-slate-600 hover:bg-slate-50'}`}
+                  className={`flex-1 py-1.5 px-2 rounded-sm text-center transition-colors ${formData.inputMode === 'TOTAL' ? 'bg-amber-100 text-amber-700 font-medium' : 'text-slate-600 hover:bg-slate-50'}`}
                 >
                   Valor Fechado
                 </button>
@@ -552,26 +552,26 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
               
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-700">Pedágio Estimado R$</label>
-                <input type="number" step="0.01" name="tollValue" value={formData.tollValue} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="0.00" />
+                <input type="number" step="0.01" name="tollValue" value={formData.tollValue} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="0.00" />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-700">Taxa ANTT R$</label>
-                <input type="number" step="0.01" name="anttValue" value={formData.anttValue} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="0.00" />
+                <input type="number" step="0.01" name="anttValue" value={formData.anttValue} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="0.00" />
               </div>
             </div>
 
             <div className="pt-3 border-t border-slate-100 grid grid-cols-2 gap-3 bg-slate-50/50 p-3 rounded-lg">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-700">Preço Diesel (R$)</label>
-                <input type="number" step="0.01" name="dieselPrice" value={formData.dieselPrice} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: 6.15" />
+                <input type="number" step="0.01" name="dieselPrice" value={formData.dieselPrice} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="Ex: 6.15" />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-700">Média Consumo (km/l)</label>
-                <input type="number" step="0.1" name="averageConsumption" value={formData.averageConsumption} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: 2.5" />
+                <input type="number" step="0.1" name="averageConsumption" value={formData.averageConsumption} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="Ex: 2.5" />
               </div>
               <div className="space-y-1.5 col-span-2">
                 <label className="text-xs font-medium text-slate-700">Comissão Motorista (% do Frete Líquido)</label>
-                <input type="number" step="0.1" name="driverCommissionPercent" value={formData.driverCommissionPercent} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: 10" />
+                <input type="number" step="0.1" name="driverCommissionPercent" value={formData.driverCommissionPercent} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="Ex: 10" />
               </div>
             </div>
           </div>
@@ -579,21 +579,21 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
           <h2 className="text-base font-semibold flex items-center text-slate-800 mb-4">
-            <Percent className="w-4 h-4 mr-2 text-indigo-500" /> Margens p/ Cliente Final
+            <Percent className="w-4 h-4 mr-2 text-amber-500" /> Margens p/ Cliente Final
           </h2>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-700">Margem Desejada (%)</label>
               <div className="relative">
-                <input type="number" step="0.1" name="margin" value={formData.margin} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-indigo-300 bg-indigo-50 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none pr-8" placeholder="Ex: 15" />
-                <Percent className="w-3.5 h-3.5 text-indigo-400 absolute right-3 top-1/2 transform -translate-y-1/2" />
+                <input type="number" step="0.1" name="margin" value={formData.margin} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-amber-300 bg-amber-50 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none pr-8" placeholder="Ex: 15" />
+                <Percent className="w-3.5 h-3.5 text-amber-400 absolute right-3 top-1/2 transform -translate-y-1/2" />
               </div>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-700">Aliquota ICMS (%)</label>
               <div className="relative">
-                <input type="number" step="0.1" name="icms" value={formData.icms} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none pr-8" placeholder="Ex: 12" />
+                <input type="number" step="0.1" name="icms" value={formData.icms} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none pr-8" placeholder="Ex: 12" />
                 <Percent className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 transform -translate-y-1/2" />
               </div>
             </div>
@@ -607,7 +607,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' />
             {routeData && (
               <>
-                <Polyline positions={routeData.coordinates} color="#4F46E5" weight={4} opacity={0.7} />
+                <Polyline positions={routeData.coordinates} color="#A67142" weight={4} opacity={0.7} />
                 <Marker position={routeData.coordinates[0]}>
                   <Popup><strong>Origem:</strong> {formData.origin}</Popup>
                 </Marker>
@@ -623,7 +623,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col">
           <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
             <h2 className="text-base font-semibold flex items-center text-slate-800">
-              <Calculator className="w-4 h-4 mr-2 text-indigo-500" /> Resultados da Cotação
+              <Calculator className="w-4 h-4 mr-2 text-amber-500" /> Resultados da Cotação
             </h2>
           </div>
           
@@ -638,7 +638,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
                     <div className="text-3xl font-bold text-slate-900 my-2">
                       {formatCurrency(result.companyTotalFreight)}
                     </div>
-                    <div className="text-sm font-medium text-indigo-600 bg-indigo-50 py-1.5 px-3 rounded-md mx-auto inline-block mt-2">
+                    <div className="text-sm font-medium text-amber-600 bg-amber-50 py-1.5 px-3 rounded-md mx-auto inline-block mt-2">
                       {formatCurrency(result.companyFreightPerTon)} / Tonelada
                     </div>
                   </div>
@@ -714,7 +714,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
                     </div>
                   )}
                   <div className="flex flex-col sm:flex-row gap-3">
-                    <button onClick={handleSave} className="flex-1 flex items-center justify-center px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm shadow-sm">
+                    <button onClick={handleSave} className="flex-1 flex items-center justify-center px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium text-sm shadow-sm">
                       <Save className="w-4 h-4 mr-2" /> Salvar Cotação
                     </button>
                     <button onClick={exportToCSV} className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium text-sm">

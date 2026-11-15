@@ -63,12 +63,12 @@ const VehicleFormModal: React.FC<VehicleFormModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-start mb-6">
           <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-3">
             {vehicleToEdit ? 'Editar Veículo' : 'Novo Veículo'}
             {vehicleToEdit && (
-              <span className="text-sm font-mono font-bold px-3 py-1 bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800">
+              <span className="text-sm font-mono font-bold px-3 py-1 bg-amber-50 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300 rounded-lg border border-amber-200 dark:border-amber-800">
                 ID: {vehicleToEdit.id}
               </span>
             )}
@@ -77,7 +77,7 @@ const VehicleFormModal: React.FC<VehicleFormModalProps> = ({
              <button
                type="button"
                onClick={() => onShowHistory(vehicleToEdit)}
-               className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50 rounded-lg font-bold text-sm transition-all border border-blue-100 dark:border-blue-800 shadow-sm"
+               className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50 rounded-lg font-bold text-sm transition-all border border-amber-100 dark:border-amber-800 shadow-sm"
              >
                <History className="w-4 h-4" />
                Ver Histórico

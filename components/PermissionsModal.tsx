@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { ProfilePermissions, Page, CrudPermissions, User } from '../types';
 import { UserProfile } from '../types';
+import { isDemoUser, isDeveloperUser, isAdminUser, filterVisibleUsers } from '../auth';
 import { Copy, RotateCcw } from 'lucide-react';
 
 interface PermissionsModalProps {
@@ -10,6 +11,7 @@ interface PermissionsModalProps {
   onSaveUserPermissions: (userId: string, customPermissions: { [key in Page]?: CrudPermissions }) => void;
   permissions: ProfilePermissions;
   users: User[];
+  currentUser?: User | null;
 }
 
 const PAGE_NAMES: Record<Page, string> = {
@@ -20,6 +22,7 @@ const PAGE_NAMES: Record<Page, string> = {
   'drivers': 'Motoristas',
   'vehicles': 'Veículos',
   'loads': 'Cargas (Cadastro)',
+  'locations': 'Expedidor/Recebedor',
   'products': 'Produtos',
   'shipments': 'Embarques',
   'shipment-history': 'Histórico de Embarques',
@@ -29,10 +32,12 @@ const PAGE_NAMES: Record<Page, string> = {
   'operational-loads': 'Cargas (Operacional)',
   'operational-map': 'Mapa Operacional',
   'users-register': 'Gerenciar Usuários',
+  'corporate-email': 'E-mail Corporativo',
   'commissions': 'Comissões',
   'appearance': 'Aparência',
   'layover-calculator': 'Cálculo de Estadias',
   'freight-quote': 'Cotação de Frete',
+  'atua-reconciliation': 'Auditoria Atua TMS',
   'ai-assistant': 'Assistente de IA',
   'tools-history': 'Histórico de Ferramentas',
   'freight-offers-history': 'Histórico de Ofertas',
@@ -40,6 +45,12 @@ const PAGE_NAMES: Record<Page, string> = {
   'system-monitor': 'Monitoramento do Sistema',
   'risk-management': 'Gerenciadora de Risco',
   'risk-query-types': 'Tipos de Consulta GR',
+  'whatsapp': 'WhatsApp',
+  'messenger': 'Mensageiro',
+  'apresentacao': 'Apresentação Comercial',
+  'apresentacao-comercial': 'Apresentação Comercial (Completa)',
+  'site': 'Website Institucional',
+  'website': 'Website Institucional (transcunhaoficial.com.br)',
 };
 
 const CATEGORIES = [
@@ -47,9 +58,9 @@ const CATEGORIES = [
   { name: 'Operacional', pages: ['loads', 'shipments', 'operational-map', 'shipment-history', 'load-history', 'operational-loads', 'risk-management'] as Page[] },
   { name: 'Financeiro', pages: ['financial', 'commissions'] as Page[] },
   { name: 'Relatórios', pages: ['reports'] as Page[] },
-  { name: 'Cadastros', pages: ['clients', 'owners', 'embarcadores', 'drivers', 'vehicles', 'products', 'users-register', 'branches', 'risk-query-types'] as Page[] },
+  { name: 'Cadastros', pages: ['clients', 'owners', 'embarcadores', 'drivers', 'vehicles', 'locations', 'products', 'users-register', 'branches', 'risk-query-types'] as Page[] },
   { name: 'Configurações', pages: ['appearance'] as Page[] },
-  { name: 'Ferramentas', pages: ['layover-calculator', 'freight-quote', 'ai-assistant', 'freight-offers-history', 'tools-history', 'system-monitor'] as Page[] }
+  { name: 'Ferramentas', pages: ['layover-calculator', 'freight-quote', 'atua-reconciliation', 'ai-assistant', 'freight-offers-history', 'tools-history', 'system-monitor', 'messenger'] as Page[] }
 ];
 
 const READ_ONLY_PAGES = [
@@ -66,7 +77,7 @@ const PERMISSION_NAMES: Record<keyof CrudPermissions, string> = {
 };
 
 const PermissionsModal: React.FC<PermissionsModalProps> = ({ 
-  isOpen, onClose, onSaveProfilePermissions, onSaveUserPermissions, permissions, users 
+  isOpen, onClose, onSaveProfilePermissions, onSaveUserPermissions, permissions, users, currentUser 
 }) => {
   const [mode, setMode] = useState<'profile' | 'user'>('profile');
   
@@ -79,7 +90,7 @@ const PermissionsModal: React.FC<PermissionsModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setEditableProfilePermissions(JSON.parse(JSON.stringify(permissions)));
-      const firstNonAdminUser = users.find(u => u.profile !== UserProfile.Admin);
+      const firstNonAdminUser = filterVisibleUsers(users, currentUser).find(u => u.profile !== UserProfile.Admin && !isDeveloperUser(u) && (isAdminUser(currentUser) || !isDemoUser(u)));
       if (firstNonAdminUser) setSelectedUserId(firstNonAdminUser.id);
     }
   }, [permissions, isOpen, users]);
@@ -207,8 +218,10 @@ const PermissionsModal: React.FC<PermissionsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const availableProfiles = Object.values(UserProfile).filter(p => p !== UserProfile.Admin);
-  const availableUsers = users.filter(u => u.profile !== UserProfile.Admin);
+  const isDev = isDeveloperUser(currentUser);
+  const isAdmin = isAdminUser(currentUser);
+  const availableProfiles = Object.values(UserProfile).filter(p => p !== UserProfile.Admin && (isDev || p !== UserProfile.Desenvolvedor) && (isDev || isAdmin || p !== UserProfile.Demonstracao));
+  const availableUsers = filterVisibleUsers(users, currentUser).filter(u => u.profile !== UserProfile.Admin && !isDeveloperUser(u) && (isAdmin || !isDemoUser(u)));
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
@@ -267,9 +280,9 @@ const PermissionsModal: React.FC<PermissionsModalProps> = ({
                 </p>
               </div>
 
-              <div className="w-full md:w-auto p-3 bg-blue-50 dark:bg-blue-950/40 rounded-lg border border-blue-200 dark:border-blue-800">
-                <label className="block text-xs font-bold text-blue-900 dark:text-blue-200 mb-1 flex items-center gap-1">
-                  <Copy className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <div className="w-full md:w-auto p-3 bg-amber-50 dark:bg-amber-950/40 rounded-lg border border-amber-200 dark:border-amber-800">
+                <label className="block text-xs font-bold text-amber-900 dark:text-amber-200 mb-1 flex items-center gap-1">
+                  <Copy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                   Espelhar Acessos de Outro Usuário:
                 </label>
                 <select
@@ -277,7 +290,7 @@ const PermissionsModal: React.FC<PermissionsModalProps> = ({
                     handleMirrorUserPermissions(e.target.value);
                     e.target.value = '';
                   }}
-                  className="w-full pl-2.5 pr-8 py-1.5 text-xs border border-blue-300 dark:border-blue-700 rounded bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 cursor-pointer"
+                  className="w-full pl-2.5 pr-8 py-1.5 text-xs border border-amber-300 dark:border-amber-700 rounded bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 cursor-pointer"
                   defaultValue=""
                 >
                   <option value="" disabled>Selecione um usuário para espelhar...</option>
@@ -339,7 +352,7 @@ const PermissionsModal: React.FC<PermissionsModalProps> = ({
                       <tr key={page} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                         <td className="px-6 py-3 text-sm font-medium text-gray-900 dark:text-gray-200">
                           {PAGE_NAMES[page] || page}
-                          {isReadOnly && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">Somente Leitura</span>}
+                          {isReadOnly && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">Somente Leitura</span>}
                         </td>
                         {(Object.keys(PERMISSION_NAMES) as (keyof CrudPermissions)[]).map(action => (
                           <td key={action} className="px-2 py-3 text-center">

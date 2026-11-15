@@ -1,5 +1,7 @@
 import { Shipment, Cargo, OperationalExpenseItem, RealProfitData, RISK_QUERY_COST_MAP, ShipmentStatus } from '../types';
 import { calculateTacTaxDeductions } from './freightCalculation';
+import { StayRecord, extractCteNumberFromStay } from './toolStorage';
+import { isStayForShipment } from '../utils';
 
 export interface OperationalExpensesConfig {
   insuranceAcidenteRate: number; // 0.0125% -> 0.000125
@@ -46,7 +48,17 @@ export interface CalculatedOperationalExpenses {
   salespersonCommission: number;
   shipperCommission: number;
   agencyCommission: number;
+  driverExtraPayments?: number;
+  demurrageRevenue?: number;
+  demurrageDriverPaid?: number;
+  demurrageProfit?: number;
+  stayIcmsTotal?: number;
+  stayFederalTaxTotal?: number;
   riskCost: number;
+  financialCostValue: number;
+  financialCostEffectiveRate: number;
+  financialCostMonthlyRate: number;
+  financialCostDaysTerm: number;
   generatedCredit: number;
   expenseItems: OperationalExpenseItem[];
   totalExpenses: number; // Total deduções sem frete motorista
@@ -74,21 +86,28 @@ export interface CalculatedOperationalExpenses {
 export function calculateShipmentExpenses(
   shipment: Shipment,
   cargo?: Cargo,
-  config: OperationalExpensesConfig = DEFAULT_EXPENSES_CONFIG
+  config: OperationalExpensesConfig = DEFAULT_EXPENSES_CONFIG,
+  stays?: StayRecord[]
 ): CalculatedOperationalExpenses {
   const companyFreightRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
   const tonnage = shipment.shipmentTonnage || cargo?.totalVolume || 0;
 
   // 1. Frete Empresa Bruto
-  const companyFreight = shipment.realProfitData?.companyFreight !== undefined && shipment.realProfitData.companyFreight > 0
-    ? shipment.realProfitData.companyFreight
-    : (companyFreightRate > 0 && tonnage > 0 ? Number((companyFreightRate * tonnage).toFixed(2)) : (shipment.driverFreightValue || 0));
+  const calculatedCompanyFreight = (companyFreightRate > 0 && tonnage > 0) ? Number((companyFreightRate * tonnage).toFixed(2)) : 0;
+  const companyFreight = (calculatedCompanyFreight > 0 && shipment.realProfitData?.companyFreight && Math.abs(shipment.realProfitData.companyFreight - calculatedCompanyFreight) > 5.00 && (shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon))
+    ? calculatedCompanyFreight
+    : (shipment.realProfitData?.companyFreight !== undefined && shipment.realProfitData.companyFreight > 0
+        ? shipment.realProfitData.companyFreight
+        : (calculatedCompanyFreight > 0 ? calculatedCompanyFreight : (shipment.driverFreightValue || 0)));
 
   // 2. Frete Motorista
   const driverRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+  const calculatedDriverFreight = (driverRate > 0 && tonnage > 0) ? Number((driverRate * tonnage).toFixed(2)) : 0;
   const driverFreight = shipment.realProfitData?.driverFreight !== undefined && shipment.realProfitData.driverFreight > 0
     ? shipment.realProfitData.driverFreight 
-    : (shipment.driverFreightValue || (driverRate > 0 && tonnage > 0 ? Number((driverRate * tonnage).toFixed(2)) : 0));
+    : ((calculatedDriverFreight > 0 && shipment.driverFreightValue && Math.abs(Number(shipment.driverFreightValue) - calculatedDriverFreight) > 5.00 && shipment.driverFreightRateSnapshot)
+        ? calculatedDriverFreight
+        : (Number(shipment.driverFreightValue) || calculatedDriverFreight));
 
   // Perfil PF vs PJ (PJ / ETC é 100% isento de INSS Patronal / CPRB)
   const isExplicitPj = shipment.driverFreightType === 'PJ' || 
@@ -122,14 +141,46 @@ export function calculateShipmentExpenses(
           ));
 
   // 3. ICMS Destacado Completo
-  const icmsPercentage = cargo?.icmsPercentage || (cargo?.hasIcms ? 7 : 0);
-  const icmsBruto = (cargo?.hasIcms && icmsPercentage > 0)
+  // Se a carga NÃO tem ICMS destacado no seu cadastro, nenhum embarque vinculado pode destacar/deduzir ICMS
+  const isCargoWithoutIcms = Boolean(
+    cargo &&
+    !cargo.hasIcms &&
+    !(cargo.icmsPercentage && Number(cargo.icmsPercentage) > 0) &&
+    !(cargo.freightLegs && cargo.freightLegs[0]?.hasIcms === true) &&
+    !(cargo.freightLegs && Number(cargo.freightLegs[0]?.icmsPercentage) > 0) &&
+    (cargo as any).freightCalculationType !== 'per_ton_plus_icms' &&
+    !(cargo.freightLegs && (cargo.freightLegs[0] as any)?.freightCalculationType === 'per_ton_plus_icms') &&
+    !(shipment as any)?.hasIcms
+  );
+
+  // Prioridade 1: Carga sem ICMS, isenção explícita ou ICMS zerado
+  const isIcmsExemptExplicit = Boolean(
+    isCargoWithoutIcms ||
+    (shipment as any)?.isIcmsExempt ||
+    (shipment.documents as any)?.is_icms_exempt ||
+    (shipment.documents as any)?.isIcmsExempt ||
+    shipment.realProfitData?.isIcmsExempt ||
+    shipment.icmsValue === 0 ||
+    (shipment.documents as any)?.icms_value === 0 ||
+    (shipment.documents as any)?.icms_value === '0' ||
+    (shipment.documents as any)?.valor_icms === 0 ||
+    shipment.realProfitData?.icmsDifference === 0
+  );
+
+  const icmsDocExplicit = !isIcmsExemptExplicit && (shipment.realProfitData?.icmsDifference !== undefined && shipment.realProfitData.icmsDifference !== null && Number(shipment.realProfitData.icmsDifference) > 0)
+    ? Number(shipment.realProfitData.icmsDifference)
+    : (!isIcmsExemptExplicit ? (Number((shipment.documents as any)?.icms_value) || Number(shipment.icmsValue) || 0) : 0);
+
+  const icmsPercentage = isIcmsExemptExplicit ? 0 : (cargo?.icmsPercentage || (cargo?.hasIcms ? 7 : ((shipment as any)?.icmsPercentage || 0)));
+  const icmsCalculado = (!isIcmsExemptExplicit && cargo?.hasIcms && icmsPercentage > 0)
     ? Number((companyFreight * (icmsPercentage / 100)).toFixed(2))
     : 0;
-  const icms = icmsBruto > 0 ? icmsBruto : (shipment.realProfitData?.icmsDifference || 0);
+
+  const icms = isIcmsExemptExplicit ? 0 : (icmsDocExplicit > 0 ? icmsDocExplicit : icmsCalculado);
+  const icmsBruto = icms;
 
   // 4. Frete Empresa Líquido de ICMS
-  const freteLiquidoIcms = Math.max(0, companyFreight - icmsBruto);
+  const freteLiquidoIcms = Math.max(0, companyFreight - icms);
 
   // 5. Diferença de Frete / Spread Comercial
   const freightDifference = Number((freteLiquidoIcms - driverFreight).toFixed(2));
@@ -187,8 +238,24 @@ export function calculateShipmentExpenses(
     ? manualFederalTax
     : (isExportCargo ? 0 : impostoFederalMercadoInterno);
 
+  const isComplementar = Boolean(
+    shipment.isComplementar || 
+    (shipment.documents as any)?.is_complementar || 
+    (shipment.documents as any)?.isComplementar
+  );
+
   // 7. INSS Patronal / CPRB (4% sobre Frete Motorista - Pedágio se PF, Isento se PJ)
-  const toll = shipment.tollValue || shipment.realProfitData?.toll || 0;
+  // No complementar, pedágio é sempre 0 e NÃO é descontado
+  const rawToll = isComplementar
+    ? 0
+    : (shipment.tollValue !== undefined && shipment.tollValue !== null && !isNaN(Number(shipment.tollValue))
+        ? Number(shipment.tollValue)
+        : (Number(shipment.realProfitData?.toll) ||
+           Number((shipment.documents as any)?.toll_value) ||
+           Number((shipment.documents as any)?.valor_pedagio) ||
+           Number((shipment.documents as any)?.financeiro?.valorPedagio) ||
+           0));
+  const toll = (!isNaN(rawToll) && rawToll >= 0 && rawToll <= 25000) ? rawToll : 0;
   const baseInssPatronal = Math.max(0, driverFreight - toll);
   const inssPatronal = isShipmentPf && baseInssPatronal > 0 
     ? Number((baseInssPatronal * config.patronalPfRate).toFixed(2)) 
@@ -197,6 +264,11 @@ export function calculateShipmentExpenses(
   // 8. Valor da NF e Base de Seguro (+18% somente em carga de exportação)
   const invoiceValue = shipment.nfeValue || 
                        shipment.realProfitData?.invoiceValue || 
+                       (shipment.documents as any)?.nfe_value ||
+                       (shipment.documents as any)?.valor_mercadoria ||
+                       (shipment.documents as any)?.vMerc ||
+                       (shipment.documents as any)?.invoice_value ||
+                       (shipment.documents as any)?.carga?.valorMercadoria ||
                        0;
   const insuranceBaseValue = invoiceValue > 0 
     ? Number((invoiceValue * (isExportCargo ? 1.18 : 1.00)).toFixed(2)) 
@@ -209,16 +281,23 @@ export function calculateShipmentExpenses(
   const insuranceRoubo = insuranceBaseValue > 0 
     ? Number((insuranceBaseValue * config.insuranceRouboRate).toFixed(2)) 
     : 0;
-  const insuranceRcv = config.insuranceRcvPerLoad;
+  const insuranceRcv = isComplementar ? 0 : config.insuranceRcvPerLoad;
   const totalInsurance = Number((insuranceAcidente + insuranceRoubo + insuranceRcv).toFixed(2));
 
-  // 10. CIOT (0,20% s/ Frete Motorista - Pedágio; se PF deduz também INSS e SEST/SENAT)
+  // 10. CIOT (0,20% s/ Frete Líquido do Motorista: deduz pedágio e, para TAC/PF, retenções de INSS e SEST/SENAT)
   let baseCiot = Math.max(0, driverFreight - toll);
   if (isShipmentPf && baseCiot > 0) {
     const tacTaxes = calculateTacTaxDeductions(driverFreight, toll);
     baseCiot = Math.max(0, baseCiot - tacTaxes.inss - tacTaxes.sestSenat);
   }
-  const ciot = baseCiot > 0 ? Number((baseCiot * config.ciotRate).toFixed(2)) : 0;
+  const isCiotManual = Boolean((shipment.realProfitData as any)?.isCiotManual);
+  const manualCiot = (shipment.realProfitData as any)?.ciot;
+  // No complementar, CIOT é SEMPRE R$ 0,00 (NÃO é descontado no Complementar)
+  const ciot = isComplementar
+    ? 0
+    : (isCiotManual && manualCiot !== undefined
+        ? Number(manualCiot)
+        : (baseCiot > 0 ? Number((baseCiot * config.ciotRate).toFixed(2)) : 0));
 
   // 11. Custo Fixo (0,35% s/ Frete Bruto)
   const custoFixo = companyFreight > 0 
@@ -273,16 +352,21 @@ export function calculateShipmentExpenses(
     (shipment.status as string) === 'Ag. Seguradora';
 
   let riskCost = 0;
-  if (!isRiskRequired) {
-    riskCost = 0;
-  } else if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && shipment.riskQueryCost > 0) {
+  if (isComplementar) {
+    riskCost = 0; // Consulta GR já realizada no embarque principal
+  } else if (!isRiskRequired) {
+    riskCost = (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && Number(shipment.riskQueryCost) > 0) ? Number(shipment.riskQueryCost) : 0;
+  } else if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && Number(shipment.riskQueryCost) > 0) {
     riskCost = Number(shipment.riskQueryCost);
-  } else if (historyRiskCost !== undefined && historyRiskCost !== null && historyRiskCost > 0) {
+  } else if (historyRiskCost !== undefined && historyRiskCost !== null && Number(historyRiskCost) > 0) {
     riskCost = historyRiskCost;
-  } else if (effectiveRiskType) {
+  } else if (effectiveRiskType && effectiveRiskType !== 'Pendente de Definição') {
     riskCost = (RISK_QUERY_COST_MAP[effectiveRiskType] ?? RISK_QUERY_COST_MAP[effectiveRiskType.toLowerCase().trim()] ?? 6.50);
   } else if (shipment.riskReleaseCode && !isPreCadastroOrSeguradora) {
     riskCost = 6.50;
+  } else if ((shipment.status === ShipmentStatus.Cancelado || (shipment as any)?.releaseStatus === 'Reprovado') && !isPreCadastroOrSeguradora) {
+    const inferredType = effectiveRiskType || 'Cadastro Geral + Biometria';
+    riskCost = RISK_QUERY_COST_MAP[inferredType] ?? RISK_QUERY_COST_MAP[inferredType.toLowerCase().trim()] ?? 31.50;
   } else {
     riskCost = 0;
   }
@@ -417,6 +501,52 @@ export function calculateShipmentExpenses(
     });
   }
 
+  // 14.1.1 Custo Financeiro (pro rata s/ Frete Empresa conforme taxa mensal e prazo)
+  const isFinancialCostActive = Boolean(
+    (shipment.financialCostValue !== undefined && Number(shipment.financialCostValue) > 0) ||
+    (shipment.financialCostRate !== undefined && Number(shipment.financialCostRate) > 0) ||
+    cargo?.financialCostEnabled === true ||
+    (cargo?.financialCostMonthlyRate !== undefined && Number(cargo.financialCostMonthlyRate) > 0 && cargo?.financialCostDaysTerm !== undefined && Number(cargo.financialCostDaysTerm) > 0)
+  );
+
+  const financialCostMonthlyRate = shipment.financialCostMonthlyRate !== undefined && shipment.financialCostMonthlyRate !== null
+    ? Number(shipment.financialCostMonthlyRate)
+    : (cargo?.financialCostMonthlyRate !== undefined && cargo.financialCostMonthlyRate !== null
+        ? Number(cargo.financialCostMonthlyRate)
+        : 0);
+
+  const financialCostDaysTerm = shipment.financialCostDaysTerm !== undefined && shipment.financialCostDaysTerm !== null
+    ? Number(shipment.financialCostDaysTerm)
+    : (cargo?.financialCostDaysTerm !== undefined && cargo.financialCostDaysTerm !== null
+        ? Number(cargo.financialCostDaysTerm)
+        : 30);
+
+  const financialCostBaseDays = cargo?.financialCostBaseDays || 30;
+
+  const financialCostEffectiveRate = shipment.financialCostRate !== undefined && shipment.financialCostRate !== null
+    ? Number(shipment.financialCostRate)
+    : (cargo?.financialCostEffectiveRate !== undefined && cargo.financialCostEffectiveRate !== null
+        ? Number(cargo.financialCostEffectiveRate)
+        : (financialCostBaseDays > 0 ? Number(((financialCostMonthlyRate * financialCostDaysTerm) / financialCostBaseDays).toFixed(4)) : 0));
+
+  const calculatedFinancialCost = (financialCostEffectiveRate > 0 && companyFreight > 0)
+    ? Number((companyFreight * (financialCostEffectiveRate / 100)).toFixed(2))
+    : 0;
+
+  const financialCostValue = calculatedFinancialCost > 0
+    ? calculatedFinancialCost
+    : ((shipment.financialCostValue !== undefined && shipment.financialCostValue !== null && Number(shipment.financialCostValue) > 0)
+        ? Number(shipment.financialCostValue)
+        : (isFinancialCostActive ? calculatedFinancialCost : 0));
+
+  if (financialCostValue > 0) {
+    expenseItems.push({
+      name: `Custo Financeiro (${financialCostEffectiveRate.toFixed(2).replace('.', ',')}% - ${financialCostDaysTerm} dias a ${financialCostMonthlyRate}% a.m.)`,
+      value: financialCostValue,
+      type: 'negative'
+    });
+  }
+
   // 14.2 Comissão do Embarcador (Informativo - não deduz do Resultado (=))
   const isShipperCommEnabled = Boolean(
     shipment.shipperCommissionEnabled === true ||
@@ -479,11 +609,117 @@ export function calculateShipmentExpenses(
       lower.includes('comissao de agencia') ||
       lower.includes('agenciamento') ||
       lower.includes('agenciador') ||
+      lower.includes('custo financeiro') ||
       lower.includes('gr') ||
-      lower.includes('gerenciadora');
+      lower.includes('gerenciadora') ||
+      lower.includes('estadia') ||
+      lower.includes('diária') ||
+      lower.includes('diaria');
 
     if (!isDuplicate && Number(item.value) > 0) {
       expenseItems.push(item);
+    }
+  }
+
+  // 14.4 Acréscimo Avulso ao Motorista (Diárias, Estadia, Bônus, Ajuda de Custo)
+  // Identifica se há estadias vinculadas (via parâmetro stays ou shipment.stays)
+  const linkedStays = (stays && stays.length > 0)
+    ? stays.filter(st => isStayForShipment(st, shipment))
+    : ((shipment as any).stays && Array.isArray((shipment as any).stays) ? (shipment as any).stays.filter((st: any) => isStayForShipment(st, shipment)) : []);
+
+  const demurrageRevenue = linkedStays.reduce((sum: number, st: any) => sum + (Number(st.approvedValue ?? st.approved_value) || 0), 0);
+  const demurrageDriverPaid = linkedStays.reduce((sum: number, st: any) => sum + (Number(st.driverPaidValue ?? st.driver_paid_value) || 0), 0);
+  const demurrageProfit = demurrageRevenue - demurrageDriverPaid;
+
+  // Tributos do CT-e Complementar de Estadia (ICMS e Imposto Federal)
+  let stayIcmsTotal = 0;
+  let stayFederalTaxTotal = 0;
+
+  if (linkedStays.length > 0) {
+    for (const st of linkedStays) {
+      const cteNum = st.cteNumber || extractCteNumberFromStay(st) || 'S/N';
+      const stApproved = Number(st.approvedValue ?? st.approved_value) || 0;
+
+      // ICMS do CT-e Complementar
+      const stIcmsPct = st.icmsPercentage !== undefined && st.icmsPercentage !== null
+        ? Number(st.icmsPercentage)
+        : (icmsPercentage > 0 && !isIcmsExemptExplicit ? icmsPercentage : 0);
+
+      const stIcmsVal = st.icmsValue !== undefined && st.icmsValue !== null
+        ? Number(st.icmsValue)
+        : ((isIcmsExemptExplicit || stIcmsPct <= 0 || stApproved <= 0)
+            ? 0
+            : Number(((stApproved * (stIcmsPct / 100))).toFixed(2)));
+
+      if (stIcmsVal > 0) {
+        stayIcmsTotal += stIcmsVal;
+        expenseItems.push({
+          name: `ICMS CT-e Comp. Estadia (CT-e nº ${cteNum}) (${stIcmsPct}%)`,
+          value: stIcmsVal,
+          type: 'negative'
+        });
+      }
+
+      // Imposto Federal do CT-e Complementar
+      const defaultFedRate = isSimplesNacional ? simplesFederalRate : (isShipmentPf ? 0.03655 : 0.0925);
+      const stFedTaxVal = st.federalTaxValue !== undefined && st.federalTaxValue !== null
+        ? Number(st.federalTaxValue)
+        : (isExportCargo ? 0 : (defaultFedRate > 0 && stApproved > 0 ? Number((stApproved * defaultFedRate).toFixed(2)) : 0));
+
+      if (stFedTaxVal > 0) {
+        stayFederalTaxTotal += stFedTaxVal;
+        expenseItems.push({
+          name: `Imposto Federal CT-e Comp. Estadia (CT-e nº ${cteNum})`,
+          value: stFedTaxVal,
+          type: 'negative'
+        });
+      }
+    }
+  }
+
+  const rawExtraPayments = Array.isArray(shipment.driverExtraPayments) ? shipment.driverExtraPayments : [];
+  let stayExtraPayments = 0;
+  let otherExtraPayments = 0;
+
+  if (rawExtraPayments.length > 0) {
+    for (const p of rawExtraPayments) {
+      const amt = Number(p.amount) || 0;
+      if (/di[aá]ria|estadia/i.test(p.reason || '')) {
+        stayExtraPayments += amt;
+      } else {
+        otherExtraPayments += amt;
+      }
+    }
+  } else {
+    const totalExtra = Number(shipment.driverExtraPaymentsTotal || 0) || Number(shipment.realProfitData?.driverSurcharge || 0) || 0;
+    if (demurrageDriverPaid > 0 && Math.abs(totalExtra - demurrageDriverPaid) < 1.0) {
+      stayExtraPayments = totalExtra;
+    } else {
+      otherExtraPayments = totalExtra;
+    }
+  }
+
+  // Se o pagamento de estadia ao motorista já está computado nas estadias vinculadas
+  // (demurrageDriverPaid > 0) ou se houver receita de CT-e complementar (demurrageRevenue > 0):
+  // o valor pago ao motorista já é integrado na apuração de estadias (demurrageProfit = demurrageRevenue - demurrageDriverPaid).
+  // Abater novamente o valor da estadia como "Acréscimo Avulso" duplicaria o desconto ao motorista sem a contrapartida da receita!
+  const stayAlreadyAccountedFor = demurrageDriverPaid > 0
+    ? Math.min(demurrageDriverPaid, stayExtraPayments)
+    : (demurrageRevenue > 0 ? Math.min(demurrageRevenue, stayExtraPayments) : 0);
+
+  const effectiveStayExtra = Math.max(0, stayExtraPayments - stayAlreadyAccountedFor);
+  const effectiveDriverExtra = Number((otherExtraPayments + effectiveStayExtra).toFixed(2));
+
+  if (effectiveDriverExtra > 0) {
+    const hasExistingExtra = expenseItems.some(i => i.name.toLowerCase().includes('acréscimo avulso') || i.name.toLowerCase().includes('acrescimo avulso'));
+    if (!hasExistingExtra) {
+      expenseItems.push({
+        name: otherExtraPayments > 0 && effectiveStayExtra > 0
+          ? 'Acréscimo Avulso Motorista (Bônus / Diária Excedente)'
+          : (effectiveStayExtra > 0 ? 'Acréscimo Avulso (Estadia não Faturada)' : 'Acréscimo Avulso Motorista (Bônus / Ajuda de Custo)'),
+        value: Number(effectiveDriverExtra.toFixed(2)),
+        type: 'negative'
+      });
     }
   }
 
@@ -534,7 +770,17 @@ export function calculateShipmentExpenses(
     salespersonCommission,
     shipperCommission,
     agencyCommission,
+    driverExtraPayments: effectiveDriverExtra,
+    demurrageRevenue,
+    demurrageDriverPaid,
+    demurrageProfit,
+    stayIcmsTotal: Number(stayIcmsTotal.toFixed(2)),
+    stayFederalTaxTotal: Number(stayFederalTaxTotal.toFixed(2)),
     riskCost,
+    financialCostValue,
+    financialCostEffectiveRate,
+    financialCostMonthlyRate,
+    financialCostDaysTerm,
     generatedCredit,
     expenseItems,
     totalExpenses,

@@ -1,9 +1,9 @@
 
 import React from 'react';
-import type { User, Client } from '../types';
+import type { User, Client, Branch } from '../types';
 import { UserProfile } from '../types';
 import { WhatsAppIcon } from './icons';
-import { Building2, Smartphone, PhoneOff, Eye } from 'lucide-react';
+import { Building2, Smartphone, PhoneOff, Eye, Mail } from 'lucide-react';
 
 interface UserTableProps {
   users: User[];
@@ -12,11 +12,22 @@ interface UserTableProps {
   onDelete?: (userId: string) => void;
   onInspectUser?: (user: User) => void;
   clients?: Client[];
+  branches?: Branch[];
   showAppOptionColumn?: boolean;
   onToggleDriverRequests?: (user: User) => void;
 }
 
-const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete, onInspectUser, clients, showAppOptionColumn = false, onToggleDriverRequests }) => {
+const UserTable: React.FC<UserTableProps> = ({ 
+  users, 
+  allUsers, 
+  onEdit, 
+  onDelete, 
+  onInspectUser, 
+  clients, 
+  branches,
+  showAppOptionColumn = false, 
+  onToggleDriverRequests 
+}) => {
   const getWhatsAppUrl = (phone: string) => {
     const digits = phone.replace(/\D/g, '');
     const finalDigits = (digits.length === 10 || digits.length === 11) ? `55${digits}` : digits;
@@ -24,7 +35,7 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
   };
 
   const isInternal = (profile?: UserProfile | string) => {
-    return profile !== UserProfile.Cliente && profile !== UserProfile.Motorista;
+    return profile !== UserProfile.Cliente && profile !== UserProfile.Motorista && profile !== UserProfile.Aluno;
   };
 
   const fullUserList = allUsers || users;
@@ -37,9 +48,10 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
             <tr>
               <th scope="col" className="w-24 px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">ID</th>
               <th scope="col" className="px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Nome</th>
-              <th scope="col" className="px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Email</th>
+              <th scope="col" className="px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Email / Usuário</th>
               <th scope="col" className="w-36 px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Telefone</th>
               <th scope="col" className="w-44 px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Perfil</th>
+              <th scope="col" className="w-40 px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Filial</th>
               <th scope="col" className="w-24 px-3 sm:px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Status</th>
               {showAppOptionColumn && (
                 <th scope="col" className="w-48 px-3 sm:px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">
@@ -60,7 +72,7 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
               return (
               <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                 <td className="px-3 sm:px-4 py-3 whitespace-nowrap">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                     {user.id}
                   </span>
                 </td>
@@ -68,7 +80,13 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
                   {user.name}
                 </td>
                 <td className="px-3 sm:px-4 py-3 text-sm text-gray-500 dark:text-gray-400 truncate max-w-[200px] lg:max-w-xs xl:max-w-none" title={user.email}>
-                  {user.email}
+                  <div className="font-medium text-gray-900 dark:text-gray-100">{user.email}</div>
+                  {user.corporateEmail && user.corporateEmail !== user.email && (
+                    <div className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 font-mono" title={`E-mail corporativo: ${user.corporateEmail}`}>
+                      <Mail className="w-3 h-3 shrink-0" />
+                      <span>{user.corporateEmail}</span>
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                   {user.phone ? (
@@ -92,16 +110,31 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
                   <div className="flex flex-col gap-0.5">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-medium text-gray-900 dark:text-white">{user.profile}</span>
+                      {user.profile === UserProfile.Desenvolvedor && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-500/30">
+                          ⚡ Desenvolvedor (Oculto)
+                        </span>
+                      )}
+                      {user.profile === UserProfile.Demonstracao && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300 border border-amber-500/30">
+                          🔒 Demonstração (Oculto)
+                        </span>
+                      )}
                       {user.profile === UserProfile.Agenciador && (
                         user.agencyRole === 'embarque' ? (
-                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-300">
-                            Agenciador Embarque
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">
+                            Agenciador Embarque {user.operatorCommissionPercentage !== undefined ? `(${user.operatorCommissionPercentage}%)` : (user.agencyCommissionPercentage !== undefined && user.agencyCommissionPercentage < 30 ? `(${user.agencyCommissionPercentage}%)` : '')}
                           </span>
                         ) : (
                           <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300">
                             Agenciador Líder ({user.agencyCommissionPercentage ?? 30}%)
                           </span>
                         )
+                      )}
+                      {user.profile === UserProfile.Agenciador && user.hasCommercialCommission && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300" title="Comissão Comercial Ativa (+ Fixo / % Matriz / % Filiais)">
+                          + Comiss. Comercial
+                        </span>
                       )}
                       {user.shipperCommissionRatePerTon !== undefined && user.shipperCommissionRatePerTon > 0 && (
                         <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300" title={`Comissão do Embarcador: R$ ${user.shipperCommissionRatePerTon.toFixed(2)} por tonelada`}>
@@ -115,15 +148,39 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
                       </span>
                     )}
                     {user.profile === UserProfile.Cliente && user.clientId && (
-                      <span className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 font-medium truncate max-w-[160px]" title={clients?.find(c => c.id === user.clientId)?.nomeFantasia || clients?.find(c => c.id === user.clientId)?.razaoSocial}>
+                      <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 font-medium truncate max-w-[160px]" title={clients?.find(c => c.id === user.clientId)?.nomeFantasia || clients?.find(c => c.id === user.clientId)?.razaoSocial}>
                         <Building2 className="w-3 h-3 flex-shrink-0" />
                         {clients?.find(c => c.id === user.clientId)?.nomeFantasia || clients?.find(c => c.id === user.clientId)?.razaoSocial || `Cliente: ${user.clientId}`}
                       </span>
                     )}
                   </div>
                 </td>
+                <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                  {isInternal(user.profile) ? (
+                    user.branchId ? (
+                      (() => {
+                        const branch = branches?.find(b => b.id === user.branchId);
+                        return (
+                          <span 
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shadow-xs" 
+                            title={branch ? `${branch.name} (${branch.city} - ${branch.state})` : `Filial ID: ${user.branchId}`}
+                          >
+                            <Building2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span className="truncate max-w-[140px] font-medium">{branch ? branch.name : user.branchId}</span>
+                          </span>
+                        );
+                      })()
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700/60 dark:text-gray-400 border border-gray-200 dark:border-gray-600" title="Usuário com acesso a todas as filiais">
+                        Todas
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-gray-400 dark:text-gray-600 text-xs">-</span>
+                  )}
+                </td>
                 <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-center">
-                  <span className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${user.active ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' : 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}>
+                  <span className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${user.active ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300' : 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}>
                     {user.active ? 'Ativo' : 'Inativo'}
                   </span>
                 </td>
@@ -169,7 +226,7 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
                         <button
                           type="button"
                           onClick={() => onInspectUser(user)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 transition-all shadow-sm active:scale-95"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-800 transition-all shadow-sm active:scale-95"
                           title="Espelhar e Revisar Acessos do Usuário em Tempo Real"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -177,7 +234,7 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
                         </button>
                       )}
                       {onEdit && (
-                        <button onClick={() => onEdit(user)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Editar</button>
+                        <button onClick={() => onEdit(user)} className="text-amber-600 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-300">Editar</button>
                       )}
                       {onDelete && (
                         <button onClick={() => onDelete(user.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Excluir</button>
@@ -190,7 +247,7 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
           })}
             {users.length === 0 && (
               <tr>
-                <td colSpan={((onEdit || onDelete || onInspectUser) ? 7 : 6) + (showAppOptionColumn ? 1 : 0)} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={((onEdit || onDelete || onInspectUser) ? 8 : 7) + (showAppOptionColumn ? 1 : 0)} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                   Nenhum usuário encontrado para os filtros selecionados.
                 </td>
               </tr>

@@ -11,11 +11,11 @@ import type {
   Driver, Vehicle, Product, FreightOffer, RiskQueryOption, Ticket 
 } from '../types';
 import { UserProfile } from '../types';
-import { can } from '../auth';
+import { can, isDeveloperUser, filterVisibleUsers, filterVisibleProfiles } from '../auth';
 import { useToast } from '../hooks/useToast';
-import { Building2, Globe, Truck, Users } from 'lucide-react';
+import { Building2, Globe, Truck, Users, Mail, GraduationCap, Link2 } from 'lucide-react';
 
-export type UserTabType = 'internal' | 'external_clients' | 'external_drivers' | 'all';
+export type UserTabType = 'internal' | 'external_clients' | 'external_drivers' | 'external_students' | 'all';
 
 interface UsersPageProps {
   users: User[];
@@ -41,7 +41,7 @@ interface UsersPageProps {
 }
 
 export const isExternalUserProfile = (profile?: UserProfile | string): boolean => {
-  return profile === UserProfile.Cliente || profile === UserProfile.Motorista;
+  return profile === UserProfile.Cliente || profile === UserProfile.Motorista || profile === UserProfile.Aluno;
 };
 
 const UsersPage: React.FC<UsersPageProps> = ({ 
@@ -78,29 +78,38 @@ const UsersPage: React.FC<UsersPageProps> = ({
     status: '',
   });
 
-  const isAdmin = currentUser.profile === UserProfile.Admin;
+  const isDev = isDeveloperUser(currentUser);
+  const isAdmin = currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.GerenciadoraDeRisco || isDev;
 
   const canCreateUser = can('create', currentUser, 'users-register', profilePermissions);
   const canUpdateUser = can('update', currentUser, 'users-register', profilePermissions);
   const canDeleteUser = can('delete', currentUser, 'users-register', profilePermissions);
 
-  const internalCount = useMemo(() => users.filter(u => u.profile !== UserProfile.Cliente && u.profile !== UserProfile.Motorista).length, [users]);
-  const externalClientsCount = useMemo(() => users.filter(u => u.profile === UserProfile.Cliente).length, [users]);
-  const externalDriversCount = useMemo(() => users.filter(u => u.profile === UserProfile.Motorista).length, [users]);
-  const allCount = users.length;
+  const visibleUsersList = useMemo(() => {
+    return filterVisibleUsers(users, currentUser);
+  }, [users, currentUser]);
+
+  const internalCount = useMemo(() => visibleUsersList.filter(u => !isExternalUserProfile(u.profile)).length, [visibleUsersList]);
+  const externalClientsCount = useMemo(() => visibleUsersList.filter(u => u.profile === UserProfile.Cliente).length, [visibleUsersList]);
+  const externalDriversCount = useMemo(() => visibleUsersList.filter(u => u.profile === UserProfile.Motorista).length, [visibleUsersList]);
+  const externalStudentsCount = useMemo(() => visibleUsersList.filter(u => u.profile === UserProfile.Aluno).length, [visibleUsersList]);
+  const allCount = visibleUsersList.length;
 
   const availableProfiles = useMemo(() => {
+    let base: UserProfile[];
     if (activeTab === 'internal') {
-      return Object.values(UserProfile).filter(p => p !== UserProfile.Cliente && p !== UserProfile.Motorista);
+      base = Object.values(UserProfile).filter(p => !isExternalUserProfile(p));
+    } else if (activeTab === 'external_clients') {
+      base = [UserProfile.Cliente];
+    } else if (activeTab === 'external_drivers') {
+      base = [UserProfile.Motorista];
+    } else if (activeTab === 'external_students') {
+      base = [UserProfile.Aluno];
+    } else {
+      base = Object.values(UserProfile);
     }
-    if (activeTab === 'external_clients') {
-      return [UserProfile.Cliente];
-    }
-    if (activeTab === 'external_drivers') {
-      return [UserProfile.Motorista];
-    }
-    return Object.values(UserProfile);
-  }, [activeTab]);
+    return filterVisibleProfiles(base, currentUser);
+  }, [activeTab, currentUser]);
 
   const handleTabChange = (tab: UserTabType) => {
     setActiveTab(tab);
@@ -111,26 +120,30 @@ const UsersPage: React.FC<UsersPageProps> = ({
         setFilters(prev => ({ ...prev, profile: '' }));
       } else if (tab === 'external_drivers' && filters.profile !== UserProfile.Motorista) {
         setFilters(prev => ({ ...prev, profile: '' }));
+      } else if (tab === 'external_students' && filters.profile !== UserProfile.Aluno) {
+        setFilters(prev => ({ ...prev, profile: '' }));
       }
     }
   };
 
   const filteredUsers = useMemo(() => {
-    return users.filter(user => {
+    return visibleUsersList.filter(user => {
       // Category Tab Filter
       if (activeTab === 'internal' && isExternalUserProfile(user.profile)) return false;
       if (activeTab === 'external_clients' && user.profile !== UserProfile.Cliente) return false;
       if (activeTab === 'external_drivers' && user.profile !== UserProfile.Motorista) return false;
+      if (activeTab === 'external_students' && user.profile !== UserProfile.Aluno) return false;
 
       // Inputs & Dropdown Filters
       const idMatch = !filters.id || (user.id && user.id.toLowerCase().includes(filters.id.toLowerCase()));
       const nameMatch = !filters.name || (user.name && user.name.toLowerCase().includes(filters.name.toLowerCase()));
       const profileMatch = !filters.profile || user.profile === filters.profile;
       const statusMatch = !filters.status || (filters.status === 'active' ? user.active === true : user.active === false);
+      const branchMatch = !filters.branchId || (filters.branchId === 'none' ? !user.branchId : (user.branchId === filters.branchId || (user as any).filialId === filters.branchId));
 
-      return idMatch && nameMatch && profileMatch && statusMatch;
+      return idMatch && nameMatch && profileMatch && statusMatch && branchMatch;
     });
-  }, [users, filters, activeTab]);
+  }, [visibleUsersList, filters, activeTab]);
 
   const { showToast } = useToast();
 
@@ -165,20 +178,61 @@ const UsersPage: React.FC<UsersPageProps> = ({
     );
   };
 
-  const defaultProfileForNewUser = activeTab === 'external_drivers' ? UserProfile.Motorista : (activeTab === 'external_clients' ? UserProfile.Cliente : UserProfile.Comercial);
-  const addUserButtonLabel = activeTab === 'external_drivers' ? 'Adicionar Motorista' : (activeTab === 'external_clients' ? 'Adicionar Cliente' : 'Adicionar Usuário');
+  const defaultProfileForNewUser =
+    activeTab === 'external_drivers'
+      ? UserProfile.Motorista
+      : activeTab === 'external_clients'
+      ? UserProfile.Cliente
+      : activeTab === 'external_students'
+      ? UserProfile.Aluno
+      : UserProfile.Comercial;
+  const addUserButtonLabel =
+    activeTab === 'external_drivers'
+      ? 'Adicionar Motorista'
+      : activeTab === 'external_clients'
+      ? 'Adicionar Cliente'
+      : activeTab === 'external_students'
+      ? 'Adicionar Aluno'
+      : 'Adicionar Usuário';
+
+  const handleCopyCourseLink = async () => {
+    const url = `${window.location.origin}/curso-embarcador`;
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast(`Link direto do curso copiado: ${url}`, 'success');
+    } catch {
+      window.prompt('Copie o link direto do curso:', url);
+    }
+  };
 
   return (
     <>
       <Header title="Gerenciar Usuários">
+          <button
+              type="button"
+              onClick={handleCopyCourseLink}
+              className="px-4 py-2 bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800 rounded-lg hover:bg-violet-100 font-medium text-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Copiar link direto para o Curso para Embarcador (/curso-embarcador)"
+          >
+              <Link2 className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+              <span>Link Direto do Curso</span>
+          </button>
           {canUpdateUser && (
               <button
                   onClick={() => setIsPermissionsModalOpen(true)}
-                  className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 font-medium text-sm transition-colors"
+                  className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 font-medium text-sm transition-colors cursor-pointer"
               >
                   Gerenciar Permissões
               </button>
           )}
+          <a
+              href="/corporate-email"
+              className="px-4 py-2 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-lg hover:bg-amber-100 font-medium text-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Gerenciar e-mails corporativos @transcunhaoficial.com.br"
+          >
+              <Mail className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span>E-mail Corporativo</span>
+          </a>
           {canCreateUser && (
               <button
                   onClick={handleOpenUserModal}
@@ -196,7 +250,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
             onClick={() => handleTabChange('internal')}
             className={`whitespace-nowrap flex items-center py-4 px-2 border-b-2 font-medium text-sm transition-all duration-200 ${
               activeTab === 'internal'
-                ? 'border-primary text-primary dark:border-blue-400 dark:text-blue-400 font-bold'
+                ? 'border-primary text-primary dark:border-amber-400 dark:text-amber-400 font-bold'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200'
             }`}
           >
@@ -204,7 +258,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
             <span>Usuários Internos</span>
             <span className={`ml-2 px-2.5 py-0.5 text-xs rounded-full font-bold transition-colors ${
               activeTab === 'internal'
-                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200'
+                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200'
                 : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
             }`}>
               {internalCount}
@@ -215,7 +269,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
             onClick={() => handleTabChange('external_clients')}
             className={`whitespace-nowrap flex items-center py-4 px-2 border-b-2 font-medium text-sm transition-all duration-200 ${
               activeTab === 'external_clients'
-                ? 'border-primary text-primary dark:border-blue-400 dark:text-blue-400 font-bold'
+                ? 'border-primary text-primary dark:border-amber-400 dark:text-amber-400 font-bold'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200'
             }`}
           >
@@ -223,7 +277,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
             <span>Usuários Externos (Clientes)</span>
             <span className={`ml-2 px-2.5 py-0.5 text-xs rounded-full font-bold transition-colors ${
               activeTab === 'external_clients'
-                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200'
+                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200'
                 : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
             }`}>
               {externalClientsCount}
@@ -234,7 +288,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
             onClick={() => handleTabChange('external_drivers')}
             className={`whitespace-nowrap flex items-center py-4 px-2 border-b-2 font-medium text-sm transition-all duration-200 ${
               activeTab === 'external_drivers'
-                ? 'border-primary text-primary dark:border-blue-400 dark:text-blue-400 font-bold'
+                ? 'border-primary text-primary dark:border-amber-400 dark:text-amber-400 font-bold'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200'
             }`}
           >
@@ -250,10 +304,29 @@ const UsersPage: React.FC<UsersPageProps> = ({
           </button>
 
           <button
+            onClick={() => handleTabChange('external_students')}
+            className={`whitespace-nowrap flex items-center py-4 px-2 border-b-2 font-medium text-sm transition-all duration-200 ${
+              activeTab === 'external_students'
+                ? 'border-primary text-primary dark:border-violet-400 dark:text-violet-400 font-bold'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200'
+            }`}
+          >
+            <GraduationCap className="w-4 h-4 mr-2" />
+            <span>Alunos (Curso)</span>
+            <span className={`ml-2 px-2.5 py-0.5 text-xs rounded-full font-bold transition-colors ${
+              activeTab === 'external_students'
+                ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/60 dark:text-violet-200'
+                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+            }`}>
+              {externalStudentsCount}
+            </span>
+          </button>
+
+          <button
             onClick={() => handleTabChange('all')}
             className={`whitespace-nowrap flex items-center py-4 px-2 border-b-2 font-medium text-sm transition-all duration-200 ${
               activeTab === 'all'
-                ? 'border-primary text-primary dark:border-blue-400 dark:text-blue-400 font-bold'
+                ? 'border-primary text-primary dark:border-amber-400 dark:text-amber-400 font-bold'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200'
             }`}
           >
@@ -261,7 +334,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
             <span>Todos</span>
             <span className={`ml-2 px-2.5 py-0.5 text-xs rounded-full font-bold transition-colors ${
               activeTab === 'all'
-                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200'
+                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200'
                 : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
             }`}>
               {allCount}
@@ -274,15 +347,18 @@ const UsersPage: React.FC<UsersPageProps> = ({
         filters={filters} 
         onFilterChange={setFilters} 
         availableProfiles={availableProfiles}
+        branches={branches}
+        currentUser={currentUser}
       />
 
       <UserTable 
         users={filteredUsers} 
-        allUsers={users}
+        allUsers={visibleUsersList}
         onEdit={canUpdateUser ? handleEditUser : undefined} 
         onDelete={canDeleteUser ? handleDeleteUser : undefined}
         onInspectUser={isAdmin ? (user) => setUserToInspect(user) : undefined}
         clients={clients}
+        branches={branches}
         showAppOptionColumn={activeTab === 'internal' || activeTab === 'all'}
         onToggleDriverRequests={canUpdateUser ? handleToggleDriverRequests : undefined}
       />
@@ -294,8 +370,10 @@ const UsersPage: React.FC<UsersPageProps> = ({
         userToEdit={userToEdit}
         clients={clients}
         branches={branches}
-        users={users}
+        users={visibleUsersList}
         defaultProfile={defaultProfileForNewUser}
+        availableProfiles={availableProfiles}
+        currentUser={currentUser}
       />
       
       <PermissionsModal
@@ -303,13 +381,14 @@ const UsersPage: React.FC<UsersPageProps> = ({
         onClose={() => setIsPermissionsModalOpen(false)}
         onSaveProfilePermissions={onSavePermissions}
         onSaveUserPermissions={(userId, customPermissions) => {
-          const user = users.find(u => u.id === userId);
+          const user = visibleUsersList.find(u => u.id === userId);
           if (user) {
             onSaveUser({ ...user, customPermissions });
           }
         }}
         permissions={profilePermissions}
-        users={users}
+        users={visibleUsersList}
+        currentUser={currentUser}
       />
 
       <UserAccessViewerModal
@@ -319,7 +398,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
         currentUser={currentUser}
         profilePermissions={profilePermissions}
         onSaveUserPermissions={(userId, customPermissions) => {
-          const user = users.find(u => u.id === userId);
+          const user = visibleUsersList.find(u => u.id === userId);
           if (user) {
             const updatedUser = { ...user, customPermissions };
             onSaveUser(updatedUser);
@@ -334,7 +413,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
         vehicles={vehicles}
         products={products}
         branches={branches}
-        users={users}
+        users={visibleUsersList}
         freightOffers={freightOffers}
         stays={stays}
         tickets={tickets}

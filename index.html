@@ -3,19 +3,30 @@
 <html lang="pt-BR" translate="no" class="notranslate">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon.png" />
-    <link rel="apple-touch-icon" href="/icon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Agromercantil Logística</title>
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <meta name="theme-color" content="#A67142" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>DLLOG Transportes</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script>
       (function() {
+        try {
+          if (localStorage.getItem('dllog_brand_v2') !== 'true') {
+            localStorage.removeItem('transcunha_companyLogo');
+            localStorage.removeItem('trancunha_companyLogo');
+            localStorage.removeItem('dllog_companyLogo');
+            localStorage.removeItem('transcunha_themeImage');
+            localStorage.removeItem('trancunha_themeImage');
+            localStorage.setItem('dllog_brand_v2', 'true');
+          }
+        } catch (e) {}
         function applyTheme() {
-          const saved = localStorage.getItem('agromercantil_theme_mode') || localStorage.getItem('trancunha_theme_mode') || localStorage.getItem('transcunha_theme_mode');
+          const saved = localStorage.getItem('trancunha_theme_mode');
           let isDark = true;
           if (saved === 'light') {
             isDark = false;
@@ -33,33 +44,83 @@
         applyTheme();
         if (window.matchMedia) {
           window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
-            if (!localStorage.getItem('agromercantil_theme_mode') && !localStorage.getItem('trancunha_theme_mode')) {
+            if (!localStorage.getItem('trancunha_theme_mode')) {
               applyTheme();
             }
           });
         }
       })();
       if (window.tailwind) {
+        const dllogGoldScale = {
+          50: '#FAF5E6',
+          100: '#F3E3BC',
+          200: '#E5C882',
+          300: '#D6AC4E',
+          400: '#C4922E',
+          500: '#A97622',
+          600: '#8A591C',
+          700: '#6E4515',
+          800: '#553410',
+          900: '#3E250B',
+          950: '#241506',
+        };
+        const dllogCharcoalScale = {
+          50: '#FAF8F6',
+          100: '#F1EEE8',
+          200: '#E0DAD1',
+          300: '#C4BDB3',
+          400: '#78716B',
+          500: '#57514D',
+          600: '#423D3A',
+          700: '#312D2B',
+          800: '#23201E',
+          900: '#181615',
+          950: '#100E0D',
+        };
         tailwind.config = {
           darkMode: 'class',
           theme: {
           extend: {
             colors: {
-              'primary': '#16A34A',       // Agromercantil Emerald / Agro Green
-              'primary-dark': '#15803D',  // Darker Agro Green for hover
-              'accent': '#F59E0B',        // Agromercantil Amber / Gold Grain Accent
-              'accent-dark': '#D97706',   // Darker Amber for hover
-              'secondary': '#64748B',     // Slate Gray from subtext
-              'light-bg': '#F8FAFC',      // slate-50
+              'primary': '#B27C26',       // DLLOG Transportes High-Contrast Gold
+              'primary-dark': '#8A591C',   // DLLOG Transportes Deep Gold-Bronze for hover
+              'accent': '#C4922E',        // DLLOG Transportes Gold Accent
+              'accent-dark': '#8A591C',    // Darker Gold-Bronze for hover
+              'secondary': '#57514D',     // DLLOG Transportes High-Contrast Charcoal (Typography)
+              'light-bg': '#FAF8F6',      // Warm Ivory / Stone 50
               'light-card': '#FFFFFF',
-              'dark-bg': '#04150e',       // Deep forest agro dark green (matching login page)
-              'dark-card': '#061e13',     // Deep emerald glass slate (matching login page)
+              'dark-bg': '#1C1A18',       // Warm Charcoal 900
+              'dark-card': '#292624',     // Warm Charcoal 800
+              'brand-primary': '#d4af37',
+              'brand-secondary': '#0a0a0a',
+              'brand-neutral': '#faf9f7',
+              'brand-text': '#4b4b4b',
+              'brand-accent': '#9ba3af',
+              'brand-border': '#e8e6e1',
+              'amber': dllogGoldScale,
+              'yellow': dllogGoldScale,
+              'blue': dllogGoldScale,
+              'sky': dllogGoldScale,
+              'cyan': dllogGoldScale,
+              'indigo': dllogGoldScale,
+              'violet': dllogGoldScale,
+              'purple': dllogGoldScale,
+              'slate': dllogCharcoalScale,
+              'gray': dllogCharcoalScale,
+              'zinc': dllogCharcoalScale,
+              'neutral': dllogCharcoalScale,
+              'stone': dllogCharcoalScale,
+            },
+            backgroundImage: {
+              'gold-gradient': 'linear-gradient(to bottom, #e6c15a, #d4af37, #a88226)',
             },
           },
         },
       }
     }
     </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="/index.css">
 </head>
   <body class="bg-light-bg dark:bg-dark-bg">

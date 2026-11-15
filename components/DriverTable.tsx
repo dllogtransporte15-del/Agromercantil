@@ -100,7 +100,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers, owners, onEdit, onDe
             {paginatedDrivers.map((driver) => (
               <tr key={driver.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                     {driver.id}
                   </span>
                 </td>
@@ -136,7 +136,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers, owners, onEdit, onDe
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                   <button 
                     onClick={() => onShowHistory?.(driver)}
-                    className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50 rounded-lg transition-colors"
+                    className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50 rounded-lg transition-colors"
                     title="Ver Histórico"
                   >
                     <History className="w-4 h-4" />
@@ -144,7 +144,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers, owners, onEdit, onDe
                 </td>
                 {(onEdit || onDelete) && (
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    {onEdit && <button onClick={() => onEdit(driver)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Editar</button>}
+                    {onEdit && <button onClick={() => onEdit(driver)} className="text-amber-600 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-300">Editar</button>}
                     {onDelete && <button onClick={() => onDelete(driver.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 ml-4">Excluir</button>}
                   </td>
                 )}

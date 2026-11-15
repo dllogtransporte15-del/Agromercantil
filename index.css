@@ -1,16 +1,34 @@
 
 :root {
-  --primary: #16A34A;
-  --primary-dark: #15803D;
-  --accent: #F59E0B;
-  --accent-dark: #D97706;
+  --primary: #B27C26;
+  --primary-dark: #8A591C;
+  --accent: #C4922E;
+  --accent-dark: #8A591C;
 }
 
-/* Base styles for a premium feel */
-body {
+/* Base styles for a premium feel & mobile gestures protection */
+html, body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior-y: none;
+  overscroll-behavior-x: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+#root {
+  min-height: 100vh;
+  overscroll-behavior-y: none;
+}
+
+/* Modais e painéis roláveis móveis - isola a rolagem para evitar pull-to-refresh na página */
+.overflow-y-auto, 
+.overflow-auto,
+[role="dialog"],
+.modal-container {
+  overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Custom Brand Pattern (Angled Stripes) */
@@ -46,8 +64,7 @@ body {
 }
 
 :is(.dark .card-brand) {
-  background-color: #061e13;
-  border-color: var(--primary);
+  background-color: #292624;
 }
 
 /* Custom Scrollbar */
@@ -63,14 +80,14 @@ body {
 }
 
 :is(.dark ::-webkit-scrollbar-thumb) {
-  background-color: #065f46;
+  background-color: #3F3B39;
 }
 ::-webkit-scrollbar-thumb:hover {
   background-color: #9CA3AF;
 }
 
 :is(.dark ::-webkit-scrollbar-thumb:hover) {
-  background-color: #047857;
+  background-color: #4B5563;
 }
 
 /* Hide scrollbars utility */
@@ -192,20 +209,20 @@ body {
 .toast-icon.success { color: #10b981; }
 .toast-icon.error { color: #ef4444; }
 .toast-icon.warning { color: #f59e0b; }
-.toast-icon.info { color: #0ea5e9; }
+.toast-icon.info { color: #C08957; }
 
 .toast-message {
   flex: 1;
   font-size: 0.95rem;
   font-weight: 500;
-  color: #1e293b;
+  color: #292624;
   line-height: 1.4;
 }
 
 .toast-close-btn {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: #9E9791;
   cursor: pointer;
   padding: 4px;
   border-radius: 6px;
@@ -217,7 +234,7 @@ body {
 
 .toast-close-btn:hover {
   background: rgba(0, 0, 0, 0.05);
-  color: #64748b;
+  color: #6F6A67;
 }
 
 /* Progress Bar */
@@ -238,13 +255,13 @@ body {
 .toast-item.success .toast-progress-fill { background: linear-gradient(90deg, #10b981, #34d399); }
 .toast-item.error .toast-progress-fill { background: linear-gradient(90deg, #ef4444, #f87171); }
 .toast-item.warning .toast-progress-fill { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
-.toast-item.info .toast-progress-fill { background: linear-gradient(90deg, #0ea5e9, #38bdf8); }
+.toast-item.info .toast-progress-fill { background: linear-gradient(90deg, #C08957, #C08957); }
 
 /* Custom types for border/background hints */
 .toast-item.success { border-left: 4px solid #10b981; }
 .toast-item.error { border-left: 4px solid #ef4444; }
 .toast-item.warning { border-left: 4px solid #f59e0b; }
-.toast-item.info { border-left: 4px solid #0ea5e9; }
+.toast-item.info { border-left: 4px solid #C08957; }
 
 /* --- PREMIUM UI UTILITIES --- */
 
@@ -260,40 +277,9 @@ body {
 :is(.dark .glass-panel),
 .dark .glass-panel,
 html.dark .glass-panel {
-  background: rgba(6, 30, 19, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  box-shadow: 0 20px 30px -10px rgba(3, 19, 11, 0.8), 0 0 0 1px rgba(255,255,255,0.03);
-}
-
-@media (prefers-color-scheme: dark) {
-  .glass-panel {
-    background: rgba(6, 30, 19, 0.85);
-    border: 1px solid rgba(16, 185, 129, 0.2);
-  }
-}
-
-/* Glass Card with Login Aesthetic */
-.glass-login-card {
-  background: rgba(6, 30, 19, 0.85);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(16, 185, 129, 0.25);
-  box-shadow: 0 25px 50px -12px rgba(3, 19, 11, 0.7);
-  position: relative;
-  overflow: hidden;
-}
-
-.border-glow-emerald::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.9), transparent);
-  pointer-events: none;
+  background: rgba(41, 38, 36, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.02);
 }
 
 /* Premium Button */
@@ -301,12 +287,12 @@ html.dark .glass-panel {
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
   color: white;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.25), 0 2px 4px -1px rgba(22, 163, 74, 0.15);
+  box-shadow: 0 4px 6px -1px rgba(166, 113, 66, 0.2), 0 2px 4px -1px rgba(166, 113, 66, 0.1);
 }
 
 .btn-premium:hover {
   transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 10px 15px -3px rgba(22, 163, 74, 0.35), 0 4px 6px -2px rgba(22, 163, 74, 0.2);
+  box-shadow: 0 10px 15px -3px rgba(166, 113, 66, 0.3), 0 4px 6px -2px rgba(166, 113, 66, 0.15);
 }
 
 .btn-premium:active {
@@ -342,13 +328,12 @@ html.dark .glass-panel {
   background: #F3F4F6;
 }
 :is(.dark .chat-bubble-left) {
-  background: #374151;
+  background: #3F3B39;
 }
 .chat-bubble-left::after {
   left: -16px;
   border-right-color: #F3F4F6;
 }
 :is(.dark .chat-bubble-left::after) {
-  border-right-color: #374151;
+  border-right-color: #3F3B39;
 }
-

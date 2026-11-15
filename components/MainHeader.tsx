@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Ticket, User, Shipment, FreightOffer, Cargo, Driver, Page, Client, Product, Vehicle } from '../types';
+import { UserProfile } from '../types';
 import NotificationBell from './NotificationBell';
 
 interface MainHeaderProps {
@@ -41,23 +42,25 @@ const MainHeader: React.FC<MainHeaderProps> = ({
     <header className="bg-white dark:bg-gray-800 shadow-sm z-10 border-b dark:border-gray-700">
       <div className="container mx-auto px-6 py-3">
         <div className="flex items-center justify-end">
-          <NotificationBell
-            user={currentUser}
-            shipments={shipments}
-            freightOffers={freightOffers}
-            cargos={cargos}
-            drivers={drivers}
-            clients={clients}
-            products={products}
-            vehicles={vehicles}
-            users={users}
-            tickets={tickets}
-            onOpenTickets={onOpenTickets}
-            onNavigateTo={onNavigateTo}
-            onAcceptOrderRequest={onAcceptOrderRequest}
-            onRefuseOrderRequest={onRefuseOrderRequest}
-            onSaveFreightOffer={onSaveFreightOffer}
-          />
+          {currentUser.profile !== UserProfile.Cliente && (
+            <NotificationBell
+              user={currentUser}
+              shipments={shipments}
+              freightOffers={freightOffers}
+              cargos={cargos}
+              drivers={drivers}
+              clients={clients}
+              products={products}
+              vehicles={vehicles}
+              users={users}
+              tickets={tickets}
+              onOpenTickets={onOpenTickets}
+              onNavigateTo={onNavigateTo}
+              onAcceptOrderRequest={onAcceptOrderRequest}
+              onRefuseOrderRequest={onRefuseOrderRequest}
+              onSaveFreightOffer={onSaveFreightOffer}
+            />
+          )}
         </div>
       </div>
     </header>

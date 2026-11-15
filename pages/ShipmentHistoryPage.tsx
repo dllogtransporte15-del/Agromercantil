@@ -9,7 +9,7 @@ import CargoDetailsModal from '../components/CargoDetailsModal';
 import CancellationReasonChart from '../components/CancellationReasonChart';
 import type { Shipment, Cargo, User, Product, Client, Vehicle, Driver, RiskQueryOption } from '../types';
 import { ShipmentStatus } from '../types';
-import { isCteApplicableForStatus, getShipmentCte, isStayForShipment } from '../utils';
+import { isCteApplicableForStatus, getShipmentCte, isStayForShipment, findCargoById, findProductForCargo, checkRequiresRiskManagement } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
 import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
 
@@ -26,13 +26,14 @@ interface ShipmentHistoryPageProps {
   onRevertStatus?: (shipmentId: string) => void;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => void;
   onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
   stays?: StayRecord[];
   riskQueryOptions?: RiskQueryOption[];
+  onCreateShipment?: (data: any) => Promise<void> | void;
 }
 
-const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, drivers, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice, onUpdateShipmentData, onUpdateAttachment, stays = [], riskQueryOptions }) => {
+const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, drivers, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice, onUpdateShipmentData, onUpdateAttachment, stays = [], riskQueryOptions, onCreateShipment }) => {
   const [activeStatus, setActiveStatus] = useState<ShipmentStatus>(ShipmentStatus.Finalizado);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
@@ -53,7 +54,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
   const calculateMargin = (s: Shipment) => {
     const cargo = cargoMap.get(s.cargoId);
     if (!cargo) return 0;
-    const expenses = calculateShipmentExpenses(s, cargo);
+    const expenses = calculateShipmentExpenses(s, cargo, undefined, stays);
     
     const demurrageProfit = stays
         .filter(stay => isStayForShipment(stay, s))
@@ -138,11 +139,11 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
       'bg-red-500', 
       'bg-orange-500', 
       'bg-yellow-500', 
-      'bg-blue-500', 
+      'bg-amber-500', 
       'bg-emerald-500', 
       'bg-purple-500',
       'bg-pink-500',
-      'bg-indigo-500'
+      'bg-amber-500'
     ];
 
     const sorted = Object.entries(counts)
@@ -233,6 +234,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
         onDeleteAttachment={onDeleteAttachment}
         onUpdatePrice={onUpdatePrice}
         onUpdateShipmentData={onUpdateShipmentData}
+        onCreateShipment={onCreateShipment}
       />
       {selectedShipment && (
         <HistoryModal
@@ -249,18 +251,21 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
             onClose={() => setAttachmentModalOpen(false)}
             onSave={handleSaveAttachment}
             shipment={shipments.find(s => s.id === selectedShipment.id) || selectedShipment}
-            cargo={cargos.find(c => c.id === selectedShipment.cargoId)}
+            cargo={findCargoById(cargos, selectedShipment.cargoId)}
             documentName="Documento"
             currentUser={currentUser}
             requiresRiskManagement={
-              products.find(p => p.id === cargos.find(c => c.id === selectedShipment.cargoId)?.productId)
-                ?.requiresRiskManagement !== false
+              checkRequiresRiskManagement(
+                findCargoById(cargos, selectedShipment.cargoId),
+                findProductForCargo(products, findCargoById(cargos, selectedShipment.cargoId))
+              )
             }
             products={products}
             clients={clients}
             users={users}
             riskQueryOptions={riskQueryOptions}
             onUpdateShipmentData={onUpdateShipmentData}
+            onDeleteAttachment={onDeleteAttachment}
         />
       )}
 

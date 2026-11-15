@@ -60,14 +60,14 @@ export const SyncDocumentsModal: React.FC<SyncDocumentsModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="bg-white dark:bg-gray-800 w-full max-w-lg rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b dark:border-gray-700 flex items-center justify-between bg-gradient-to-r from-slate-900 to-indigo-950 text-white">
+        <div className="p-4 border-b dark:border-gray-700 flex items-center justify-between bg-gradient-to-r from-slate-900 to-amber-950 text-white">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-400/20">
+            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/20">
               <RefreshCw className={`w-5 h-5 ${isRunning ? 'animate-spin' : ''}`} />
             </div>
             <div>
               <h3 className="text-sm font-bold">Sincronização em Lote de Documentos</h3>
-              <p className="text-[11px] text-indigo-200">
+              <p className="text-[11px] text-amber-200">
                 Lê e sincroniza CT-e, Nota Fiscal, MDF-e e Carta Frete em todos os embarques
               </p>
             </div>
@@ -85,12 +85,12 @@ export const SyncDocumentsModal: React.FC<SyncDocumentsModalProps> = ({
 
         {/* Content */}
         <div className="p-5 space-y-4">
-          <div className="p-3.5 bg-indigo-50/60 dark:bg-indigo-950/30 rounded-xl border border-indigo-200 dark:border-indigo-800/40 text-xs space-y-1.5">
-            <p className="font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+          <div className="p-3.5 bg-amber-50/60 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800/40 text-xs space-y-1.5">
+            <p className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               O que será extraído e sincronizado automaticamente:
             </p>
-            <ul className="list-disc list-inside text-indigo-800 dark:text-indigo-300 space-y-1 pl-1 text-[11px]">
+            <ul className="list-disc list-inside text-amber-800 dark:text-amber-300 space-y-1 pl-1 text-[11px]">
               <li><strong>CT-e:</strong> Número do CT-e, data/hora de emissão e prestação de frete.</li>
               <li><strong>Nota Fiscal (NF-e):</strong> Número da NF-e e valor da mercadoria averbada (base de cálculo de seguros).</li>
               <li><strong>MDF-e:</strong> Número do Manifesto e placas dos veículos.</li>
@@ -107,7 +107,7 @@ export const SyncDocumentsModal: React.FC<SyncDocumentsModalProps> = ({
             </div>
             <div className="p-3 bg-gray-50 dark:bg-gray-700/40 rounded-xl border dark:border-gray-700">
               <p className="text-[10px] uppercase font-bold text-gray-500">Com Documentos Anexos</p>
-              <p className="text-xl font-mono font-black text-indigo-600 dark:text-indigo-400 mt-0.5">
+              <p className="text-xl font-mono font-black text-amber-600 dark:text-amber-400 mt-0.5">
                 {eligibleShipments.length}
               </p>
             </div>
@@ -118,11 +118,11 @@ export const SyncDocumentsModal: React.FC<SyncDocumentsModalProps> = ({
             <div className="space-y-2 pt-2">
               <div className="flex items-center justify-between text-xs font-bold text-gray-700 dark:text-gray-300">
                 <span>{progress.text || 'Processando leitura de arquivos...'}</span>
-                <span className="font-mono text-indigo-600 dark:text-indigo-400">{percent}%</span>
+                <span className="font-mono text-amber-600 dark:text-amber-400">{percent}%</span>
               </div>
               <div className="w-full h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                 <div 
-                  className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-300" 
+                  className="h-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all duration-300" 
                   style={{ width: `${percent}%` }}
                 />
               </div>
@@ -162,7 +162,7 @@ export const SyncDocumentsModal: React.FC<SyncDocumentsModalProps> = ({
               type="button"
               onClick={handleStartSync}
               disabled={isRunning || eligibleShipments.length === 0}
-              className="px-5 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-5 py-2 text-xs font-black text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRunning ? 'animate-spin' : ''}`} />
               <span>{isRunning ? 'Sincronizando...' : 'Iniciar Sincronização Agora'}</span>

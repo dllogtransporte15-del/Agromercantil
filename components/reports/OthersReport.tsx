@@ -25,7 +25,7 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import MultiSelectDropdown from '../MultiSelectDropdown';
-import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment } from '../../utils';
+import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment, hasCteAttached } from '../../utils';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { addPdfLogo } from '../../utils/pdfGenerator';
 import type { StayRecord } from '../../utils/toolStorage';
@@ -182,7 +182,7 @@ export const OthersReport: React.FC<OthersReportProps> = ({
       const cleanCte = (cteVal && cteVal !== '-' && cteVal.trim() !== '') ? cteVal.trim() : (s.cteNumber ? String(s.cteNumber).trim() : '');
 
       // 1. Apurar Despesas e Lucro Líquido Real (Conforme Automatização do CT-e e Estadias)
-      const expenses = calculateShipmentExpenses(s, cargo);
+      const expenses = calculateShipmentExpenses(s, cargo, undefined, stays);
       const shipmentStays = (stays || []).filter(stay => isStayForShipment(stay, s));
       const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
       const demurrageDriverPaid = shipmentStays.reduce((sum, stay) => sum + (stay.driverPaidValue || 0), 0);
@@ -389,6 +389,13 @@ export const OthersReport: React.FC<OthersReportProps> = ({
       : 'Período: Completo';
     doc.text(`${periodText} | Emitido em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 40, 60);
 
+    // Apenas registros de embarques com CT-e emitido
+    const exportTaxCreditItems = taxCreditItems.filter(d => (Boolean(d.rawCte && d.rawCte !== '-' && d.rawCte.trim() !== '')) || hasCteAttached(d.shipment));
+    const exportAdditionalCostItems = additionalCostItems.filter(d => (Boolean(d.rawCte && d.rawCte !== '-' && d.rawCte.trim() !== '')) || hasCteAttached(d.shipment));
+
+    const exportTotalCredit = exportTaxCreditItems.reduce((acc, curr) => acc + curr.creditValue, 0);
+    const exportTotalCost = exportAdditionalCostItems.reduce((acc, curr) => acc + curr.addCostValue, 0);
+
     // Resumo dos Indicadores
     doc.setFillColor(245, 247, 250);
     doc.roundedRect(40, 75, pageWidth - 80, 45, 6, 6, 'F');
@@ -399,8 +406,8 @@ export const OthersReport: React.FC<OthersReportProps> = ({
 
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Total Créditos de Imposto: ${formatCurrency(kpis.totalCredit)} (${kpis.countCredit} embarques)`, 55, 108);
-    doc.text(`Total Custos Adicionais / Prejuízos: ${formatCurrency(kpis.totalCost)} (${kpis.countCost} ocorrências)`, 380, 108);
+    doc.text(`Total Créditos de Imposto: ${formatCurrency(exportTotalCredit)} (${exportTaxCreditItems.length} embarques)`, 55, 108);
+    doc.text(`Total Custos Adicionais / Prejuízos: ${formatCurrency(exportTotalCost)} (${exportAdditionalCostItems.length} ocorrências)`, 380, 108);
 
     let startY = 135;
 
@@ -408,12 +415,12 @@ export const OthersReport: React.FC<OthersReportProps> = ({
     if (activeTab === 'todos' || activeTab === 'creditos') {
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
-      doc.text(`1. Créditos de Imposto Gerados (${taxCreditItems.length} registros)`, 40, startY);
+      doc.text(`1. Créditos de Imposto Gerados (${exportTaxCreditItems.length} registros)`, 40, startY);
 
       autoTable(doc, {
         startY: startY + 10,
         head: [['ID Frete', 'Nº CT-e', 'Data', 'Cliente', 'Origem / Destino', 'Modalidade', 'Crédito Gerado']],
-        body: taxCreditItems.map(d => [
+        body: exportTaxCreditItems.map(d => [
           d.shipment.id,
           d.rawCte || '-',
           formatDate(d.effectiveDate),
@@ -440,12 +447,12 @@ export const OthersReport: React.FC<OthersReportProps> = ({
 
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
-      doc.text(`2. Custos Adicionais e Registro de Prejuízos (${additionalCostItems.length} ocorrências)`, 40, startY);
+      doc.text(`2. Custos Adicionais e Registro de Prejuízos (${exportAdditionalCostItems.length} ocorrências)`, 40, startY);
 
       autoTable(doc, {
         startY: startY + 10,
         head: [['ID Frete', 'Nº CT-e', 'Data', 'Motorista / Placa', 'Categoria do Custo', 'Justificativa', 'Valor Prejuízo']],
-        body: additionalCostItems.map(d => [
+        body: exportAdditionalCostItems.map(d => [
           d.shipment.id,
           d.rawCte || '-',
           formatDate(d.effectiveDate),
@@ -470,30 +477,30 @@ export const OthersReport: React.FC<OthersReportProps> = ({
       <div className={`grid grid-cols-1 sm:grid-cols-2 ${isAgenciador ? '' : 'lg:grid-cols-4'} gap-3.5`}>
         {/* Card 1: Total Crédito de Imposto - Oculto para Agenciador */}
         {!isAgenciador && (
-          <div className="p-4 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-blue-500/10 dark:from-blue-950/40 dark:to-indigo-950/30 rounded-2xl border border-blue-200/80 dark:border-blue-800/60 shadow-sm flex flex-col justify-between">
+          <div className="p-4 bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-amber-500/10 dark:from-amber-950/40 dark:to-amber-950/30 rounded-2xl border border-amber-200/80 dark:border-amber-800/60 shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 block mb-0.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 block mb-0.5">
                   Crédito de Imposto Gerado
                 </span>
-                <div className="text-xl sm:text-2xl font-black font-mono text-blue-950 dark:text-blue-100">
+                <div className="text-xl sm:text-2xl font-black font-mono text-amber-950 dark:text-amber-100">
                   {formatCurrency(kpis.totalCredit)}
                 </div>
-                <span className="text-[11px] text-blue-700/80 dark:text-blue-300 font-medium">
+                <span className="text-[11px] text-amber-700/80 dark:text-amber-300 font-medium">
                   {kpis.countCredit} {kpis.countCredit === 1 ? 'embarque gerador' : 'embarques geradores'}
                 </span>
               </div>
-              <div className="p-3 bg-blue-500 text-white rounded-xl shadow-sm">
+              <div className="p-3 bg-amber-500 text-white rounded-xl shadow-sm">
                 <Sparkles className="w-5 h-5" />
               </div>
             </div>
 
             {/* Rodapé: Total Geral Acumulado */}
-            <div className="mt-3 pt-2 border-t border-blue-200/60 dark:border-blue-800/60 flex items-center justify-between text-[10px]">
-              <span className="text-blue-700/80 dark:text-blue-300/80 font-semibold uppercase tracking-tight">
+            <div className="mt-3 pt-2 border-t border-amber-200/60 dark:border-amber-800/60 flex items-center justify-between text-[10px]">
+              <span className="text-amber-700/80 dark:text-amber-300/80 font-semibold uppercase tracking-tight">
                 Total Geral Acumulado:
               </span>
-              <span className="font-mono font-black text-blue-950 dark:text-blue-100" title={`Soma de todos os créditos fiscais gerados (${allTimeCountCredit} ${allTimeCountCredit === 1 ? 'embarque' : 'embarques'})`}>
+              <span className="font-mono font-black text-amber-950 dark:text-amber-100" title={`Soma de todos os créditos fiscais gerados (${allTimeCountCredit} ${allTimeCountCredit === 1 ? 'embarque' : 'embarques'})`}>
                 {formatCurrency(allTimeTotalCredit)}
               </span>
             </div>
@@ -545,7 +552,7 @@ export const OthersReport: React.FC<OthersReportProps> = ({
                   Sobre embarques c/ crédito
                 </span>
               </div>
-              <div className="p-3 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-100 dark:border-indigo-800/50">
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 rounded-xl border border-amber-100 dark:border-amber-800/50">
                 <Receipt className="w-5 h-5" />
               </div>
             </div>
@@ -616,11 +623,11 @@ export const OthersReport: React.FC<OthersReportProps> = ({
                 onClick={() => setActiveTab('creditos')}
                 className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'creditos'
-                    ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-xs'
+                    ? 'bg-white dark:bg-gray-800 text-amber-600 dark:text-amber-400 shadow-xs'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                 <span>Créditos de Imposto ({taxCreditItems.length})</span>
               </button>
               <button
@@ -670,14 +677,14 @@ export const OthersReport: React.FC<OthersReportProps> = ({
               onClick={() => setShowFilters(!showFilters)}
               className={`px-3 py-1.5 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-colors cursor-pointer ${
                 showFilters || hasActiveFilters
-                  ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-950/60 dark:border-blue-700 dark:text-blue-300'
+                  ? 'bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-950/60 dark:border-amber-700 dark:text-amber-300'
                   : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300'
               }`}
             >
               <Filter className="w-3.5 h-3.5" />
               <span>Filtros</span>
               {hasActiveFilters && (
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-600 dark:bg-amber-400" />
               )}
             </button>
 
@@ -700,28 +707,28 @@ export const OthersReport: React.FC<OthersReportProps> = ({
               {/* Data Início */}
               <div>
                 <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                  <Calendar className="w-3.5 h-3.5 text-amber-500" />
                   Data Início
                 </label>
                 <input
                   type="date"
                   value={startDate}
                   onChange={e => setStartDate(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white font-medium focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-2.5 py-1.5 text-xs border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/20"
                 />
               </div>
 
               {/* Data Fim */}
               <div>
                 <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                  <Calendar className="w-3.5 h-3.5 text-amber-500" />
                   Data Final
                 </label>
                 <input
                   type="date"
                   value={endDate}
                   onChange={e => setEndDate(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white font-medium focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-2.5 py-1.5 text-xs border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/20"
                 />
               </div>
 
@@ -844,9 +851,9 @@ export const OthersReport: React.FC<OthersReportProps> = ({
       {/* SEÇÃO 1: CRÉDITOS DE IMPOSTO GERADOS - Oculto para Agenciador */}
       {!isAgenciador && (activeTab === 'todos' || activeTab === 'creditos') && (
         <div className="bg-white dark:bg-gray-800/90 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-gray-100 dark:border-gray-700/70 flex items-center justify-between bg-blue-50/40 dark:bg-blue-950/20">
+          <div className="p-4 border-b border-gray-100 dark:border-gray-700/70 flex items-center justify-between bg-amber-50/40 dark:bg-amber-950/20">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-blue-500 text-white">
+              <div className="p-1.5 rounded-lg bg-amber-500 text-white">
                 <Sparkles className="w-4 h-4" />
               </div>
               <div>
@@ -860,7 +867,7 @@ export const OthersReport: React.FC<OthersReportProps> = ({
             </div>
             <div className="text-right font-mono">
               <span className="text-xs text-gray-500 font-bold block">Total de Créditos:</span>
-              <span className="text-base font-black text-blue-600 dark:text-blue-400">
+              <span className="text-base font-black text-amber-600 dark:text-amber-400">
                 {formatCurrency(kpis.totalCredit)}
               </span>
             </div>
@@ -892,9 +899,9 @@ export const OthersReport: React.FC<OthersReportProps> = ({
                       <td className="p-3.5 font-mono font-bold text-slate-700 dark:text-slate-300">
                         {item.shipment.id}
                       </td>
-                      <td className="p-3.5 font-mono font-bold text-blue-600 dark:text-blue-400">
+                      <td className="p-3.5 font-mono font-bold text-amber-600 dark:text-amber-400">
                         {item.rawCte ? (
-                          <span className="bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded-md border border-blue-200/60 dark:border-blue-800/60">
+                          <span className="bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md border border-amber-200/60 dark:border-amber-800/60">
                             {item.rawCte}
                           </span>
                         ) : (
@@ -913,13 +920,13 @@ export const OthersReport: React.FC<OthersReportProps> = ({
                       <td className="p-3.5">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           item.isExport
-                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
                             : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
                         }`}>
                           {item.isExport ? 'Exportação (Manutenção Crédito)' : 'Mercado Interno'}
                         </span>
                       </td>
-                      <td className="p-3.5 text-right font-mono font-black text-sm text-blue-600 dark:text-blue-400">
+                      <td className="p-3.5 text-right font-mono font-black text-sm text-amber-600 dark:text-amber-400">
                         {formatCurrency(item.creditValue)}
                       </td>
                     </tr>
@@ -985,7 +992,7 @@ export const OthersReport: React.FC<OthersReportProps> = ({
                       </td>
                       <td className="p-3.5 font-mono">
                         {item.rawCte ? (
-                          <span className="font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded-md border border-blue-200/60 dark:border-blue-800/60">
+                          <span className="font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md border border-amber-200/60 dark:border-amber-800/60">
                             {item.rawCte}
                           </span>
                         ) : (
@@ -1027,7 +1034,7 @@ export const OthersReport: React.FC<OthersReportProps> = ({
                             effectiveDate: item.effectiveDate,
                             cteNumber: item.rawCte || undefined
                           })}
-                          className="px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900/60 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                          className="px-2.5 py-1 text-xs font-bold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-900/60 transition-colors inline-flex items-center gap-1 cursor-pointer"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           <span>Ver Detalhes</span>

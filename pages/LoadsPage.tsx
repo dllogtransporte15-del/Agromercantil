@@ -8,7 +8,7 @@ import CargoDetailsModal from '../components/CargoDetailsModal';
 import CargoShipmentsSidePanel from '../components/CargoShipmentsSidePanel';
 import NewShipmentModal from '../components/NewShipmentModal';
 import BulkCargoImportModal from '../components/BulkCargoImportModal';
-import type { Cargo, Client, Product, Driver, User, ProfilePermissions, Shipment, DailyScheduleEntry, Vehicle, Branch } from '../types';
+import type { Cargo, Client, Product, Driver, User, ProfilePermissions, Shipment, DailyScheduleEntry, Vehicle, Branch, Owner, ExpedidorRecebedor } from '../types';
 import { CargoStatus, UserProfile } from '../types';
 import { can, isDemoUser } from '../auth';
 import { StayRecord } from '../utils/toolStorage';
@@ -20,9 +20,11 @@ interface LoadsPageProps {
   clients: Client[];
   products: Product[];
   drivers: Driver[];
+  owners?: Owner[];
   shipments: Shipment[];
   allShipments: Shipment[];
   vehicles: Vehicle[];
+  locations?: ExpedidorRecebedor[];
   onSaveLoad: (loadData: Cargo | Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'>) => void;
   onBulkSaveLoads?: (cargos: Omit<Cargo, 'id'>[]) => Promise<void>;
   currentUser: User;
@@ -44,12 +46,11 @@ interface LoadsPageProps {
   onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
 }
 
-const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, products, shipments, allShipments, onSaveLoad, onBulkSaveLoads, onReactivateLoad, onSuspendLoad, onUpdatePrice, currentUser, profilePermissions, users, onDeleteLoad, onModalStateChange, companyLogo, vehicles, drivers, onDeleteAttachment, branches, stays = [], tickets = [], offerToConvert, setOfferToConvert, onCreateShipment, onSwapCargo }) => {
+const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, products, shipments, allShipments, onSaveLoad, onBulkSaveLoads, onReactivateLoad, onSuspendLoad, onUpdatePrice, currentUser, profilePermissions, users, onDeleteLoad, onModalStateChange, companyLogo, vehicles, drivers, owners = [], onDeleteAttachment, branches, stays = [], tickets = [], offerToConvert, setOfferToConvert, onCreateShipment, onSwapCargo, locations }) => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBulkImportModalOpen, setIsBulkImportModalOpen] = useState(false);
   const [loadToEdit, setLoadToEdit] = useState<Cargo | null>(null);
-  const [isDuplicate, setIsDuplicate] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [selectedLoadForHistory, setSelectedLoadForHistory] = useState<Cargo | null>(null);
   const [dailyBalanceDate, setDailyBalanceDate] = useState(new Date().toISOString().split('T')[0]);
@@ -77,7 +78,6 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
       } else {
         // Client request - open LoadFormModal
         setLoadToEdit(null);
-        setIsDuplicate(false);
         setInitialModalStep(1);
         setIsModalOpen(true);
       }
@@ -90,14 +90,14 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
     if (setOfferToConvert) setOfferToConvert(null);
   };
 
-  const handleSaveShipment = (shipmentData: any) => {
-    if (selectedCargoForShipment && onCreateShipment) {
-      onCreateShipment({
-        cargoId: selectedCargoForShipment.id,
+  const handleSaveShipment = async (shipmentData: any) => {
+    const cargoId = selectedCargoForShipment?.id || shipmentData.cargoId;
+    if (cargoId && onCreateShipment) {
+      await onCreateShipment({
         ...shipmentData,
+        cargoId,
       });
     }
-    handleCloseNewShipmentModal();
   };
 
   const handleShowDetails = (cargo: Cargo) => {
@@ -116,27 +116,17 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
 
   const handleOpenModal = () => {
     setLoadToEdit(null);
-    setIsDuplicate(false);
     setInitialModalStep(1);
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
-    setIsDuplicate(false);
     if (setOfferToConvert) setOfferToConvert(null);
   };
 
   const handleEditLoad = (load: Cargo) => {
     setLoadToEdit(load);
-    setIsDuplicate(false);
-    setInitialModalStep(1);
-    setIsModalOpen(true);
-  };
-
-  const handleDuplicateLoad = (cargo: Cargo) => {
-    setLoadToEdit(cargo);
-    setIsDuplicate(true);
     setInitialModalStep(1);
     setIsModalOpen(true);
   };
@@ -160,7 +150,6 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
 
   const handleEditSchedule = (load: Cargo) => {
     setLoadToEdit(load);
-    setIsDuplicate(false);
     setInitialModalStep(2); // Step 2 is the scheduling timeline
     setIsModalOpen(true);
   };
@@ -178,7 +167,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
             </button>
             <button
               onClick={handleOpenModal}
-              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary text-sm font-bold shadow-md transition-all"
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary text-sm font-medium"
             >
               Cadastrar Nova Carga
             </button>
@@ -195,7 +184,6 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
             dailyBalanceDate={dailyBalanceDate}
             onDailyBalanceDateChange={setDailyBalanceDate}
             onEdit={!isDemo && canUpdate ? handleEditLoad : undefined}
-            onDuplicate={!isDemo && canCreate ? handleDuplicateLoad : undefined}
             onClose={!isDemo && (canDelete || currentUser.profile === UserProfile.Supervisor) ? handleCloseLoad : undefined}
             onShowHistory={handleShowHistory}
             onReactivate={!isDemo && (currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onReactivateLoad : undefined}
@@ -223,9 +211,9 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
         users={users}
         loads={loads}
         branches={branches}
+        locations={locations}
         initialStep={initialModalStep}
         offerToConvert={offerToConvert}
-        isDuplicate={isDuplicate}
       />
 
       <BulkCargoImportModal
@@ -261,7 +249,6 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
         stays={stays}
         shipments={shipments}
         currentUser={currentUser}
-        onDuplicate={!isDemo && canCreate ? handleDuplicateLoad : undefined}
       />
 
       <CargoShipmentsSidePanel
@@ -287,6 +274,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
         onSave={handleSaveShipment}
         cargo={selectedCargoForShipment}
         drivers={drivers}
+        owners={owners}
         clients={clients}
         vehicles={vehicles}
         currentUser={currentUser}

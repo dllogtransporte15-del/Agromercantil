@@ -99,7 +99,7 @@ const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({ currentUser, prof
       case 'ok': return <CheckCircle2 className="w-6 h-6 text-emerald-500" />;
       case 'warning': return <AlertCircle className="w-6 h-6 text-amber-500" />;
       case 'error': return <AlertCircle className="w-6 h-6 text-red-500" />;
-      case 'loading': return <RefreshCw className="w-6 h-6 text-blue-500 animate-spin" />;
+      case 'loading': return <RefreshCw className="w-6 h-6 text-amber-500 animate-spin" />;
       default: return null;
     }
   };
@@ -139,7 +139,7 @@ const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({ currentUser, prof
                     <div className="flex items-center justify-between mb-4">
                         <div className="p-3 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
                             {key === 'github' && <Code className="w-6 h-6 text-gray-700 dark:text-gray-300" />}
-                            {key === 'supabase' && <Database className="w-6 h-6 text-blue-600 dark:text-blue-400" />}
+                            {key === 'supabase' && <Database className="w-6 h-6 text-amber-600 dark:text-amber-400" />}
                             {key === 'vercel' && <Globe className="w-6 h-6 text-black dark:text-white" />}
                         </div>
                         {getStatusIcon(service.status)}
@@ -183,11 +183,11 @@ const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({ currentUser, prof
             </div>
         </div>
 
-        {currentUser?.profile === UserProfile.Admin && (
+        {(currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Desenvolvedor || currentUser?.profile === UserProfile.GerenciadoraDeRisco) && (
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 mt-6">
                 <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
-                    <Globe className="w-5 h-5 text-indigo-500" />
-                    Controles do Sistema (Suporte)
+                    <Globe className="w-5 h-5 text-amber-500" />
+                    Controles do Sistema (Desenvolvedor)
                 </h3>
                 
                 <div className="space-y-4">
@@ -213,7 +213,33 @@ const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({ currentUser, prof
                                     }
                                 }}
                             />
-                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-amber-300 dark:peer-focus:ring-amber-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-amber-600"></div>
+                        </label>
+                    </div>
+                    
+                    <div className="flex items-center justify-between p-4 border rounded-lg dark:border-gray-700">
+                        <div>
+                            <h4 className="font-bold text-gray-800 dark:text-white">Sistema Instalável (PWA)</h4>
+                            <p className="text-sm text-gray-500">Permite que o sistema seja instalado como aplicativo nos dispositivos.</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                                type="checkbox" 
+                                className="sr-only peer"
+                                checked={profilePermissions?.system_settings?.pwa_enabled !== false}
+                                onChange={(e) => {
+                                    if (profilePermissions && onSavePermissions) {
+                                        onSavePermissions({
+                                            ...profilePermissions,
+                                            system_settings: {
+                                                ...profilePermissions.system_settings,
+                                                pwa_enabled: e.target.checked
+                                            }
+                                        });
+                                    }
+                                }}
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-amber-300 dark:peer-focus:ring-amber-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-amber-600"></div>
                         </label>
                     </div>
                 </div>
@@ -221,7 +247,7 @@ const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({ currentUser, prof
         )}
 
         <p className="mt-8 text-center text-xs text-gray-400 uppercase tracking-widest">
-            Agromercantil Logística - Painel de Controle de Infraestrutura
+            DLLOG Transportes - Painel de Controle de Infraestrutura
         </p>
       </div>
     </div>

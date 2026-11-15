@@ -7,18 +7,20 @@ import {
   History as HistoryIcon, Search, Filter, Download, FileText, 
   Truck, Calendar, MapPin, User, Trash2, ChevronRight, 
   ArrowRight, DollarSign, Clock, FileDigit, Building2,
-  ChevronDown, ChevronUp, X, FileCode, Scale, Fuel, Route, Paperclip
+  ChevronDown, ChevronUp, X, FileCode, Scale, Fuel, Route, Paperclip, Landmark
 } from 'lucide-react';
 import Header from '../components/Header';
 import { 
   getToolStays, getToolQuotes, StayRecord, QuoteRecord, 
   getToolClients, ToolClient, deleteToolStay, deleteToolQuote, updateToolStay, uploadStayAttachment,
-  getAllToolStays, getAllToolQuotes, getAllToolClients
+  getAllToolStays, getAllToolQuotes, getAllToolClients,
+  extractCteNumberFromStay, saveStayCteNumber
 } from '../utils/toolStorage';
+import { extractDetailedDocData } from '../utils/fiscalDocParser';
 import { getShipmentAttachmentUrl } from '../lib/db';
 import type { User as AppUser, Shipment, Cargo, Client as AppClient } from '../types';
 import { UserProfile, ShipmentStatus } from '../types';
-import { isDemoUser } from '../auth';
+import { isDemoUser, isDeveloperUser } from '../auth';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 import { addPdfLogo } from '../utils/pdfGenerator';
@@ -43,6 +45,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     id: string, 
     approved: string, 
     paid: string, 
+    cteNumber?: string,
     cteFile?: File | null, 
     paymentFile?: File | null,
     clientName: string,
@@ -52,8 +55,14 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     origin: string,
     destination: string,
     shipmentId: string,
-    invoice: string
+    invoice: string,
+    icmsValue?: string,
+    icmsPercentage?: string,
+    federalTaxValue?: string,
+    isIcmsManual?: boolean
   } | null>(null);
+  const [isReadingCte, setIsReadingCte] = useState(false);
+  const [cteFeedback, setCteFeedback] = useState<string | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [shipmentSearchTerm, setShipmentSearchTerm] = useState('');
   const [isShipmentDropdownOpen, setIsShipmentDropdownOpen] = useState(false);
@@ -79,7 +88,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     if (!currentUser) return;
     
     // Check if user is an administrator/manager who should see everything
-    const isAdmin = !isDemo && [UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile);
+    const isAdmin = !isDemo && (isDeveloperUser(currentUser) || [UserProfile.Desenvolvedor, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile));
     
     const [staysData, quotesData, clientsData] = await Promise.all([
       isAdmin ? getAllToolStays() : getToolStays(currentUser.id),
@@ -140,30 +149,51 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     });
   }, [quotes, searchTerm, filterClient, dateStart, dateEnd]);
 
-  const formatCurrency = (value: number | undefined | null) => {
-    const safeVal = (value != null && Number.isFinite(Number(value))) ? Number(value) : 0;
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(safeVal);
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
 
-  const formatNumber = (value: number | undefined | null, decimals: number = 2) => {
-    const safeVal = (value != null && Number.isFinite(Number(value))) ? Number(value) : 0;
-    return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(safeVal);
+  const formatNumber = (value: number, decimals: number = 2) => {
+    return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value);
   };
 
   const toggleExpand = (id: string) => {
     if (expandedId === id) {
       setExpandedId(null);
       setEditValues(null);
+      setCteFeedback(null);
       setShipmentSearchTerm('');
       setIsShipmentDropdownOpen(false);
     } else {
       setExpandedId(id);
+      setCteFeedback(null);
       const stay = stays.find(s => s.id === id);
       if (stay && activeView === 'estadias') {
+        const detectedCteNumber = stay.cteNumber || extractCteNumberFromStay(stay) || '';
+        const linkedShipment = stay.shipmentId ? (shipments || []).find(sh => sh.id === stay.shipmentId) : null;
+        const linkedCargo = linkedShipment?.cargoId ? (cargos || []).find(c => c.id === linkedShipment.cargoId) : null;
+        const isExport = Boolean(linkedCargo?.isExport ?? (linkedShipment as any)?.isExport);
+        const shipmentIcmsRate = linkedCargo?.icmsPercentage || (linkedCargo?.hasIcms ? 7 : ((linkedShipment as any)?.icmsPercentage || 0));
+        const isIcmsExempt = Boolean(
+          isExport ||
+          (linkedCargo && !linkedCargo.hasIcms && !linkedCargo.icmsPercentage) ||
+          (linkedShipment as any)?.isIcmsExempt ||
+          (linkedShipment as any)?.realProfitData?.isIcmsExempt
+        );
+
+        let initialIcms = '';
+        if (stay.icmsValue != null) {
+          initialIcms = stay.icmsValue.toString();
+        } else if (!isIcmsExempt && shipmentIcmsRate > 0 && stay.approvedValue) {
+          const autoCalc = Number((stay.approvedValue * (shipmentIcmsRate / 100)).toFixed(2));
+          if (autoCalc > 0) initialIcms = autoCalc.toString();
+        }
+
         setEditValues({
           id,
           approved: stay.approvedValue != null ? stay.approvedValue.toString() : '',
           paid: stay.driverPaidValue != null ? stay.driverPaidValue.toString() : '',
+          cteNumber: detectedCteNumber,
           clientName: stay.clientName || '',
           driver: stay.driver || '',
           plate: stay.plate || '',
@@ -171,7 +201,11 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
           origin: stay.origin || '',
           destination: stay.destination || '',
           shipmentId: stay.shipmentId || '',
-          invoice: stay.invoice || ''
+          invoice: stay.invoice || '',
+          icmsValue: initialIcms,
+          icmsPercentage: stay.icmsPercentage != null ? stay.icmsPercentage.toString() : (isIcmsExempt ? '0' : (shipmentIcmsRate ? shipmentIcmsRate.toString() : '')),
+          federalTaxValue: stay.federalTaxValue != null ? stay.federalTaxValue.toString() : '',
+          isIcmsManual: stay.icmsValue != null
         });
         
         if (stay.shipmentId && (shipments || []).length > 0) {
@@ -192,6 +226,70 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     }
   };
 
+  const handleCteFileSelect = async (file: File) => {
+    if (!editValues) return;
+    setIsReadingCte(true);
+    setCteFeedback('Lendo dados do CT-e Complementar...');
+    setEditValues(prev => prev ? { ...prev, cteFile: file } : null);
+    try {
+      const detailed = await extractDetailedDocData(file, 'CT-e');
+      if (detailed?.docNumber) {
+        const num = detailed.docNumber.trim();
+        setEditValues(prev => prev ? { ...prev, cteNumber: num } : null);
+        setCteFeedback(`CT-e complementar nº ${num} detectado com sucesso!`);
+      } else {
+        const match = file.name.match(/(?:cte|ct-e)?[_-]?(\d{3,9})/i);
+        if (match && match[1]) {
+          setEditValues(prev => prev ? { ...prev, cteNumber: match[1] } : null);
+          setCteFeedback(`CT-e complementar nº ${match[1]} detectado pelo nome do arquivo.`);
+        } else {
+          setCteFeedback('Arquivo anexado com sucesso.');
+        }
+      }
+
+      // Se extraiu valor e o valor aprovado ainda está vazio
+      const extractedVal = detailed?.financeiro?.valorTotalServico || detailed?.financeiro?.valorTotalFrete;
+      if (extractedVal && (!editValues.approved || editValues.approved === '' || editValues.approved === '0')) {
+        setEditValues(prev => prev ? { ...prev, approved: extractedVal.toFixed(2) } : null);
+      }
+    } catch (err) {
+      console.warn('Erro ao processar leitura do CT-e:', err);
+      setCteFeedback('Arquivo anexado. Informe o número se necessário.');
+    } finally {
+      setIsReadingCte(false);
+    }
+  };
+
+  const handleReadExistingCte = async (stay: StayRecord) => {
+    if (!stay.cteUrl) return;
+    setIsReadingCte(true);
+    setCteFeedback('Lendo CT-e complementar anexado na nuvem...');
+    try {
+      const fileUrl = getShipmentAttachmentUrl(stay.cteUrl);
+      const detailed = await extractDetailedDocData(fileUrl, 'CT-e');
+      if (detailed?.docNumber) {
+        const num = detailed.docNumber.trim();
+        setEditValues(prev => prev ? { ...prev, cteNumber: num } : null);
+        saveStayCteNumber(stay.id, num);
+        setStays(prev => prev.map(s => s.id === stay.id ? { ...s, cteNumber: num } : s));
+        setCteFeedback(`CT-e complementar nº ${num} identificado com sucesso!`);
+      } else {
+        const fallback = extractCteNumberFromStay(stay);
+        if (fallback) {
+          setEditValues(prev => prev ? { ...prev, cteNumber: fallback } : null);
+          setCteFeedback(`CT-e complementar nº ${fallback} recuperado.`);
+        } else {
+          setCteFeedback('Não foi possível identificar o número do CT-e automaticamente no documento.');
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao ler CT-e anexado:', err);
+      setCteFeedback('Erro ao ler arquivo da nuvem.');
+    } finally {
+      setIsReadingCte(false);
+    }
+  };
+
   const handleShipmentSelect = (shipmentId: string) => {
     if (!editValues) return;
 
@@ -208,16 +306,27 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     const cargo = (cargos || []).find(c => c.id === shipment.cargoId);
     const client = cargo ? (propsClients || []).find(c => c.id === cargo.clientId) : null;
 
-    setEditValues(prev => prev ? ({
-      ...prev,
-      shipmentId,
-      driver: shipment.driverName || prev.driver,
-      plate: shipment.horsePlate || prev.plate,
-      weight: shipment.shipmentTonnage ? shipment.shipmentTonnage.toString() : prev.weight,
-      origin: cargo?.origin || prev.origin,
-      destination: cargo?.destination || prev.destination,
-      clientName: client?.nomeFantasia || client?.razaoSocial || prev.clientName,
-    }) : null);
+    const isExp = Boolean(cargo?.isExport ?? (shipment as any)?.isExport);
+    const icmsR = cargo?.icmsPercentage || (cargo?.hasIcms ? 7 : ((shipment as any)?.icmsPercentage || 0));
+    const isEx = Boolean(isExp || (cargo && !cargo.hasIcms && !cargo.icmsPercentage) || (shipment as any)?.isIcmsExempt);
+
+    setEditValues(prev => {
+      if (!prev) return null;
+      const appr = parseFlexibleNumber(prev.approved);
+      const autoI = !isEx && icmsR > 0 && appr > 0 ? Number((appr * (icmsR / 100)).toFixed(2)) : 0;
+      return {
+        ...prev,
+        shipmentId,
+        driver: shipment.driverName || prev.driver,
+        plate: shipment.horsePlate || prev.plate,
+        weight: shipment.shipmentTonnage ? shipment.shipmentTonnage.toString() : prev.weight,
+        origin: cargo?.origin || prev.origin,
+        destination: cargo?.destination || prev.destination,
+        clientName: client?.nomeFantasia || client?.razaoSocial || prev.clientName,
+        icmsPercentage: isEx ? '0' : (icmsR ? icmsR.toString() : prev.icmsPercentage),
+        ...(!prev.isIcmsManual ? { icmsValue: autoI > 0 ? autoI.toString() : (isEx ? '0' : prev.icmsValue) } : {})
+      };
+    });
     
     setShipmentSearchTerm(`${shipment.horsePlate} - ${shipment.driverName} - ID: ${shipment.id}`);
     setIsShipmentDropdownOpen(false);
@@ -240,6 +349,37 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     return parseFloat(str) || 0;
   };
 
+  
+  const handleApprovedValueChange = (val: string) => {
+    setEditValues(prev => {
+      if (!prev) return null;
+      const next = { ...prev, approved: val };
+      if (!next.isIcmsManual) {
+        const linkedShipment = next.shipmentId ? (shipments || []).find(sh => sh.id === next.shipmentId) : null;
+        const linkedCargo = linkedShipment?.cargoId ? (cargos || []).find(c => c.id === linkedShipment.cargoId) : null;
+        const isExport = Boolean(linkedCargo?.isExport ?? (linkedShipment as any)?.isExport);
+        const shipmentIcmsRate = linkedCargo?.icmsPercentage || (linkedCargo?.hasIcms ? 7 : ((linkedShipment as any)?.icmsPercentage || 0));
+        const isIcmsExempt = Boolean(
+          isExport ||
+          (linkedCargo && !linkedCargo.hasIcms && !linkedCargo.icmsPercentage) ||
+          (linkedShipment as any)?.isIcmsExempt ||
+          (linkedShipment as any)?.realProfitData?.isIcmsExempt
+        );
+
+        if (!isExport && !isIcmsExempt && shipmentIcmsRate > 0) {
+          const num = parseFlexibleNumber(val);
+          const autoIcms = Number((num * (shipmentIcmsRate / 100)).toFixed(2));
+          next.icmsValue = autoIcms > 0 ? autoIcms.toFixed(2) : '';
+          next.icmsPercentage = shipmentIcmsRate.toString();
+        } else if (isExport || isIcmsExempt) {
+          next.icmsValue = '0';
+          next.icmsPercentage = '0';
+        }
+      }
+      return next;
+    });
+  };
+
   const handleSaveStayFinancials = async () => {
     if (!editValues || isSavingEdit || isDemo) return;
     setIsSavingEdit(true);
@@ -247,16 +387,25 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
       let cteUrl: string | undefined = undefined;
       let paymentProofUrl: string | undefined = undefined;
 
+      const cleanCteNum = editValues.cteNumber ? editValues.cteNumber.trim() : undefined;
+
       if (editValues.cteFile) {
-        cteUrl = (await uploadStayAttachment(editValues.id, 'cte_complementar', editValues.cteFile)) || undefined;
+        cteUrl = (await uploadStayAttachment(editValues.id, 'cte_complementar', editValues.cteFile, cleanCteNum)) || undefined;
       }
       if (editValues.paymentFile) {
         paymentProofUrl = (await uploadStayAttachment(editValues.id, 'comprovante_pagamento', editValues.paymentFile)) || undefined;
       }
 
+      if (cleanCteNum) {
+        saveStayCteNumber(editValues.id, cleanCteNum);
+      }
+
       const approvedVal = editValues.approved !== '' ? parseFlexibleNumber(editValues.approved) : undefined;
       const paidVal = editValues.paid !== '' ? parseFlexibleNumber(editValues.paid) : undefined;
       const weightVal = editValues.weight !== '' ? parseFlexibleNumber(editValues.weight) : 0;
+      const icmsVal = editValues.icmsValue !== undefined && editValues.icmsValue !== '' ? parseFlexibleNumber(editValues.icmsValue) : undefined;
+      const icmsPct = editValues.icmsPercentage !== undefined && editValues.icmsPercentage !== '' ? parseFlexibleNumber(editValues.icmsPercentage) : undefined;
+      const fedTaxVal = editValues.federalTaxValue !== undefined && editValues.federalTaxValue !== '' ? parseFlexibleNumber(editValues.federalTaxValue) : undefined;
 
       const updates: Partial<StayRecord> = {
         approvedValue: approvedVal,
@@ -269,17 +418,22 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         destination: editValues.destination || undefined,
         shipmentId: editValues.shipmentId || undefined,
         invoice: editValues.invoice || undefined,
+        cteNumber: cleanCteNum,
+        icmsValue: icmsVal,
+        icmsPercentage: icmsPct,
+        federalTaxValue: fedTaxVal,
         ...(cteUrl && { cteUrl }),
         ...(paymentProofUrl && { paymentProofUrl })
       };
       
       const result = await updateToolStay(editValues.id, updates);
       if (result) {
-        setStays(prev => prev.map(s => s.id === editValues.id ? { ...s, ...updates, ...result } : s));
+        setStays(prev => prev.map(s => s.id === editValues.id ? { ...s, ...updates, ...result, cteNumber: cleanCteNum || result.cteNumber || s.cteNumber } : s));
       }
       await loadData();
       setExpandedId(null);
       setEditValues(null);
+      setCteFeedback(null);
     } catch (err) {
       console.error('Erro ao salvar alterações da estadia:', err);
       alert('Erro ao salvar alterações. Por favor, tente novamente.');
@@ -378,18 +532,18 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 p-6">
           <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
             <div className="flex bg-slate-100 dark:bg-gray-900 p-1 rounded-xl w-fit shrink-0">
-              <button onClick={() => { setActiveView('estadias'); setExpandedId(null); }} className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeView === 'estadias' ? 'bg-white dark:bg-gray-700 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Estadias</button>
-              <button onClick={() => { setActiveView('cotacoes'); setExpandedId(null); }} className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeView === 'cotacoes' ? 'bg-white dark:bg-gray-700 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Cotações</button>
+              <button onClick={() => { setActiveView('estadias'); setExpandedId(null); }} className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeView === 'estadias' ? 'bg-white dark:bg-gray-700 text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Estadias</button>
+              <button onClick={() => { setActiveView('cotacoes'); setExpandedId(null); }} className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeView === 'cotacoes' ? 'bg-white dark:bg-gray-700 text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Cotações</button>
             </div>
             
             <div className="flex flex-col md:flex-row items-center gap-4 flex-1">
               <div className="relative flex-1 w-full">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input type="text" placeholder="Pesquise por motorista, placa, cidade ou cliente..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-gray-900 border border-slate-200 dark:border-gray-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" />
+                <input type="text" placeholder="Pesquise por motorista, placa, cidade ou cliente..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-gray-900 border border-slate-200 dark:border-gray-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-amber-500 transition-all font-medium" />
               </div>
 
               <div className="flex items-center gap-2 w-full md:w-auto">
-                <button onClick={() => setShowFilters(!showFilters)} className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${showFilters ? 'bg-indigo-50 text-indigo-600 border-indigo-200 shadow-sm' : 'bg-white dark:bg-gray-800 text-slate-600 dark:text-gray-300 border-slate-200 dark:border-gray-600'}`}>
+                <button onClick={() => setShowFilters(!showFilters)} className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${showFilters ? 'bg-amber-50 text-amber-600 border-amber-200 shadow-sm' : 'bg-white dark:bg-gray-800 text-slate-600 dark:text-gray-300 border-slate-200 dark:border-gray-600'}`}>
                   <Filter className="w-4 h-4 mr-2" /> {showFilters ? 'Esconder Filtros' : 'Filtros Avançados'}
                 </button>
                 <button onClick={exportToPDF} className="flex items-center px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all shadow-md">
@@ -425,28 +579,43 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         <div className="grid grid-cols-1 gap-4">
           {(activeView === 'estadias' ? filteredStays : filteredQuotes).length > 0 ? (
             (activeView === 'estadias' ? filteredStays : filteredQuotes).map((item: any) => (
-              <div key={item.id} className={`bg-white dark:bg-gray-800 rounded-2xl border transition-all duration-300 overflow-hidden ${expandedId === item.id ? 'border-indigo-400 ring-4 ring-indigo-50 dark:ring-indigo-900/10 shadow-lg' : 'border-slate-200 dark:border-gray-700 shadow-sm hover:border-slate-300 hover:shadow-md cursor-pointer'}`} onClick={() => expandedId !== item.id && toggleExpand(item.id)}>
+              <div key={item.id} className={`bg-white dark:bg-gray-800 rounded-2xl border transition-all duration-300 overflow-hidden ${expandedId === item.id ? 'border-amber-400 ring-4 ring-amber-50 dark:ring-amber-900/10 shadow-lg' : 'border-slate-200 dark:border-gray-700 shadow-sm hover:border-slate-300 hover:shadow-md cursor-pointer'}`} onClick={() => expandedId !== item.id && toggleExpand(item.id)}>
                 
                 {/* Cabeçalho do Card */}
                 <div className="p-5 md:p-6">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                     <div className="flex items-start space-x-4">
-                       <div className={`p-4 rounded-2xl shrink-0 ${activeView === 'estadias' ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                       <div className={`p-4 rounded-2xl shrink-0 ${activeView === 'estadias' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
                           {activeView === 'estadias' ? <Truck className="w-6 h-6" /> : <ArrowRight className="w-6 h-6" />}
                        </div>
                        <div>
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-400 rounded-md tracking-wider uppercase">{item.id}</span>
                             {activeView === 'estadias' && (
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md tracking-wider uppercase ${item.calculationType === 'DAILY_FIXED' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200/50' : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200/50'}`}>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md tracking-wider uppercase ${item.calculationType === 'DAILY_FIXED' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200/50' : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 border border-amber-200/50'}`}>
                                 {item.calculationType === 'DAILY_FIXED' ? 'Diária Fixa' : 'Ton / Hora'}
+                              </span>
+                            )}
+                            {activeView === 'estadias' && (item.cteNumber || extractCteNumberFromStay(item) || item.cteUrl) && (
+                              <span 
+                                onClick={(e) => {
+                                  if (item.cteUrl) {
+                                    e.stopPropagation();
+                                    openDocumentInNewTab(getShipmentAttachmentUrl(item.cteUrl), 'CT-e Complementar');
+                                  }
+                                }}
+                                className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-md tracking-wider uppercase bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 flex items-center gap-1 ${item.cteUrl ? 'cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-900/50' : ''}`}
+                                title={item.cteUrl ? "CT-e Complementar anexado (clique para abrir)" : "CT-e Complementar"}
+                              >
+                                <FileText className="w-3 h-3" />
+                                CT-e Comp: Nº {item.cteNumber || extractCteNumberFromStay(item) || 'Anexado'}
                               </span>
                             )}
                             <span className="text-xs text-slate-400 font-medium">{format(parseISO(item.date), 'dd/MM/yyyy')} às {format(parseISO(item.date), 'HH:mm')}</span>
                           </div>
                           <h3 className="text-lg font-bold text-slate-800 dark:text-white leading-tight">
                              {activeView === 'estadias' ? (
-                               <span>Motorista: <span className="text-indigo-600">{item.driver}</span></span>
+                               <span>Motorista: <span className="text-amber-600">{item.driver}</span></span>
                              ) : (
                                <span>{item.origin} <ArrowRight className="inline w-4 h-4 mx-1 text-slate-300" /> {item.destination}</span>
                              )}
@@ -458,22 +627,10 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                        </div>
                     </div>
 
-                    <div className="flex items-center justify-between md:flex-col md:items-end gap-1">
-                       <div className={`text-xl font-black ${activeView === 'estadias' ? 'text-indigo-600' : 'text-emerald-600'}`}>
-                          {activeView === 'estadias' ? (
-                            formatCurrency(item.totalValue)
-                          ) : (
-                            <div className="flex items-baseline gap-1">
-                              <span>{formatCurrency(item.companyFreightPerTon || (item.weight ? item.companyTotalFreight / item.weight : 0))}</span>
-                              <span className="text-xs font-semibold text-slate-400 dark:text-gray-400">/ Ton</span>
-                            </div>
-                          )}
+                    <div className="flex items-center justify-between md:flex-col md:items-end gap-2">
+                       <div className={`text-xl font-black ${activeView === 'estadias' ? 'text-amber-600' : 'text-emerald-600'}`}>
+                          {formatCurrency(activeView === 'estadias' ? item.totalValue : item.companyTotalFreight)}
                        </div>
-                       {activeView === 'cotacoes' && (
-                          <div className="text-[11px] font-medium text-slate-400 dark:text-gray-400">
-                            Total: {formatCurrency(item.companyTotalFreight)}
-                          </div>
-                       )}
                        <button onClick={(e) => { e.stopPropagation(); toggleExpand(item.id); }} className="p-2 hover:bg-slate-100 dark:hover:bg-gray-700 rounded-full transition-colors">
                           {expandedId === item.id ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
                        </button>
@@ -498,6 +655,14 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                 <span className="text-slate-500">Nota Fiscal</span>
                                 <span className="font-bold text-slate-700 dark:text-gray-300">{item.invoice || 'Não Informada'}</span>
                               </div>
+                              {activeView === 'estadias' && (item.cteNumber || extractCteNumberFromStay(item) || item.cteUrl) && (
+                                <div className="flex justify-between text-sm py-2 border-b border-slate-100 dark:border-gray-700">
+                                  <span className="text-slate-500">CT-e Complementar</span>
+                                  <span className="font-bold font-mono text-purple-700 dark:text-purple-300">
+                                    Nº {item.cteNumber || extractCteNumberFromStay(item) || 'Anexado'}
+                                  </span>
+                                </div>
+                              )}
                               <div className="flex justify-between text-sm py-2">
                                 <span className="text-slate-500">Peso Transportado</span>
                                 <span className="font-bold text-slate-700 dark:text-gray-300">{item.weight} Toneladas</span>
@@ -517,7 +682,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                               </div>
                               <div className="flex justify-between text-sm py-2">
                                 <span className="text-slate-500">Tempo Total</span>
-                                <span className="font-bold text-indigo-600">{item.totalHours.toFixed(1)}h</span>
+                                <span className="font-bold text-amber-600">{item.totalHours.toFixed(1)}h</span>
                               </div>
                             </div>
                           </div>
@@ -552,13 +717,13 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                            setIsShipmentDropdownOpen(true);
                                          }}
                                          onFocus={() => setIsShipmentDropdownOpen(true)}
-                                         className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-indigo-500"
+                                         className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-amber-500"
                                        />
                                        
                                        {isShipmentDropdownOpen && (
                                          <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-lg shadow-xl max-h-60 overflow-y-auto">
                                            <div 
-                                             className="px-3 py-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-xs text-slate-600 dark:text-gray-400 border-b border-slate-100 dark:border-gray-700"
+                                             className="px-3 py-2 cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-900/30 text-xs text-slate-600 dark:text-gray-400 border-b border-slate-100 dark:border-gray-700"
                                              onClick={() => handleShipmentSelect('')}
                                            >
                                              -- Remover vínculo --
@@ -573,7 +738,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                              <div 
                                                key={s.id} 
                                                onClick={() => handleShipmentSelect(s.id)}
-                                               className={`px-3 py-2 cursor-pointer text-xs transition-colors ${editValues?.shipmentId === s.id ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-900 dark:text-indigo-200' : 'hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-700 dark:text-gray-300'}`}
+                                               className={`px-3 py-2 cursor-pointer text-xs transition-colors ${editValues?.shipmentId === s.id ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200' : 'hover:bg-amber-50 dark:hover:bg-amber-900/30 text-slate-700 dark:text-gray-300'}`}
                                              >
                                                <div className="font-bold">{s.horsePlate} - {s.driverName}</div>
                                                <div className="opacity-75 mt-0.5">ID: {s.id}</div>
@@ -591,7 +756,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                           type="text" 
                                           value={editValues?.id === item.id ? editValues?.driver : ''} 
                                           onChange={e => setEditValues(prev => prev ? {...prev, driver: e.target.value} : null)}
-                                          className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-indigo-500"
+                                          className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-amber-500"
                                         />
                                       </div>
                                       <div>
@@ -600,7 +765,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                           type="text" 
                                           value={editValues?.id === item.id ? editValues?.plate : ''} 
                                           onChange={e => setEditValues(prev => prev ? {...prev, plate: e.target.value} : null)}
-                                          className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-indigo-500"
+                                          className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-amber-500"
                                         />
                                       </div>
                                       <div>
@@ -610,7 +775,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                           inputMode="decimal"
                                           value={editValues?.id === item.id ? editValues?.weight : ''} 
                                           onChange={e => setEditValues(prev => prev ? {...prev, weight: e.target.value} : null)}
-                                          className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-indigo-500"
+                                          className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-amber-500"
                                         />
                                       </div>
                                       <div>
@@ -619,7 +784,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                           type="text" 
                                           value={editValues?.id === item.id ? editValues?.invoice : ''} 
                                           onChange={e => setEditValues(prev => prev ? {...prev, invoice: e.target.value} : null)}
-                                          className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-indigo-500"
+                                          className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-amber-500"
                                         />
                                       </div>
                                    </div>
@@ -632,30 +797,176 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                        type="text" 
                                        inputMode="decimal"
                                        value={editValues?.id === item.id ? editValues?.approved : ''} 
-                                       onChange={e => setEditValues(prev => prev ? {...prev, approved: e.target.value} : null)}
+                                       onChange={e => handleApprovedValueChange(e.target.value)}
                                        placeholder="R$ 0,00"
-                                       className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-indigo-500"
+                                       className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-amber-500"
                                      />
-                                     <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 dark:bg-gray-700 dark:hover:bg-gray-600 p-1.5 rounded border border-slate-200 dark:border-gray-600 flex items-center justify-center whitespace-nowrap text-xs text-slate-600 dark:text-gray-300" title="Anexar CTe Complementar">
+                                     <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 dark:bg-gray-700 dark:hover:bg-gray-600 p-1.5 rounded border border-slate-200 dark:border-gray-600 flex items-center justify-center whitespace-nowrap text-xs text-slate-600 dark:text-gray-300 transition-colors" title="Anexar e Ler CTe Complementar">
                                        <Paperclip className="w-4 h-4 mr-1" /> CTe
                                        <input 
                                          type="file" 
                                          className="hidden" 
+                                         accept=".pdf,.xml,application/pdf,text/xml"
                                          onChange={e => {
                                            const file = e.target.files?.[0];
-                                           if (file) setEditValues(prev => prev ? {...prev, cteFile: file} : null);
+                                           if (file) handleCteFileSelect(file);
                                          }} 
                                        />
                                      </label>
                                    </div>
+
+                                   {/* Número do CT-e Complementar (Lido automaticamente ou informado) */}
+                                   <div className="mt-2.5 p-2.5 bg-slate-50 dark:bg-gray-900/40 rounded-xl border border-slate-200/80 dark:border-gray-700/80">
+                                     <div className="flex items-center justify-between mb-1">
+                                       <label className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase block">
+                                         Nº do CT-e Complementar
+                                       </label>
+                                       {isReadingCte && (
+                                         <span className="text-[9px] text-amber-500 font-semibold animate-pulse flex items-center">
+                                           <Clock className="w-3 h-3 mr-0.5 animate-spin" /> Lendo CT-e...
+                                         </span>
+                                       )}
+                                     </div>
+                                     <div className="flex gap-2 items-center">
+                                       <input 
+                                         type="text" 
+                                         value={editValues?.id === item.id ? (editValues?.cteNumber || '') : ''} 
+                                         onChange={e => setEditValues(prev => prev ? {...prev, cteNumber: e.target.value} : null)}
+                                         placeholder="Ex: 2450 (lido automaticamente)"
+                                         className="w-full px-2.5 py-1 text-xs font-mono font-bold border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-amber-500 text-purple-700 dark:text-purple-300 placeholder:font-normal placeholder:text-slate-400"
+                                       />
+                                       {item.cteUrl && !editValues?.cteFile && (
+                                         <button
+                                           type="button"
+                                           onClick={() => handleReadExistingCte(item)}
+                                           disabled={isReadingCte}
+                                           className="px-2 py-1 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-[11px] rounded border border-purple-200 dark:border-purple-800 font-semibold whitespace-nowrap transition-colors"
+                                           title="Ler número do CT-e diretamente do anexo salvo na nuvem"
+                                         >
+                                           Ler CT-e
+                                         </button>
+                                       )}
+                                     </div>
+                                     {cteFeedback && editValues?.id === item.id && (
+                                       <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1 font-semibold">
+                                         {cteFeedback}
+                                       </div>
+                                     )}
+                                   </div>
+
                                    {editValues?.id === item.id && editValues?.cteFile && (
-                                     <div className="text-[10px] text-indigo-500 mt-1 truncate">Anexo: {editValues.cteFile.name}</div>
+                                     <div className="text-[10px] text-amber-500 mt-1 truncate">Anexo: {editValues.cteFile.name}</div>
                                    )}
                                    {item.cteUrl && !(editValues?.id === item.id && editValues?.cteFile) && (
-                                     <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(item.cteUrl!), 'CTe Complementar')} className="text-[10px] text-indigo-500 hover:underline mt-1 block text-left font-semibold cursor-pointer">Ver CTe Anexado</button>
+                                     <div className="flex items-center gap-2 mt-1">
+                                       <button 
+                                         type="button" 
+                                         onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(item.cteUrl!), 'CTe Complementar')} 
+                                         className="text-[10px] text-amber-500 hover:underline font-semibold cursor-pointer flex items-center gap-1"
+                                       >
+                                         <FileText className="w-3 h-3" />
+                                         Ver CTe Anexado {item.cteNumber || extractCteNumberFromStay(item) ? '(Nº ' + (item.cteNumber || extractCteNumberFromStay(item)) + ')' : ''}
+                                       </button>
+                                     </div>
                                    )}
                                  </div>
-                                 <div>
+
+                                 {/* Bloco de Gestão Tributária do CT-e Complementar */}
+                                 {(() => {
+                                   const linkedShipment = (editValues?.shipmentId || item.shipmentId) ? (shipments || []).find(sh => sh.id === (editValues?.shipmentId || item.shipmentId)) : null;
+                                   const linkedCargo = linkedShipment?.cargoId ? (cargos || []).find(c => c.id === linkedShipment.cargoId) : null;
+                                   const isExport = Boolean(linkedCargo?.isExport ?? (linkedShipment as any)?.isExport);
+                                   const shipmentIcmsRate = linkedCargo?.icmsPercentage || (linkedCargo?.hasIcms ? 7 : ((linkedShipment as any)?.icmsPercentage || 0));
+                                   const isIcmsExempt = Boolean(
+                                     isExport ||
+                                     (linkedCargo && !linkedCargo.hasIcms && !linkedCargo.icmsPercentage) ||
+                                     (linkedShipment as any)?.isIcmsExempt ||
+                                     (linkedShipment as any)?.realProfitData?.isIcmsExempt
+                                   );
+                                   const currentApprovedNum = parseFlexibleNumber(editValues?.approved ?? item.approvedValue);
+                                   const autoIcmsAmount = (!isIcmsExempt && shipmentIcmsRate > 0 && currentApprovedNum > 0)
+                                     ? Number((currentApprovedNum * (shipmentIcmsRate / 100)).toFixed(2))
+                                     : 0;
+
+                                   return (
+                                     <div className="p-3 bg-gradient-to-br from-amber-50/70 to-orange-50/30 dark:from-amber-950/20 dark:to-orange-950/10 rounded-xl border border-amber-200/80 dark:border-amber-800/40 space-y-3">
+                                       <div className="flex items-center justify-between">
+                                         <span className="text-[10px] font-bold text-amber-900 dark:text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                                           <Landmark className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                           Tributos do CT-e Complementar
+                                         </span>
+                                         {isIcmsExempt ? (
+                                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                             Isento / Exportação
+                                           </span>
+                                         ) : shipmentIcmsRate > 0 ? (
+                                           <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60" title={`Alíquota de ICMS do embarque: ${shipmentIcmsRate}%`}>
+                                             Auto: {shipmentIcmsRate}% do embarque {autoIcmsAmount > 0 ? `= ${formatCurrency(autoIcmsAmount)}` : ''}
+                                           </span>
+                                         ) : null}
+                                       </div>
+
+                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                         {/* Campo ICMS do CT-e Complementar */}
+                                         <div>
+                                           <div className="flex items-center justify-between mb-1">
+                                             <label className="text-[10px] text-slate-600 dark:text-slate-400 font-bold uppercase block">
+                                               ICMS Complementar (R$)
+                                             </label>
+                                             {editValues?.isIcmsManual && !isIcmsExempt && (
+                                               <button
+                                                 type="button"
+                                                 onClick={() => {
+                                                   setEditValues(prev => prev ? {
+                                                     ...prev,
+                                                     isIcmsManual: false,
+                                                     icmsValue: autoIcmsAmount > 0 ? autoIcmsAmount.toFixed(2) : ''
+                                                   } : null);
+                                                 }}
+                                                 className="text-[9px] text-amber-600 dark:text-amber-400 hover:underline font-semibold"
+                                                 title="Restaurar cálculo automático da alíquota do embarque"
+                                               >
+                                                 Restaurar Auto
+                                               </button>
+                                             )}
+                                           </div>
+                                           <input 
+                                             type="text" 
+                                             inputMode="decimal"
+                                             value={editValues?.id === item.id ? (editValues?.icmsValue ?? '') : ''} 
+                                             onChange={e => setEditValues(prev => prev ? { ...prev, icmsValue: e.target.value, isIcmsManual: true } : null)}
+                                             placeholder={isIcmsExempt ? "Isento (R$ 0,00)" : "R$ 0,00"}
+                                             className="w-full px-2.5 py-1.5 text-xs font-mono font-bold border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-amber-500 text-amber-900 dark:text-amber-200 placeholder:font-normal placeholder:text-slate-400"
+                                           />
+                                           <span className="text-[8px] text-slate-400 dark:text-slate-500 block mt-0.5">
+                                             {isIcmsExempt ? 'Mercado externo ou isenção de ICMS' : `Alíquota: ${shipmentIcmsRate}%. Editável se houver divergência.`}
+                                           </span>
+                                         </div>
+
+                                         {/* Campo Imposto Federal do CT-e Complementar */}
+                                         <div>
+                                           <div className="flex items-center justify-between mb-1">
+                                             <label className="text-[10px] text-slate-600 dark:text-slate-400 font-bold uppercase block">
+                                               Imposto Federal Complementar (R$)
+                                             </label>
+                                           </div>
+                                           <input 
+                                             type="text" 
+                                             inputMode="decimal"
+                                             value={editValues?.id === item.id ? (editValues?.federalTaxValue ?? '') : ''} 
+                                             onChange={e => setEditValues(prev => prev ? { ...prev, federalTaxValue: e.target.value } : null)}
+                                             placeholder="0,00"
+                                             className="w-full px-2.5 py-1.5 text-xs font-mono font-bold border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-amber-500 text-amber-900 dark:text-amber-200 placeholder:font-normal placeholder:text-slate-400"
+                                           />
+                                           <span className="text-[8px] text-slate-400 dark:text-slate-500 block mt-0.5">
+                                             Informe PIS/COFINS manual deste CT-e
+                                           </span>
+                                         </div>
+                                       </div>
+                                     </div>
+                                   );
+                                 })()}
+                                  <div>
                                    <label className="text-[10px] text-slate-400 font-bold uppercase mb-1 block">Valor Pago Motorista (Custo)</label>
                                    <div className="flex gap-2 items-center">
                                      <input 
@@ -664,7 +975,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                        value={editValues?.id === item.id ? editValues?.paid : ''} 
                                        onChange={e => setEditValues(prev => prev ? {...prev, paid: e.target.value} : null)}
                                        placeholder="R$ 0,00"
-                                       className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-indigo-500"
+                                       className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-amber-500"
                                      />
                                      <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 dark:bg-gray-700 dark:hover:bg-gray-600 p-1.5 rounded border border-slate-200 dark:border-gray-600 flex items-center justify-center whitespace-nowrap text-xs text-slate-600 dark:text-gray-300" title="Anexar Comprovante de Pagamento">
                                        <Paperclip className="w-4 h-4 mr-1" /> Comp.
@@ -679,10 +990,10 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                      </label>
                                    </div>
                                    {editValues?.id === item.id && editValues?.paymentFile && (
-                                     <div className="text-[10px] text-indigo-500 mt-1 truncate">Anexo: {editValues.paymentFile.name}</div>
+                                     <div className="text-[10px] text-amber-500 mt-1 truncate">Anexo: {editValues.paymentFile.name}</div>
                                    )}
                                    {item.paymentProofUrl && !(editValues?.id === item.id && editValues?.paymentFile) && (
-                                     <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(item.paymentProofUrl!), 'Comprovante de Pagamento')} className="text-[10px] text-indigo-500 hover:underline mt-1 block text-left font-semibold cursor-pointer">Ver Comprovante Anexado</button>
+                                     <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(item.paymentProofUrl!), 'Comprovante de Pagamento')} className="text-[10px] text-amber-500 hover:underline mt-1 block text-left font-semibold cursor-pointer">Ver Comprovante Anexado</button>
                                    )}
                                  </div>
                                  <div className="flex items-center justify-between pt-2">
@@ -700,7 +1011,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                      <button 
                                        onClick={handleSaveStayFinancials} 
                                        disabled={isSavingEdit}
-                                       className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
+                                       className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
                                      >
                                        {isSavingEdit ? 'Salvando...' : 'Salvar Alterações'}
                                      </button>
@@ -742,7 +1053,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                               </div>
                               <div className="flex justify-between text-sm py-2">
                                 <span className="text-slate-500">Margem Pretendida</span>
-                                <span className="font-bold text-indigo-600">{item.margin}%</span>
+                                <span className="font-bold text-amber-600">{item.margin}%</span>
                               </div>
                             </div>
                           </div>
@@ -750,15 +1061,9 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center"><Scale className="w-3 h-3 mr-2" /> Performance Financ.</h4>
                             <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-slate-100 dark:border-gray-700">
                                <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Lucro Operacional</div>
-                               <div className="text-lg font-bold text-emerald-600 mb-3">{formatCurrency(item.carrierNetProfit)} ({(item.carrierProfitMargin ?? 0).toFixed(1)}%)</div>
-                               <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Cotação p/ Cliente (Valor por Tonelada)</div>
-                               <div className="text-2xl font-black text-slate-800 dark:text-white flex items-baseline gap-1.5">
-                                 <span>{formatCurrency(item.companyFreightPerTon || (item.weight ? item.companyTotalFreight / item.weight : 0))}</span>
-                                 <span className="text-xs font-semibold text-slate-400">/ Ton</span>
-                               </div>
-                               <div className="text-xs text-slate-500 dark:text-gray-400 mt-1 font-medium">
-                                 Frete Total: {formatCurrency(item.companyTotalFreight)}
-                               </div>
+                               <div className="text-lg font-bold text-emerald-600 mb-3">{formatCurrency(item.carrierNetProfit)} ({item.carrierProfitMargin.toFixed(1)}%)</div>
+                               <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Cotação p/ Cliente</div>
+                               <div className="text-2xl font-black text-slate-800 dark:text-white">{formatCurrency(item.companyTotalFreight)}</div>
                             </div>
                           </div>
                         </>
@@ -769,7 +1074,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                     <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-slate-100 dark:border-gray-700">
                        <div className="flex items-center gap-2">
                           <button onClick={() => exportToXML(item, activeView === 'estadias' ? 'Stay' : 'Freight')} className="flex items-center px-4 py-2 border border-slate-200 dark:border-gray-600 text-slate-600 dark:text-gray-300 rounded-xl text-xs font-bold hover:bg-slate-50 dark:hover:bg-gray-700 transition-all">
-                             <FileCode className="w-3.5 h-3.5 mr-2 text-indigo-500" /> XML NFe
+                             <FileCode className="w-3.5 h-3.5 mr-2 text-amber-500" /> XML NFe
                           </button>
                           <button className="flex items-center px-4 py-2 border border-slate-200 dark:border-gray-600 text-slate-600 dark:text-gray-300 rounded-xl text-xs font-bold hover:bg-slate-50 dark:hover:bg-gray-700 transition-all">
                              <FileText className="w-3.5 h-3.5 mr-2 text-slate-400" /> Detalhes PDF

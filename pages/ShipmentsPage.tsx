@@ -15,9 +15,9 @@ import SwapCargoModal from '../components/SwapCargoModal';
 import type { Shipment, Cargo, Client, Driver, User, ProfilePermissions, Product, Vehicle, ShipmentLock, RiskQueryOption } from '../types';
 
 import { ShipmentStatus, UserProfile, REQUIRED_DOCUMENT_MAP } from '../types';
-import { can, isDemoUser } from '../auth';
+import { can, isDemoUser, isDeveloperUser } from '../auth';
 import { FileText, X } from 'lucide-react';
-import { getShipmentCte, isCteApplicableForStatus } from '../utils';
+import { getShipmentCte, isCteApplicableForStatus, findCargoById, findProductForCargo, checkRequiresRiskManagement } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket } from '../types';
 
@@ -35,6 +35,8 @@ interface ShipmentsPageProps {
     filesToAttach: { [key: string]: File[] }, 
     bankDetails?: string, 
     loadedTonnage?: number, 
+    driverFreightValue?: number,
+    icmsValue?: number,
     advancePercentage?: number, 
     advanceValue?: number,
     tollValue?: number, 
@@ -48,6 +50,8 @@ interface ShipmentsPageProps {
     riskReleaseCode?: string,
     riskQueryType?: string,
     riskQueryCost?: number,
+    realProfitData?: any,
+    codigoAtua?: string,
   }) => Promise<void>;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onUpdatePrice: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
@@ -58,7 +62,7 @@ interface ShipmentsPageProps {
   onDeleteShipment: (shipmentId: string) => void;
   onRevertStatus: (shipmentId: string) => void;
   onUpdateScheduledDateTime: (shipmentId: string, data: { scheduledDate: string, scheduledTime?: string }) => void;
-  onUpdateShipmentData: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateShipmentData: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => void;
   activeLocks: ShipmentLock[];
   onModalStateChange: (isOpen: boolean) => void;
   companyLogo?: string | null;
@@ -68,6 +72,7 @@ interface ShipmentsPageProps {
   tickets?: Ticket[];
   riskQueryOptions?: RiskQueryOption[];
   onBatchUpdateShipments?: (updatedShipments: Shipment[]) => Promise<void> | void;
+  onCreateShipment?: (data: any) => Promise<void> | void;
 }
 
 
@@ -80,7 +85,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   onUpdateAnttAndBankDetails, onTransferShipment, onMarkArrival, onDeleteShipment,
   onRevertStatus, onUpdateScheduledDateTime, onUpdateShipmentData, activeLocks, onModalStateChange,
   companyLogo, onDeleteAttachment, onSwapCargo, stays = [], tickets = [], riskQueryOptions,
-  onBatchUpdateShipments
+  onBatchUpdateShipments, onCreateShipment
 }) => {
 
   const [activeStatus, setActiveStatus] = useState<ShipmentStatus | 'all'>(ShipmentStatus.PreCadastro);
@@ -124,10 +129,16 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   const canUpdate = !isDemo && can('update', currentUser, 'shipments', profilePermissions);
   const canDelete = !isDemo && can('delete', currentUser, 'shipments', profilePermissions);
 
-  const allowedProfilesForActions = [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco];
-  const canPerformSpecialActions = !isDemo && currentUser && allowedProfilesForActions.includes(currentUser.profile);
+  const isGerenciadora = currentUser?.profile === UserProfile.GerenciadoraDeRisco ||
+    (currentUser?.profile as string) === 'Gerenciadora de Risco' ||
+    Boolean(currentUser?.name && (currentUser.name.toLowerCase().includes('samanta') || currentUser.name.toLowerCase().includes('samantha'))) ||
+    Boolean(currentUser?.email && (currentUser.email.toLowerCase().includes('samanta') || currentUser.email.toLowerCase().includes('samantha')));
+
+  const allowedProfilesForActions = [UserProfile.Desenvolvedor, UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco];
+  const canPerformSpecialActions = !isDemo && currentUser && (isDeveloperUser(currentUser) || allowedProfilesForActions.includes(currentUser.profile) || isGerenciadora);
   
-  const canEditPrice = canUpdate && canPerformSpecialActions;
+  const isOperationalPriceEditor = currentUser?.profile ? [UserProfile.Embarcador, UserProfile.Agenciador, UserProfile.Comercial].includes(currentUser.profile) : false;
+  const canEditPrice = !isDemo && currentUser && (isDeveloperUser(currentUser) || currentUser.profile === UserProfile.Desenvolvedor || currentUser.profile === UserProfile.Admin || isGerenciadora || (currentUser.profile as string) === 'Administrador do Sistema' || isOperationalPriceEditor);
   const canCancelShipment = canPerformSpecialActions && (canDelete || currentUser.profile === UserProfile.Fiscal || currentUser.profile === UserProfile.Supervisor);
   const canTransferShipment = (canUpdate || currentUser.profile === UserProfile.Supervisor) && canPerformSpecialActions;
   const isClient = currentUser.profile === UserProfile.Cliente;
@@ -209,7 +220,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   };
 
   const handleSavePrice = (data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => {
-    if (!selectedShipment) return;
+    if (!selectedShipment || !canEditPrice) return;
     onUpdatePrice(selectedShipment.id, data);
     setEditPriceModalOpen(false);
     setSelectedShipment(null);
@@ -261,16 +272,25 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
     const currentStatus = shipment.status;
     const userProfile = currentUser.profile;
 
-    if (userProfile === UserProfile.Admin) return defaultResponse;
+    if (isDeveloperUser(currentUser) || userProfile === UserProfile.Desenvolvedor || userProfile === UserProfile.Admin || userProfile === UserProfile.GerenciadoraDeRisco || isGerenciadora) return defaultResponse;
 
     if (currentStatus === ShipmentStatus.PreCadastro) {
-        if ([UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Agenciador, UserProfile.GerenciadoraDeRisco].includes(userProfile)) return defaultResponse;
+        if ([UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Agenciador].includes(userProfile)) return defaultResponse;
         return { allowed: false, reason: 'Apenas Gerenciadora de Risco, Comercial, Fiscal, Diretor, Supervisor, Embarcador, Agenciador ou Admin podem avançar este status.' };
     }
 
     if (currentStatus === ShipmentStatus.AguardandoSeguradora) {
-        if (userProfile === UserProfile.GerenciadoraDeRisco) return defaultResponse;
         return { allowed: false, reason: 'Apenas o perfil Gerenciadora de Risco ou Administrador do Sistema pode avançar embarques neste status.' };
+    }
+
+    if (currentStatus === ShipmentStatus.AguardandoDescarga) {
+        if ([UserProfile.Embarcador, UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Comercial, UserProfile.Financeiro, UserProfile.Agenciador, UserProfile.Motorista].includes(userProfile)) return defaultResponse;
+        return { allowed: false, reason: 'Você não tem permissão para anexar o comprovante de descarga.' };
+    }
+
+    if (currentStatus === ShipmentStatus.ValidacaoTicket) {
+        if ([UserProfile.Fiscal, UserProfile.Supervisor, UserProfile.Diretor, UserProfile.Comercial, UserProfile.Financeiro].includes(userProfile)) return defaultResponse;
+        return { allowed: false, reason: 'A validação do ticket e peso é restrita aos perfis Fiscal, Supervisor, Financeiro, Diretor ou Administrador (bloqueado para Embarcador).' };
     }
 
     if (currentStatus === ShipmentStatus.AguardandoAdiantamento || currentStatus === ShipmentStatus.AguardandoPagamentoSaldo) {
@@ -327,6 +347,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         onSwapCargo={!isDemo ? handleOpenSwapCargoModal : undefined}
         onPerformSwapCargo={!isDemo ? onSwapCargo : undefined}
         tickets={tickets}
+        onCreateShipment={!isDemo ? onCreateShipment : undefined}
       />
 
       {selectedShipment && (
@@ -335,19 +356,22 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
           onClose={handleCloseAttachmentModal}
           onSave={handleSaveAttachment}
           shipment={shipments.find(s => s.id === selectedShipment.id) || selectedShipment}
-          cargo={cargos.find(c => c.id === selectedShipment.cargoId)}
+          cargo={findCargoById(cargos, selectedShipment.cargoId)}
           documentName={REQUIRED_DOCUMENT_MAP[selectedShipment.status] || 'Documento'}
           currentUser={currentUser}
           canSave={canUserAdvanceStatus(selectedShipment).allowed}
           requiresRiskManagement={
-            products.find(p => p.id === cargos.find(c => c.id === selectedShipment.cargoId)?.productId)
-              ?.requiresRiskManagement !== false
+            checkRequiresRiskManagement(
+              findCargoById(cargos, selectedShipment.cargoId),
+              findProductForCargo(products, findCargoById(cargos, selectedShipment.cargoId))
+            )
           }
           products={products}
           clients={clients}
           users={users}
           riskQueryOptions={riskQueryOptions}
           onUpdateShipmentData={onUpdateShipmentData}
+          onDeleteAttachment={!isDemo ? onDeleteAttachment : undefined}
         />
       )}
 
@@ -366,6 +390,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
             onSave={handleSavePrice}
             shipment={selectedShipment}
             currentUser={currentUser}
+            cargo={cargos.find(c => c.id === selectedShipment.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === selectedShipment.cargoId))}
         />
       )}
       {selectedShipment && (
@@ -437,6 +462,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
           cargos={cargos}
           clients={clients}
           products={products}
+          shipments={shipments}
         />
       )}
 

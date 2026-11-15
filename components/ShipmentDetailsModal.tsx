@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
 import type { Shipment, Cargo, User, Client, Product, Vehicle } from '../types';
 import { UserProfile, ShipmentStatus, VehicleSetType, VehicleBodyType, DriverPaymentMethod, AnttModality, EtcTaxRegime } from '../types';
-import { generateLoadingOrderPDF } from '../utils/pdfGenerator';
-import { FileTextIcon, Trash2, ArrowRightLeft, Edit2, Check, X } from 'lucide-react';
+import { generateLoadingOrderPDF, isGoiasOrigin, isMinasOrigin, isSpOrigin } from '../utils/pdfGenerator';
+import { FileTextIcon, Trash2, ArrowRightLeft, Edit2, Check, X, Copy, AlertCircle } from 'lucide-react';
 import { getToolStaysByShipment, StayRecord } from '../utils/toolStorage';
 import { getShipmentAttachmentUrl } from '../lib/db';
-import { autoFormatInput } from '../utils/formatters';
+import { autoFormatInput, formatShipmentStatusLabel } from '../utils/formatters';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import SwapCargoModal from './SwapCargoModal';
-import { openDocumentInNewTab } from '../utils/documentViewer';
-import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, formatShipmentStatus } from '../utils';
-import { isDemoUser } from '../auth';
+import { StatusPendingModal } from './StatusPendingModal';
+import { openDocumentInNewTab, normalizeDocumentUrl, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
+import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, getShipmentCiotNumber } from '../utils';
+import { isDemoUser, isDeveloperUser } from '../auth';
+import { useToast } from '../hooks/useToast';
 
 
 interface ShipmentDetailsModalProps {
@@ -20,7 +22,7 @@ interface ShipmentDetailsModalProps {
   cargo: Cargo | undefined;
   currentUser?: User | null;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => void;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onSwapCargo?: (shipmentId: string, newCargoId: string) => void | Promise<void>;
@@ -69,16 +71,43 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const [shipmentStays, setShipmentStays] = useState<StayRecord[]>([]);
   const [previewDocument, setPreviewDocument] = useState<{ url: string; name?: string; category?: string } | null>(null);
   const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
+  const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
   const [isEditingAdvance, setIsEditingAdvance] = useState(false);
   const [inlineAdvancePercentage, setInlineAdvancePercentage] = useState<number>(70);
   const [isSavingAdvance, setIsSavingAdvance] = useState(false);
+
+  const [isEditingPaymentMethod, setIsEditingPaymentMethod] = useState(false);
+  const [inlinePaymentMethod, setInlinePaymentMethod] = useState<string>(DriverPaymentMethod.PixEFrete);
+  const [inlinePixKey, setInlinePixKey] = useState<string>('');
+  const [inlineBankDetails, setInlineBankDetails] = useState<string>('');
+  const [isSavingPaymentMethod, setIsSavingPaymentMethod] = useState(false);
+  const { showToast } = useToast();
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const handleCopy = (text: string, key: string, label: string) => {
+    if (!text) return;
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      showToast(`${label} copiado: ${text}`, 'success');
+      setTimeout(() => {
+        setCopiedKey(prev => (prev === key ? null : prev));
+      }, 2000);
+    } catch {
+      showToast('Não foi possível copiar.', 'warning');
+    }
+  };
 
   React.useEffect(() => {
     if (shipment) {
       setInlineAdvancePercentage(shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70);
       setIsEditingAdvance(false);
+      setInlinePaymentMethod(shipment.paymentMethod || DriverPaymentMethod.PixEFrete);
+      setInlinePixKey(shipment.pixKey || '');
+      setInlineBankDetails(shipment.bankDetails || '');
+      setIsEditingPaymentMethod(false);
     }
-  }, [shipment?.id, shipment?.advancePercentage]);
+  }, [shipment?.id, shipment?.advancePercentage, shipment?.paymentMethod, shipment?.pixKey, shipment?.bankDetails]);
 
   const handleSaveInlineAdvance = async () => {
     if (!onUpdateShipmentData || !shipment) return;
@@ -90,6 +119,23 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       console.error('Erro ao atualizar porcentagem de adiantamento:', err);
     } finally {
       setIsSavingAdvance(false);
+    }
+  };
+
+  const handleSaveInlinePaymentMethod = async () => {
+    if (!onUpdateShipmentData || !shipment) return;
+    setIsSavingPaymentMethod(true);
+    try {
+      await onUpdateShipmentData(shipment.id, { 
+        paymentMethod: inlinePaymentMethod,
+        pixKey: (inlinePaymentMethod === DriverPaymentMethod.PixEFrete || inlinePaymentMethod === DriverPaymentMethod.PagamentoLivre) ? inlinePixKey : (shipment.pixKey || undefined),
+        bankDetails: (inlinePaymentMethod === DriverPaymentMethod.DepositoConta || inlinePaymentMethod === DriverPaymentMethod.PagamentoLivre || inlineBankDetails) ? inlineBankDetails : (shipment.bankDetails || undefined)
+      });
+      setIsEditingPaymentMethod(false);
+    } catch (err) {
+      console.error('Erro ao atualizar forma de pagamento:', err);
+    } finally {
+      setIsSavingPaymentMethod(false);
     }
   };
 
@@ -123,9 +169,46 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
 
   const isDemo = isDemoUser(currentUser);
   const isFinalized = shipment.status === ShipmentStatus.Finalizado;
-  const isAdmin = currentUser?.profile === UserProfile.Admin;
+  const isAdmin = isDeveloperUser(currentUser) ||
+    currentUser?.profile === UserProfile.Desenvolvedor ||
+    currentUser?.profile === UserProfile.Admin ||
+    currentUser?.profile === UserProfile.GerenciadoraDeRisco ||
+    (currentUser?.profile as string) === 'Administrador do Sistema' ||
+    (currentUser?.profile as string) === 'Gerenciadora de Risco' ||
+    Boolean(currentUser?.name && (currentUser.name.toLowerCase().includes('samanta') || currentUser.name.toLowerCase().includes('samantha'))) ||
+    Boolean(currentUser?.email && (currentUser.email.toLowerCase().includes('samanta') || currentUser.email.toLowerCase().includes('samantha')));
+  const isDiretoria = currentUser?.profile === UserProfile.Diretor;
+
+  const isOperationalPriceEditor = currentUser?.profile ? [
+    UserProfile.Embarcador,
+    UserProfile.Agenciador,
+    UserProfile.Comercial
+  ].includes(currentUser.profile) : false;
+
   const canEdit = !isDemo && !!onUpdatePrice && (
-    (isFinalized ? isAdmin : currentUser?.profile !== UserProfile.Embarcador)
+    (isFinalized ? isAdmin : (isAdmin || isOperationalPriceEditor))
+  );
+
+  const isBeforeAdvanceStatus = [
+    ShipmentStatus.PreCadastro,
+    'Ag. Cadastro',
+    'PreCadastro',
+    ShipmentStatus.AguardandoSeguradora,
+    'Ag. Seguradora',
+    'AguardandoSeguradora',
+    ShipmentStatus.AguardandoCarregamento,
+    'Ag. Carregamento',
+    'AguardandoCarregamento',
+    ShipmentStatus.AguardandoNota,
+    'Ag. Nota',
+    'AguardandoNota',
+    ShipmentStatus.AguardandoFiscal,
+    'Ag. Fiscal',
+    'AguardandoFiscal',
+  ].includes(shipment.status);
+
+  const canEditPaymentDetails = !isDemo && !!onUpdateShipmentData && (
+    isBeforeAdvanceStatus || isAdmin || isDiretoria
   );
 
   const tonnage = Number(shipment.shipmentTonnage) || 0;
@@ -133,6 +216,36 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const driverRateSnapshot = shipment.driverFreightRateSnapshot || (driverFreight / (tonnage || 1));
   const companyRateSnapshot = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
   const commissionPerTon = Number(cargo?.salespersonCommissionPerTon) || 0;
+
+  // Custo Financeiro
+  const financialCostMonthlyRate = shipment.financialCostMonthlyRate !== undefined 
+    ? shipment.financialCostMonthlyRate 
+    : (cargo?.financialCostMonthlyRate || 0);
+  const financialCostDaysTerm = shipment.financialCostDaysTerm !== undefined 
+    ? shipment.financialCostDaysTerm 
+    : (cargo?.financialCostDaysTerm || 0);
+  const financialCostRate = shipment.financialCostRate !== undefined 
+    ? shipment.financialCostRate 
+    : (cargo?.financialCostEffectiveRate !== undefined 
+        ? cargo.financialCostEffectiveRate 
+        : ((financialCostMonthlyRate * financialCostDaysTerm) / (cargo?.financialCostBaseDays || 30)));
+  const calculatedFinancialCost = (financialCostRate > 0 && (companyRateSnapshot * tonnage) > 0)
+    ? Number(((companyRateSnapshot * tonnage) * (financialCostRate / 100)).toFixed(2))
+    : 0;
+  const financialCostValue = calculatedFinancialCost > 0
+    ? calculatedFinancialCost
+    : ((shipment.financialCostValue !== undefined && shipment.financialCostValue > 0)
+        ? shipment.financialCostValue
+        : 0);
+
+  // Valor original colocado na carga (R$/ton) e teto de +R$ 5,00 para perfis operacionais
+  const cargoBaseDriverRate = (cargo?.driverFreightValuePerTon !== undefined && cargo.driverFreightValuePerTon > 0)
+    ? cargo.driverFreightValuePerTon
+    : (driverRateSnapshot || 0);
+
+  const maxAllowedDriverRate = isAdmin 
+    ? Infinity 
+    : Number((cargoBaseDriverRate + 5.00).toFixed(2));
 
   const staysList = Array.isArray(shipmentStays) ? shipmentStays : [];
   const approvedStaysValue = staysList.reduce((acc, stay) => acc + (Number(stay.approvedValue) || 0), 0);
@@ -153,11 +266,15 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const handleSave = () => {
     if (isDemo) return;
     if (onUpdatePrice) {
-      const newTotal = editRate * tonnage;
+      if (!isAdmin && isOperationalPriceEditor && editRate > maxAllowedDriverRate + 0.001) {
+        alert(`O frete do motorista não pode ultrapassar ${formatCurrency(maxAllowedDriverRate)}/ton (R$ 5,00 a mais que o valor colocado na carga).`);
+        return;
+      }
+      const newTotal = Number((editRate * tonnage).toFixed(2));
       onUpdatePrice(shipment.id, {
         newTotal,
         newRate: editRate,
-        newCompanyRate: editCompanyRate
+        newCompanyRate: isAdmin ? editCompanyRate : undefined
       });
       setIsEditing(false);
     }
@@ -191,6 +308,9 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       anttOwnerIdentifier: shipment.anttOwnerIdentifier,
       cteNumber: isCteApplicableForStatus(shipment.status) ? (shipment.cteNumber || (getShipmentCte(shipment) !== '-' ? getShipmentCte(shipment) : '')) : '',
       cteEmissionDate: isCteApplicableForStatus(shipment.status) ? (shipment.cteEmissionDate || (getShipmentCteEmissionDate(shipment) || '')) : '',
+      ciotNumber: shipment.ciotNumber || shipment.ciot || (getShipmentCiotNumber(shipment) !== '-' ? getShipmentCiotNumber(shipment) : ''),
+      ciot: shipment.ciot || shipment.ciotNumber || (getShipmentCiotNumber(shipment) !== '-' ? getShipmentCiotNumber(shipment) : ''),
+      statusPendingObservation: shipment.statusPendingObservation || '',
     });
     setIsEditingData(true);
   };
@@ -199,12 +319,17 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
     if (isDemo) return;
     if (onUpdateShipmentData) {
       const finalRate = editedData.driverFreightRateSnapshot !== undefined ? editedData.driverFreightRateSnapshot : driverRateSnapshot;
+      if (!isAdmin && isOperationalPriceEditor && finalRate > maxAllowedDriverRate + 0.001) {
+        alert(`O frete do motorista não pode ultrapassar ${formatCurrency(maxAllowedDriverRate)}/ton (R$ 5,00 a mais que o valor colocado na carga).`);
+        return;
+      }
       const finalTon = editedData.shipmentTonnage !== undefined ? editedData.shipmentTonnage : tonnage;
       const finalTotal = finalRate * finalTon;
       onUpdateShipmentData(shipment.id, {
         ...editedData,
         driverFreightRateSnapshot: finalRate,
-        driverFreightValue: finalTotal
+        driverFreightValue: finalTotal,
+        statusPendingObservation: editedData.statusPendingObservation !== undefined ? (editedData.statusPendingObservation.trim() || undefined) : undefined
       });
       setIsEditingData(false);
     }
@@ -232,7 +357,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       {/* Modal Container */}
       <div className="fixed inset-0 z-[9999] flex justify-center items-center pointer-events-none p-4">
         <div 
-          className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-4xl w-full max-h-[90vh] flex flex-col border border-gray-200 dark:border-gray-700 pointer-events-auto"
+          className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-6xl w-full max-h-[90vh] flex flex-col border border-gray-200 dark:border-gray-700 pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
         >
         <div className="flex justify-between items-start mb-4 border-b pb-4 dark:border-gray-700 shrink-0">
@@ -244,23 +369,84 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             type="button"
                             onClick={() => setIsSwapModalOpen(true)}
                             title="Remanejar Carga do Embarque"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 rounded-md text-xs font-bold transition-all shadow-sm border border-blue-200 dark:border-blue-800/60 cursor-pointer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:text-amber-300 rounded-md text-xs font-bold transition-all shadow-sm border border-amber-200 dark:border-amber-800/60 cursor-pointer"
                         >
                             <ArrowRightLeft size={14} />
                             <span>Remanejar Carga</span>
                         </button>
                     )}
-                    {shipment && ![ShipmentStatus.AguardandoSeguradora, ShipmentStatus.PreCadastro, ShipmentStatus.Cancelado].includes(shipment.status) && (
-                        <button
-                            onClick={() => cargo && generateLoadingOrderPDF(shipment, cargo, clients, products, vehicles, companyLogo)}
-                            title="Gerar Ordem de Carregamento (PDF)"
-                            className="p-1.5 bg-indigo-50 text-indigo-600 rounded-md hover:bg-indigo-600 hover:text-white transition-all shadow-sm border border-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800/50"
-                        >
-                            <FileTextIcon size={18} />
-                        </button>
-                    )}
+                    {shipment && ![ShipmentStatus.AguardandoSeguradora, ShipmentStatus.PreCadastro, ShipmentStatus.Cancelado].includes(shipment.status) && (() => {
+                        const linkedClient = clients.find(c => c.id === cargo?.clientId);
+                        const linkedBranch = linkedClient?.secondaryCnpjs?.find(b => b.id === cargo?.clientBranchId || b.cnpj === cargo?.clientCnpj);
+                        const activeLoadingOrderModelId = linkedBranch?.loadingOrderModelId || linkedBranch?.ordemCarregamentoModelId || linkedClient?.loadingOrderModelId || linkedClient?.ordemCarregamentoModelId;
+                        const isConsubeModel = activeLoadingOrderModelId === 'mod_consube';
+                        const isGoias = cargo ? isGoiasOrigin(cargo, shipment) : false;
+                        const isSp = cargo ? isSpOrigin(cargo, shipment) : false;
+                        const isMinas = cargo ? isMinasOrigin(cargo, shipment) : false;
+                        const originBranchTitle = isGoias ? ' - Filial Catalão/GO' : isSp ? ' - Filial Ipaussu/SP' : isMinas ? ' - Matriz Pratápolis/MG' : '';
+
+                        return (
+                            <div className="inline-flex items-center gap-1.5">
+                                <button
+                                    onClick={() => cargo && generateLoadingOrderPDF(shipment, cargo, clients, products, vehicles, companyLogo)}
+                                    title={
+                                        isConsubeModel 
+                                            ? `Gerar Ordem de Carregamento - Modelo Consube (PDF${originBranchTitle})` 
+                                            : `Gerar Ordem de Carregamento (PDF${originBranchTitle})`
+                                    }
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold transition-all shadow-sm border ${
+                                        isConsubeModel 
+                                            ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700/60 hover:bg-amber-500/20' 
+                                            : 'bg-amber-50 text-amber-600 rounded-md hover:bg-amber-600 hover:text-white border-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50'
+                                    }`}
+                                >
+                                    <FileTextIcon size={15} />
+                                    <span>{isConsubeModel ? 'Ordem Consube' : 'Ordem de Carga'}</span>
+                                    {isGoias && (
+                                        <span className="ml-0.5 px-1 py-0.2 text-[9px] font-black rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700" title="Origem Goiás - Emissão Filial Catalão/GO">
+                                            GO
+                                        </span>
+                                    )}
+                                    {isSp && (
+                                        <span className="ml-0.5 px-1 py-0.2 text-[9px] font-black rounded bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-700" title="Origem São Paulo - Emissão Filial Ipaussu/SP">
+                                            SP
+                                        </span>
+                                    )}
+                                    {isMinas && (
+                                        <span className="ml-0.5 px-1 py-0.2 text-[9px] font-black rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700" title="Origem Minas Gerais - Emissão Matriz Pratápolis/MG">
+                                            MG
+                                        </span>
+                                    )}
+                                </button>
+                                {!isConsubeModel && (
+                                    <button
+                                        onClick={() => cargo && generateLoadingOrderPDF(shipment, cargo, clients, products, vehicles, companyLogo, 'mod_consube')}
+                                        title={`Emitir Ordem de Carregamento no Modelo Consube${originBranchTitle}`}
+                                        className="inline-flex items-center gap-1 px-2 py-1.5 bg-gray-50 hover:bg-amber-50 text-gray-600 hover:text-amber-700 dark:bg-gray-800 dark:hover:bg-amber-900/30 dark:text-gray-300 dark:hover:text-amber-300 rounded-md text-[11px] font-semibold transition-all border border-gray-200 dark:border-gray-700"
+                                    >
+                                        <span>Mod. Consube</span>
+                                        {isGoias && (
+                                            <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400">
+                                                (GO)
+                                            </span>
+                                        )}
+                                        {isSp && (
+                                            <span className="text-[9px] font-black text-purple-600 dark:text-purple-400">
+                                                (SP)
+                                            </span>
+                                        )}
+                                        {isMinas && (
+                                            <span className="text-[9px] font-black text-amber-600 dark:text-amber-400">
+                                                (MG)
+                                            </span>
+                                        )}
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </div>
-                <p className="text-sm font-mono text-primary dark:text-blue-400 mt-1">{shipment.id}</p>
+                <p className="text-sm font-mono text-primary dark:text-amber-400 mt-1">{shipment.id}</p>
             </div>
 
             <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition">&times;</button>
@@ -269,29 +455,56 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
         <div className="flex-1 overflow-y-auto space-y-6 pr-2">
             
             {/* Rota e Origem/Destino */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-blue-50/50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800/50">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-amber-50/50 dark:bg-amber-900/20 rounded-lg border border-amber-100 dark:border-amber-800/50">
                 <DetailItem label="Origem da Carga" value={cargo?.origin} />
                 <DetailItem label="Destino da Carga" value={cargo?.destination} />
-                <DetailItem label="Produto" value={product?.name} />
+                <DetailItem label="Produto" value={product?.name || (cargo as any)?.productName || 'GRÃOS'} />
+                <DetailItem label="Nº do Pedido" value={cargo?.orderNumber || (cargo as any)?.numeroPedido || cargo?.tmsLoteNumber || 'N/A'} />
+                <DetailItem label="Tipo / Embalagem" value={cargo?.packaging || 'Granel'} />
                 <DetailItem label="Carga Vinculada">
                     <div className="flex items-center justify-between gap-2 mt-0.5">
                         <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                            {cargo?.sequenceId ? `#${cargo.sequenceId}${cargo.tmsLoteNumber ? ` (Lote TMS: ${cargo.tmsLoteNumber})` : ''}` : (cargo?.id || 'N/A')}
+                            {cargo?.sequenceId ? `#${cargo.sequenceId}${cargo.orderNumber ? ` (Ped: ${cargo.orderNumber})` : (cargo.tmsLoteNumber ? ` (Lote: ${cargo.tmsLoteNumber})` : '')}` : (cargo?.id || 'N/A')}
                         </span>
                         {onSwapCargo && !isDemo && shipment.status !== ShipmentStatus.Cancelado && (
                             <button
                                 type="button"
                                 onClick={() => setIsSwapModalOpen(true)}
-                                className="text-[11px] font-bold text-primary dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer bg-primary/10 dark:bg-primary/20 px-2 py-0.5 rounded"
+                                className="text-[11px] font-bold text-primary dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer bg-primary/10 dark:bg-primary/20 px-2 py-0.5 rounded"
                                 title="Remanejar carga vinculada"
                             >
                                 <ArrowRightLeft size={12} />
-                                <span>Remanejar</span>
+                                <span>Remanejar Carga</span>
                             </button>
                         )}
                     </div>
                 </DetailItem>
-                <DetailItem label="Status Atual" value={formatShipmentStatus(shipment.status)} />
+                <DetailItem label="Status Atual">
+                    <div className="flex flex-col gap-1.5 mt-0.5">
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">{formatShipmentStatusLabel(shipment.status)}</span>
+                            {!isDemo && onUpdateShipmentData && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsPendingModalOpen(true)}
+                                    className="text-[11px] font-bold text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-2 py-0.5 rounded transition-all"
+                                    title="Editar ou informar pendência do status"
+                                >
+                                    <AlertCircle size={12} />
+                                    <span>{shipment.statusPendingObservation ? 'Editar Pendência' : '+ Pendência'}</span>
+                                </button>
+                            )}
+                        </div>
+                        {shipment.statusPendingObservation && (
+                            <div className="p-2 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-1.5 shadow-xs">
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                                <div className="flex-1">
+                                    <span className="font-bold">Pendência:</span> {shipment.statusPendingObservation}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </DetailItem>
                 <DetailItem label="Comercial (Embarcador)" value={embarcador?.name || 'N/A'} />
                 {shipment.status === 'Cancelado' && shipment.cancellationReason && (
                     <div className="md:col-span-2 mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/50 rounded-md">
@@ -309,7 +522,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         !isDemo && (
                             <button 
                                 onClick={handleStartEditData}
-                                className="text-xs font-semibold text-primary hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
+                                className="text-xs font-semibold text-primary hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 flex items-center gap-1"
                             >
                                 <span>Editar Dados</span>
                             </button>
@@ -320,7 +533,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                 onClick={handleSaveData}
                                 className="px-3 py-1 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-700 transition"
                             >
-                                Salvar
+                                Salvar Alterações
                             </button>
                             <button 
                                 onClick={() => setIsEditingData(false)}
@@ -429,6 +642,19 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     {Object.values(VehicleBodyType).map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                             </div>
+                            <div className="md:col-span-2 lg:col-span-3 p-3 bg-amber-50/50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800/40">
+                                <label className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5 mb-1">
+                                    <AlertCircle size={14} className="text-amber-600 dark:text-amber-400" />
+                                    <span>Pendência do Status Atual ({shipment.status})</span>
+                                </label>
+                                <input 
+                                    type="text"
+                                    className="w-full p-2 text-sm border border-amber-300 dark:border-amber-700 rounded-md dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                                    value={editedData.statusPendingObservation || ''}
+                                    onChange={e => setEditedData({...editedData, statusPendingObservation: e.target.value})}
+                                    placeholder="Ex: Aguardando facial, pendente consulta CNH, fila do pátio..."
+                                />
+                            </div>
                             <div>
                                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Número do CT-e</label>
                                 <input 
@@ -449,17 +675,95 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     placeholder="Ex: 13/08/2026 11:40"
                                 />
                             </div>
+                            <div>
+                                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Número do CIOT</label>
+                                <input 
+                                    type="text"
+                                    className="w-full mt-1 p-1.5 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                    value={editedData.ciotNumber || ''}
+                                    onChange={e => setEditedData({...editedData, ciotNumber: e.target.value, ciot: e.target.value})}
+                                    placeholder="Ex: 520.038.012.363/9057"
+                                />
+                            </div>
                         </>
                     ) : (
                         <>
-                            <DetailItem label="Motorista" value={shipment.driverName} />
+                            <DetailItem label="Motorista">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    {(() => {
+                                        const atua = shipment.codigoAtua || (shipment.documents as any)?.codigo_atua || (shipment.documents as any)?.codg_atua || (shipment.documents as any)?.codigoAtua;
+                                        return atua ? (
+                                            <span 
+                                                onClick={() => handleCopy(atua, 'modal_atua', 'Código ATUA')}
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-black font-mono bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300 dark:border-amber-700/60 shadow-2xs cursor-pointer hover:bg-amber-200/80 dark:hover:bg-amber-800/80 transition-colors"
+                                                title={`Código ATUA: ${atua} (Clique para copiar)`}
+                                            >
+                                                <span>{atua}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); handleCopy(atua, 'modal_atua', 'Código ATUA'); }}
+                                                    className="text-amber-600 hover:text-amber-950 dark:text-amber-300 dark:hover:text-white transition-colors cursor-pointer p-0.5 rounded"
+                                                    title={`Copiar Código ATUA (${atua})`}
+                                                >
+                                                    {copiedKey === 'modal_atua' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                                </button>
+                                            </span>
+                                        ) : null;
+                                    })()}
+                                    <span className="font-semibold text-gray-800 dark:text-gray-100">{shipment.driverName}</span>
+                                </div>
+                            </DetailItem>
                             <DetailItem label="Documento (CPF)" value={shipment.driverCpf} />
                             <DetailItem label="Contato" value={shipment.driverContact} />
                             
                             <div className="md:col-span-2 lg:col-span-3 h-px bg-gray-100 dark:bg-gray-700 my-2" />
                             
-                            <DetailItem label="Placa do Cavalo" value={shipment.horsePlate} />
-                            <DetailItem label="Placa Carreta 1" value={shipment.trailer1Plate} />
+                            <DetailItem label="Placa do Cavalo">
+                                {shipment.horsePlate ? (
+                                    <div className="flex items-center gap-1.5 font-semibold text-gray-800 dark:text-gray-200">
+                                        <span 
+                                            onClick={() => handleCopy(shipment.horsePlate!, 'modal_horse_plate', 'Placa do Cavalo')}
+                                            className="font-mono cursor-pointer hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+                                            title="Clique para copiar a Placa do Cavalo"
+                                        >
+                                            {shipment.horsePlate}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); handleCopy(shipment.horsePlate!, 'modal_horse_plate', 'Placa do Cavalo'); }}
+                                            className="p-1 text-gray-400 hover:text-amber-600 dark:hover:text-amber-400 rounded transition-colors cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                                            title="Copiar Placa do Cavalo"
+                                        >
+                                            {copiedKey === 'modal_horse_plate' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">N/A</p>
+                                )}
+                            </DetailItem>
+                            <DetailItem label="Placa Carreta 1">
+                                {shipment.trailer1Plate ? (
+                                    <div className="flex items-center gap-1.5 font-semibold text-gray-800 dark:text-gray-200">
+                                        <span 
+                                            onClick={() => handleCopy(shipment.trailer1Plate!, 'modal_trailer1', 'Placa Carreta 1')}
+                                            className="font-mono cursor-pointer hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+                                            title="Clique para copiar a Placa Carreta 1"
+                                        >
+                                            {shipment.trailer1Plate}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); handleCopy(shipment.trailer1Plate!, 'modal_trailer1', 'Placa Carreta 1'); }}
+                                            className="p-1 text-gray-400 hover:text-amber-600 dark:hover:text-amber-400 rounded transition-colors cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                                            title="Copiar Placa Carreta 1"
+                                        >
+                                            {copiedKey === 'modal_trailer1' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">N/A</p>
+                                )}
+                            </DetailItem>
                             <DetailItem label="Placa Carreta 2" value={shipment.trailer2Plate || 'N/A'} />
                             <DetailItem label="Placa Carreta 3" value={shipment.trailer3Plate || 'N/A'} />
                             <DetailItem label="Tag do Veículo" value={shipment.vehicleTag || 'N/A'} />
@@ -472,10 +776,17 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     if (cte === '-') return <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">N/A</p>;
                                     return (
                                         <div>
-                                            <p className="text-sm font-bold text-blue-600 dark:text-blue-400">{cte}</p>
+                                            <p className="text-sm font-bold text-amber-600 dark:text-amber-400">{cte}</p>
                                             {cteDate && <p className="text-xs text-gray-500 dark:text-gray-400">Emissão: {cteDate}</p>}
                                         </div>
                                     );
+                                })()}
+                            </DetailItem>
+                            <DetailItem label="CIOT">
+                                {(() => {
+                                    const ciotVal = getShipmentCiotNumber(shipment);
+                                    if (ciotVal === '-') return <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">N/A</p>;
+                                    return <p className="text-sm font-bold text-rose-600 dark:text-rose-400">{ciotVal}</p>;
                                 })()}
                             </DetailItem>
                         </>
@@ -490,7 +801,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                     {canEdit && !isEditing && (
                         <button 
                             onClick={handleStartEdit}
-                            className="text-xs font-bold text-primary dark:text-blue-400 hover:underline flex items-center gap-1"
+                            className="text-xs font-bold text-primary dark:text-amber-400 hover:underline flex items-center gap-1"
                         >
                             Editar Valores
                         </button>
@@ -508,19 +819,42 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                         step="0.01"
                                         value={editRate}
                                         onChange={(e) => setEditRate(Number(e.target.value))}
-                                        className="w-full p-2 text-sm border rounded dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                                        className={`w-full p-2 text-sm border rounded dark:bg-gray-800 dark:text-white ${
+                                          !isAdmin && isOperationalPriceEditor && editRate > maxAllowedDriverRate + 0.001 
+                                            ? 'border-red-500 dark:border-red-500 bg-red-50/20' 
+                                            : 'dark:border-gray-600'
+                                        }`}
                                     />
+                                    {isOperationalPriceEditor && !isAdmin && (
+                                        <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
+                                            Limite operacional: máx. {formatCurrency(maxAllowedDriverRate)}/ton (+R$ 5,00 da carga)
+                                        </p>
+                                    )}
+                                    {!isAdmin && isOperationalPriceEditor && editRate > maxAllowedDriverRate + 0.001 && (
+                                        <p className="text-[10px] text-red-600 dark:text-red-400 font-bold mt-0.5">
+                                            ⚠️ Ultrapassa o teto permitido de {formatCurrency(maxAllowedDriverRate)}/ton.
+                                        </p>
+                                    )}
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Frete Empresa (R$ / Ton)</label>
-                                    <input 
-                                        type="number" 
-                                        step="0.01"
-                                        value={editCompanyRate}
-                                        onChange={(e) => setEditCompanyRate(Number(e.target.value))}
-                                        className="w-full p-2 text-sm border rounded dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-                                    />
-                                </div>
+                                {isAdmin ? (
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Frete Empresa (R$ / Ton)</label>
+                                        <input 
+                                            type="number" 
+                                            step="0.01"
+                                            value={editCompanyRate}
+                                            onChange={(e) => setEditCompanyRate(Number(e.target.value))}
+                                            className="w-full p-2 text-sm border rounded dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                                        />
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-400 dark:text-gray-500 mb-1">Frete Empresa (R$ / Ton)</label>
+                                        <div className="w-full p-2 text-sm border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/60 rounded text-gray-500 dark:text-gray-400">
+                                            {formatCurrency(companyRateSnapshot)}/ton (Restrito ao Administrador)
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             <div className="flex justify-between items-center pt-2 border-t dark:border-gray-600 mt-2">
                                 <div className="text-sm">
@@ -529,7 +863,17 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                 </div>
                                 <div className="flex gap-2">
                                     <button onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded">Cancelar</button>
-                                    <button onClick={handleSave} className="px-3 py-1.5 text-xs font-bold bg-primary text-white rounded hover:bg-primary/90 shadow-sm">Salvar Alterações</button>
+                                    <button 
+                                      onClick={handleSave} 
+                                      disabled={!isAdmin && isOperationalPriceEditor && editRate > maxAllowedDriverRate + 0.001}
+                                      className={`px-3 py-1.5 text-xs font-bold rounded shadow-sm transition ${
+                                        !isAdmin && isOperationalPriceEditor && editRate > maxAllowedDriverRate + 0.001
+                                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed dark:bg-gray-700'
+                                          : 'bg-primary text-white hover:bg-primary/90'
+                                      }`}
+                                    >
+                                      Salvar Alterações
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -591,9 +935,22 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         
                         {currentUser?.profile !== UserProfile.Embarcador && currentUser?.profile !== UserProfile.Motorista && (
                             <DetailItem label="Frete Empresa (Foto)">
-                                <p className="text-sm font-bold text-primary dark:text-blue-400">
+                                <p className="text-sm font-bold text-primary dark:text-amber-400">
                                     {formatCurrency(companyRateSnapshot)} /ton
                                 </p>
+                            </DetailItem>
+                        )}
+
+                        {currentUser?.profile !== UserProfile.Embarcador && currentUser?.profile !== UserProfile.Motorista && financialCostValue > 0 && (
+                            <DetailItem label="Custo Financeiro">
+                                <div>
+                                    <p className="text-sm font-bold text-purple-700 dark:text-purple-400">
+                                        - {formatCurrency(financialCostValue)}
+                                    </p>
+                                    <span className="text-xs text-gray-500 dark:text-gray-400 font-medium block mt-0.5">
+                                        {financialCostRate.toFixed(2)}% ({financialCostDaysTerm} dias a {financialCostMonthlyRate}% a.m.)
+                                    </span>
+                                </div>
                             </DetailItem>
                         )}
                         
@@ -613,11 +970,11 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                             {formatCurrency(driverPaidStaysValue)}
                                         </p>
                                     </div>
-                                    <div className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-100 dark:border-blue-800/50">
-                                        <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase">Lucro Adicional</p>
+                                    <div className="bg-amber-50 dark:bg-amber-900/20 p-2 rounded border border-amber-100 dark:border-amber-800/50">
+                                        <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase">Lucro Adicional</p>
                                         <p className={`text-sm font-bold ${
                                             netDemurrage >= 0 
-                                            ? 'text-blue-700 dark:text-blue-300' 
+                                            ? 'text-amber-700 dark:text-amber-300' 
                                             : 'text-red-600 dark:text-red-400'
                                         }`}>
                                             {formatCurrency(netDemurrage)}
@@ -650,12 +1007,12 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                             {(stay.cteUrl || stay.paymentProofUrl) && (
                                                 <div className="flex gap-4 pt-2 mt-1 border-t border-gray-200 dark:border-gray-700/50">
                                                     {stay.cteUrl && (
-                                                        <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(stay.cteUrl!), 'CTe Complementar')} className="text-[10px] flex items-center font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 hover:underline text-left cursor-pointer">
+                                                        <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(stay.cteUrl!), 'CTe Complementar')} className="text-[10px] flex items-center font-bold text-amber-600 dark:text-amber-400 hover:text-amber-800 hover:underline text-left cursor-pointer">
                                                             <FileTextIcon className="w-3 h-3 mr-1" /> CTe Complementar
                                                         </button>
                                                     )}
                                                     {stay.paymentProofUrl && (
-                                                        <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(stay.paymentProofUrl!), 'Comprovante de Pagamento')} className="text-[10px] flex items-center font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 hover:underline text-left cursor-pointer">
+                                                        <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(stay.paymentProofUrl!), 'Comprovante de Pagamento')} className="text-[10px] flex items-center font-bold text-amber-600 dark:text-amber-400 hover:text-amber-800 hover:underline text-left cursor-pointer">
                                                             <FileTextIcon className="w-3 h-3 mr-1" /> Comprovante de Pagamento
                                                         </button>
                                                     )}
@@ -668,17 +1025,23 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         )}
                         
                         {currentUser?.profile !== UserProfile.Embarcador && (
-                            <div className="md:col-span-2 mt-2 pt-2 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg">
+                            <div className="md:col-span-2 mt-2 pt-2 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                                 <DetailItem label="Lucro Operacional do Embarque (Margem + Estadias)">
-                                    <p className="text-lg font-bold text-primary dark:text-blue-400">
+                                    <p className="text-lg font-bold text-primary dark:text-amber-400">
                                         {formatCurrency(
                                             (companyRateSnapshot * tonnage) 
                                             - driverFreight 
                                             - (commissionPerTon * tonnage)
+                                            - financialCostValue
                                             + netDemurrage
                                         )}
                                     </p>
                                 </DetailItem>
+                                {financialCostValue > 0 && (
+                                    <span className="text-xs px-2.5 py-1 rounded-md bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-700 font-semibold">
+                                        Deduzido Custo Financeiro: -{formatCurrency(financialCostValue)}
+                                    </span>
+                                )}
                             </div>
                         )}
 
@@ -686,18 +1049,118 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             <DetailItem label="Forma de Pagamento">
                                 {isEditingData ? (
                                     <select
-                                        className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-semibold"
+                                        className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                                         value={editedData.paymentMethod || DriverPaymentMethod.PixEFrete}
                                         onChange={e => setEditedData({...editedData, paymentMethod: e.target.value})}
+                                        disabled={!canEditPaymentDetails}
                                     >
                                         {Object.values(DriverPaymentMethod).map(m => (
                                             <option key={m} value={m}>{m}</option>
                                         ))}
                                     </select>
+                                ) : isEditingPaymentMethod ? (
+                                    <div className="mt-1 space-y-2">
+                                        <div className="flex items-center gap-2">
+                                            <select
+                                                className="flex-1 p-1.5 text-xs font-bold border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                value={inlinePaymentMethod}
+                                                onChange={e => setInlinePaymentMethod(e.target.value)}
+                                                disabled={isSavingPaymentMethod}
+                                                autoFocus
+                                            >
+                                                {Object.values(DriverPaymentMethod).map(m => (
+                                                    <option key={m} value={m}>{m}</option>
+                                                ))}
+                                            </select>
+                                            <button
+                                                type="button"
+                                                onClick={handleSaveInlinePaymentMethod}
+                                                disabled={isSavingPaymentMethod}
+                                                className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-bold transition-colors cursor-pointer shadow-xs"
+                                                title="Salvar Forma de Pagamento"
+                                            >
+                                                <Check size={14} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setInlinePaymentMethod(shipment.paymentMethod || DriverPaymentMethod.PixEFrete);
+                                                    setInlinePixKey(shipment.pixKey || '');
+                                                    setInlineBankDetails(shipment.bankDetails || '');
+                                                    setIsEditingPaymentMethod(false);
+                                                }}
+                                                disabled={isSavingPaymentMethod}
+                                                className="p-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 text-gray-700 dark:text-gray-200 rounded-md text-xs transition-colors cursor-pointer"
+                                                title="Cancelar"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+
+                                        {inlinePaymentMethod === DriverPaymentMethod.PixEFrete && (
+                                            <div>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Informe a Chave Pix..."
+                                                    className="w-full p-1.5 text-xs border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono"
+                                                    value={inlinePixKey}
+                                                    onChange={e => setInlinePixKey(e.target.value)}
+                                                    disabled={isSavingPaymentMethod}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {inlinePaymentMethod === DriverPaymentMethod.DepositoConta && (
+                                            <div>
+                                                <textarea
+                                                    rows={2}
+                                                    placeholder="Banco, agência, conta e favorecido..."
+                                                    className="w-full p-1.5 text-xs border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                    value={inlineBankDetails}
+                                                    onChange={e => setInlineBankDetails(e.target.value)}
+                                                    disabled={isSavingPaymentMethod}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {inlinePaymentMethod === DriverPaymentMethod.PagamentoLivre && (
+                                            <div className="space-y-2">
+                                                <div className="p-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300">
+                                                    <span>ℹ️ Pagamento Livre: modalidade livre/direta negociada com o motorista.</span>
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Chave Pix (opcional)..."
+                                                    className="w-full p-1.5 text-xs border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono"
+                                                    value={inlinePixKey}
+                                                    onChange={e => setInlinePixKey(e.target.value)}
+                                                    disabled={isSavingPaymentMethod}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
                                 ) : (
-                                    <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-                                        {shipment.paymentMethod || 'PIX - E-FRETE'}
-                                    </p>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
+                                            {shipment.paymentMethod || 'PIX - E-FRETE'}
+                                        </p>
+                                        {canEditPaymentDetails && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setInlinePaymentMethod(shipment.paymentMethod || DriverPaymentMethod.PixEFrete);
+                                                    setInlinePixKey(shipment.pixKey || '');
+                                                    setInlineBankDetails(shipment.bankDetails || '');
+                                                    setIsEditingPaymentMethod(true);
+                                                }}
+                                                className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800 cursor-pointer transition-colors"
+                                                title="Editar Forma de Pagamento"
+                                            >
+                                                <Edit2 size={11} />
+                                                <span>Editar</span>
+                                            </button>
+                                        )}
+                                    </div>
                                 )}
                             </DetailItem>
 
@@ -709,9 +1172,10 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                                 type="number"
                                                 min="0"
                                                 max="100"
-                                                className="w-full p-2 pr-7 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white font-bold"
+                                                className="w-full p-2 pr-7 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white font-bold disabled:opacity-60 disabled:cursor-not-allowed"
                                                 value={editedData.advancePercentage !== undefined ? editedData.advancePercentage : 70}
                                                 onChange={e => setEditedData({...editedData, advancePercentage: Number(e.target.value)})}
+                                                disabled={!canEditPaymentDetails}
                                             />
                                             <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">%</span>
                                         </div>
@@ -721,7 +1185,8 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                                     key={pct}
                                                     type="button"
                                                     onClick={() => setEditedData({...editedData, advancePercentage: pct})}
-                                                    className={`px-1.5 py-1 text-[10px] font-bold rounded border transition-colors cursor-pointer ${
+                                                    disabled={!canEditPaymentDetails}
+                                                    className={`px-1.5 py-1 text-[10px] font-bold rounded border transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                                                         (editedData.advancePercentage !== undefined ? editedData.advancePercentage : 70) === pct
                                                             ? 'bg-emerald-600 text-white border-emerald-600'
                                                             : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100'
@@ -774,14 +1239,14 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                         <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
                                             {shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70}%
                                         </p>
-                                        {onUpdateShipmentData && !isDemo && (
+                                        {canEditPaymentDetails && (
                                             <button
                                                 type="button"
                                                 onClick={() => {
                                                     setInlineAdvancePercentage(shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70);
                                                     setIsEditingAdvance(true);
                                                 }}
-                                                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800 cursor-pointer transition-colors"
+                                                className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800 cursor-pointer transition-colors"
                                                 title="Editar Porcentagem de Adiantamento"
                                             >
                                                 <Edit2 size={11} />
@@ -792,16 +1257,17 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                 )}
                             </DetailItem>
 
-                            {(editedData.paymentMethod === DriverPaymentMethod.PixEFrete || shipment.paymentMethod === DriverPaymentMethod.PixEFrete || shipment.pixKey) && (
+                            {(editedData.paymentMethod === DriverPaymentMethod.PixEFrete || shipment.paymentMethod === DriverPaymentMethod.PixEFrete || shipment.pixKey || inlinePaymentMethod === DriverPaymentMethod.PixEFrete) && (
                                 <div className="md:col-span-2">
                                     <DetailItem label="Chave Pix">
                                         {isEditingData ? (
                                             <input 
                                                 type="text"
-                                                className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono"
+                                                className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono disabled:opacity-60 disabled:cursor-not-allowed"
                                                 value={editedData.pixKey || ''}
                                                 onChange={e => setEditedData({...editedData, pixKey: e.target.value})}
                                                 placeholder="Informe a Chave Pix..."
+                                                disabled={!canEditPaymentDetails}
                                             />
                                         ) : (
                                             <div className="mt-1 p-2.5 bg-white dark:bg-gray-800 rounded-md border dark:border-gray-700">
@@ -818,10 +1284,11 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                 <DetailItem label="Dados Bancários">
                                     {isEditingData ? (
                                         <textarea 
-                                            className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[70px]"
+                                            className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[70px] disabled:opacity-60 disabled:cursor-not-allowed"
                                             value={editedData.bankDetails || ''}
                                             onChange={e => setEditedData({...editedData, bankDetails: e.target.value})}
                                             placeholder="Informe os dados bancários..."
+                                            disabled={!canEditPaymentDetails}
                                         />
                                     ) : (
                                         <div className="mt-1 p-2.5 bg-white dark:bg-gray-800 rounded-md border dark:border-gray-700">
@@ -845,7 +1312,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                         {shipment.anttModality ? `ANTT: ${shipment.anttModality}` : (shipment.driverFreightType === 'PF' ? 'ANTT: TAC (Autônomo)' : 'ANTT: ETC (Empresa)')}
                                     </span>
                                     {shipment.etcTaxRegime && (
-                                        <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                        <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                                             Regime: {shipment.etcTaxRegime}
                                         </span>
                                     )}
@@ -872,13 +1339,13 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                         placeholder="Telefone do proprietário..."
                                     />
                                 ) : (
-                                    <div className="mt-1 p-3 bg-blue-50/50 dark:bg-blue-900/10 rounded-md border border-blue-100 dark:border-blue-800/30">
+                                    <div className="mt-1 p-3 bg-amber-50/50 dark:bg-amber-900/10 rounded-md border border-amber-100 dark:border-amber-800/30">
                                         {shipment.ownerContact ? (
                                             <a 
                                                 href={`https://wa.me/${String(shipment.ownerContact).replace(/\D/g, '')}`} 
                                                 target="_blank" 
                                                 rel="noopener noreferrer"
-                                                className="text-sm font-semibold text-primary dark:text-blue-400 hover:text-accent dark:hover:text-accent transition-colors flex items-center gap-2 group"
+                                                className="text-sm font-semibold text-primary dark:text-amber-400 hover:text-accent dark:hover:text-accent transition-colors flex items-center gap-2 group"
                                                 title="Abrir no WhatsApp"
                                             >
                                                 {shipment.ownerContact}
@@ -915,29 +1382,10 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         </div>
 
                         {shipment.documents && typeof shipment.documents === 'object' && Object.keys(shipment.documents).length > 0 && (() => {
-                            const ignoredDocKeys = new Set([
-                                'pix_key',
-                                'cte_number',
-                                'payment_method',
-                                'risk_query_cost',
-                                'risk_query_type',
-                                'cte_emission_date',
-                                'risk_release_code',
-                                'advance_percentage',
-                                'toll_value',
-                                'advance_value',
-                                'balance_value',
-                                'balance_to_receive_value',
-                                'discount_value',
-                                'net_balance_value',
-                                'unloaded_tonnage',
-                                'loaded_tonnage',
-                            ]);
-
                             const validEntries = Object.entries(shipment.documents).filter(([category, urls]) => {
-                                if (!category || ignoredDocKeys.has(category.toLowerCase().trim()) || category.startsWith('_')) return false;
-                                const urlList = Array.isArray(urls) ? urls : (typeof urls === 'string' ? [urls] : []);
-                                return urlList.some(url => typeof url === 'string' && url.trim() !== '' && (url.startsWith('http') || url.startsWith('/') || url.includes('.')));
+                                if (!category || isDocumentMetadataKey(category)) return false;
+                                const urlList = Array.isArray(urls) ? urls : (urls ? [urls] : []);
+                                return urlList.some(url => isActualDocumentUrl(url));
                             });
 
                             if (validEntries.length === 0) return null;
@@ -947,37 +1395,47 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">Arquivos do Embarque</h3>
                                     <div className="space-y-4">
                                         {validEntries.map(([category, urls]) => {
-                                            const urlList = (Array.isArray(urls) ? urls : (typeof urls === 'string' ? [urls] : []))
-                                                .filter(url => typeof url === 'string' && url.trim() !== '' && (url.startsWith('http') || url.startsWith('/') || url.includes('.')));
+                                            const urlList = (Array.isArray(urls) ? urls : (urls ? [urls] : []))
+                                                .filter(url => isActualDocumentUrl(url));
                                             if (urlList.length === 0) return null;
 
                                             return (
                                                 <div key={category}>
                                                     <p className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">{category}</p>
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                        {urlList.map((url, idx) => {
-                                                            const urlParts = url.split('/');
+                                                        {urlList.map((rawUrlItem, idx) => {
+                                                            const docUrl = normalizeDocumentUrl(rawUrlItem) || (typeof rawUrlItem === 'string' ? rawUrlItem : (rawUrlItem && typeof rawUrlItem === 'object' ? ((rawUrlItem as any).url || (rawUrlItem as any).fileUrl || (rawUrlItem as any).path || '') : ''));
+                                                            if (!docUrl || typeof docUrl !== 'string') return null;
+
+                                                            let customName = '';
+                                                            if (rawUrlItem && typeof rawUrlItem === 'object' && ((rawUrlItem as any).name || (rawUrlItem as any).fileName)) {
+                                                                customName = String((rawUrlItem as any).name || (rawUrlItem as any).fileName).trim();
+                                                            }
+
+                                                            const urlParts = docUrl.split('/');
                                                             const rawFileName = decodeURIComponent(urlParts[urlParts.length - 1] || '');
-                                                            const fileName = rawFileName.includes('_') ? rawFileName.split('_').slice(2).join('_') : (rawFileName || `Anexo ${idx + 1}`);
+                                                            const cleanNameFromUrl = rawFileName.includes('_') ? rawFileName.split('_').slice(2).join('_') : rawFileName;
+                                                            const fileName = customName || cleanNameFromUrl || `Anexo ${idx + 1}`;
                                                             
                                                             return (
                                                                 <div key={idx} className="flex items-center gap-1 group">
                                                                     <button 
                                                                         type="button"
-                                                                        onClick={() => openDocumentInNewTab(url, fileName)}
-                                                                        className="flex-1 flex items-center p-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 rounded-md text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors text-left truncate cursor-pointer"
+                                                                        onClick={() => openDocumentInNewTab(docUrl, fileName)}
+                                                                        className="flex-1 flex items-center p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/50 rounded-md text-xs font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors text-left truncate cursor-pointer"
                                                                     >
                                                                         <FileTextIcon size={14} className="mr-2 flex-shrink-0" />
                                                                         <span className="truncate">{fileName}</span>
                                                                     </button>
-                                                                    {onDeleteAttachment && !isDemo && (currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Supervisor) && (
+                                                                    {onDeleteAttachment && !isDemo && (isDeveloperUser(currentUser) || currentUser?.profile === UserProfile.Desenvolvedor || currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Supervisor) && (
                                                                         <button
+                                                                            type="button"
                                                                             onClick={() => {
                                                                                 if (confirm(`Tem certeza que deseja excluir o anexo "${fileName}"?`)) {
-                                                                                    onDeleteAttachment(shipment.id, url);
+                                                                                    onDeleteAttachment(shipment.id, typeof rawUrlItem === 'string' ? rawUrlItem : docUrl);
                                                                                 }
                                                                             }}
-                                                                            className="p-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                                                                            className="p-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 rounded-md transition-colors cursor-pointer"
                                                                             title="Excluir Anexo"
                                                                         >
                                                                             <Trash2 size={16} />
@@ -1090,7 +1548,18 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
           products={products}
         />
       )}
-    </>
+          {/* Modal de Observação de Pendência do Status */}
+      <StatusPendingModal
+        isOpen={isPendingModalOpen}
+        onClose={() => setIsPendingModalOpen(false)}
+        shipment={shipment}
+        onSave={async (shipmentId, pendingObs) => {
+          if (onUpdateShipmentData) {
+            await onUpdateShipmentData(shipmentId, { statusPendingObservation: pendingObs });
+          }
+        }}
+      />
+</>
   );
 };
 

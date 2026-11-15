@@ -1108,7 +1108,7 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                                 href={cargo.originMapLink}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-blue-500 hover:underline flex items-center gap-0.5 text-[10px]"
+                                className="text-amber-500 hover:underline flex items-center gap-0.5 text-[10px]"
                               >
                                 Testar <ExternalLink className="w-2.5 h-2.5" />
                               </a>
@@ -1185,13 +1185,13 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                           </div>
 
                           {/* Real-time calculated badges */}
-                          <div className="p-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60">
-                            <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 block">
+                          <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60">
+                            <span className="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 block">
                               Frete Empresa (Bruto)
                             </span>
-                            <span className="text-sm font-black text-blue-900 dark:text-blue-200">
+                            <span className="text-sm font-black text-amber-900 dark:text-amber-200">
                               R$ {cargo.companyFreightValuePerTon.toFixed(2).replace('.', ',')}
-                              <span className="text-[10px] font-normal text-blue-600 ml-1">[Base]</span>
+                              <span className="text-[10px] font-normal text-amber-600 ml-1">[Base]</span>
                             </span>
                           </div>
 
@@ -1231,13 +1231,13 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                       <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700">
                         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                           <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                            <Truck className="w-3.5 h-3.5 text-blue-500" />
+                            <Truck className="w-3.5 h-3.5 text-amber-500" />
                             Tipos de Veículos Permitidos:
                           </label>
                           <button
                             type="button"
                             onClick={() => handleApplyStandardVehicles(cargo.tempId)}
-                            className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                            className="text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1"
                           >
                             ⚡ Adicionar Padrão (LS, 4º Eixo, Bitrem)
                           </button>
@@ -1248,13 +1248,13 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                           {(cargo.allowedVehicleTypes || []).map((vt, vIdx) => (
                             <span
                               key={vIdx}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
                             >
                               🚛 {vt.setType}: {vt.bodyTypes.join('/')}
                               <button
                                 type="button"
                                 onClick={() => handleRemoveVehicleSet(cargo.tempId, vt.setType)}
-                                className="text-blue-400 hover:text-red-500 ml-1 text-xs"
+                                className="text-amber-400 hover:text-red-500 ml-1 text-xs"
                                 title="Remover conjunto"
                               >
                                 ×
@@ -1287,7 +1287,7 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                               type="checkbox"
                               id={`cb-gran-${cargo.tempId}`}
                               defaultChecked
-                              className="rounded text-blue-600"
+                              className="rounded text-amber-600"
                             />
                             Graneleiro
                           </label>
@@ -1297,7 +1297,7 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                               type="checkbox"
                               id={`cb-basc-${cargo.tempId}`}
                               defaultChecked
-                              className="rounded text-blue-600"
+                              className="rounded text-amber-600"
                             />
                             Basculante
                           </label>

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { Shipment, Cargo, Client, Driver, Vehicle, User, RiskQueryOption, ProfilePermissions, Product } from '../types';
+import type { Shipment, Cargo, Client, Driver, Vehicle, User, RiskQueryOption, ProfilePermissions, Product, Owner } from '../types';
 import { ShipmentStatus, RiskQueryType, RISK_QUERY_COST_MAP, DEFAULT_RISK_QUERY_OPTIONS } from '../types';
 import { 
   ShieldCheck, 
@@ -32,10 +32,14 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { addPdfLogo } from '../utils/pdfGenerator';
 import { isDemoUser } from '../auth';
+import { findCargoById, findProductForCargo, checkRequiresRiskManagement } from '../utils';
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import EditRiskQueryModal from '../components/EditRiskQueryModal';
 import RiskQueryTypesPage from './RiskQueryTypesPage';
+import { RdoNacionalModal } from '../components/RdoNacionalModal';
+import { SigaGrModal } from '../components/SigaGrModal';
+
 
 interface RiskManagementPageProps {
   shipments: Shipment[];
@@ -43,6 +47,7 @@ interface RiskManagementPageProps {
   clients: Client[];
   drivers: Driver[];
   vehicles: Vehicle[];
+  owners?: Owner[];
   users: User[];
   currentUser: User | null;
   companyLogo?: string | null;
@@ -52,7 +57,7 @@ interface RiskManagementPageProps {
   onRestoreRiskQueryDefaults?: () => Promise<void> | void;
   profilePermissions?: ProfilePermissions;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => void;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onModalStateChange?: (isOpen: boolean) => void;
@@ -127,6 +132,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
   clients = [],
   drivers = [],
   vehicles = [],
+  owners = [],
   users = [],
   currentUser,
   companyLogo,
@@ -145,6 +151,8 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
 }) => {
   // Tabs: 'operational' | 'analytics' | 'query_types'
   const [activeTab, setActiveTab] = useState<'operational' | 'analytics' | 'query_types'>('operational');
+  const [isRdoModalOpen, setIsRdoModalOpen] = useState(false);
+  const [isSigaModalOpen, setIsSigaModalOpen] = useState(false);
   const isDemo = isDemoUser(currentUser);
 
   // Global / Quick Filters
@@ -209,17 +217,17 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         );
 
         // Also check if cargo product requires risk management (or default true)
-        const cargo = cargoMap.get(s.cargoId);
-        const product = cargo?.productId ? productMap.get(cargo.productId) : undefined;
-        const requiresRisk = product ? product.requiresRiskManagement !== false : true;
+        const cargo = findCargoById(cargos, s.cargoId) || cargoMap.get(s.cargoId);
+        const product = findProductForCargo(products, cargo) || (cargo?.productId ? productMap.get(cargo.productId) : undefined);
+        const requiresRisk = checkRequiresRiskManagement(cargo, product);
         const isCancelledFromGRCargo = s.status === ShipmentStatus.Cancelado && requiresRisk;
 
         return isCurrentAgSeguradora || hasRiskInfo || hasPassedAgSeguradora || isCancelledForRisk || isCancelledFromGRCargo;
       })
       .map(s => {
-        const cargo = cargoMap.get(s.cargoId);
-        const product = cargo?.productId ? productMap.get(cargo.productId) : undefined;
-        const requiresRisk = product ? product.requiresRiskManagement !== false : ((cargo as any)?.requiresRiskManagement !== false);
+        const cargo = findCargoById(cargos, s.cargoId) || cargoMap.get(s.cargoId);
+        const product = findProductForCargo(products, cargo) || (cargo?.productId ? productMap.get(cargo.productId) : undefined);
+        const requiresRisk = checkRequiresRiskManagement(cargo, product);
         const client = cargo ? clientMap.get(cargo.clientId) : undefined;
         
         const cleanCpf = s.driverCpf ? s.driverCpf.replace(/\D/g, '') : '';
@@ -237,22 +245,20 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         // Query type and cost
         let queryType = s.riskQueryType || ((isPreCadastroOrSeguradora || !requiresRisk) ? 'Pendente de Definição' : 'Cadastro Geral + Biometria');
         let queryCost = 0;
-        if (!requiresRisk || isPreCadastroOrSeguradora) {
-          queryCost = (s.riskQueryCost !== undefined && s.riskQueryCost !== null) ? Number(s.riskQueryCost) : 0;
-        } else if (s.riskQueryCost !== undefined && s.riskQueryCost !== null) {
+        if (s.riskQueryCost !== undefined && s.riskQueryCost !== null && Number(s.riskQueryCost) > 0) {
           queryCost = Number(s.riskQueryCost);
-        } else if (s.riskQueryType && costMapFromOptions.has(s.riskQueryType)) {
-          queryCost = costMapFromOptions.get(s.riskQueryType)!;
-        } else if (s.riskQueryType && costMapFromOptions.has(s.riskQueryType.toLowerCase().trim())) {
-          queryCost = costMapFromOptions.get(s.riskQueryType.toLowerCase().trim())!;
-        } else if (s.riskQueryType && RISK_QUERY_COST_MAP[s.riskQueryType] !== undefined) {
-          queryCost = RISK_QUERY_COST_MAP[s.riskQueryType];
-        } else if (s.riskQueryType && RISK_QUERY_COST_MAP[s.riskQueryType.toLowerCase().trim()] !== undefined) {
-          queryCost = RISK_QUERY_COST_MAP[s.riskQueryType.toLowerCase().trim()];
+        } else if (queryType && queryType !== 'Pendente de Definição') {
+          queryCost = costMapFromOptions.get(queryType) ?? 
+                      costMapFromOptions.get(queryType.toLowerCase().trim()) ?? 
+                      RISK_QUERY_COST_MAP[queryType] ?? 
+                      RISK_QUERY_COST_MAP[queryType.toLowerCase().trim()] ?? 
+                      (requiresRisk ? 31.50 : 0);
         } else if (s.riskReleaseCode) {
           queryCost = costMapFromOptions.get(queryType) ?? 6.50;
+        } else if (!requiresRisk || isPreCadastroOrSeguradora) {
+          queryCost = (s.riskQueryCost !== undefined && s.riskQueryCost !== null) ? Number(s.riskQueryCost) : 0;
         } else {
-          queryCost = 0;
+          queryCost = (s.riskQueryCost !== undefined && s.riskQueryCost !== null) ? Number(s.riskQueryCost) : 0;
         }
 
         // Release status
@@ -293,7 +299,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         }
 
         const isSequenced = outcomeStatus !== 'Cancelado';
-        const isWastedCost = outcomeStatus === 'Cancelado' && queryCost > 0;
+        const isWastedCost = (outcomeStatus === 'Cancelado' || releaseStatus === 'Reprovado') && queryCost > 0;
         const cancellationReason = s.cancellationReason || '';
 
         return {
@@ -737,7 +743,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
     addPdfLogo(doc, companyLogo, { align: 'right', y: 6, width: 35, height: 12 });
 
     doc.setFontSize(16);
-    doc.setTextColor(29, 59, 141);
+    doc.setTextColor(166, 113, 66);
     doc.text('Relatório Gerencial - Gerenciadora de Risco', 14, 15);
 
     doc.setFontSize(9);
@@ -812,7 +818,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
       startY: startY + 20,
       theme: 'grid',
       styles: { fontSize: 7, cellPadding: 1.5 },
-      headStyles: { fillColor: [29, 59, 141], textColor: 255, fontStyle: 'bold' },
+      headStyles: { fillColor: [166, 113, 66], textColor: 255, fontStyle: 'bold' },
       didParseCell: (data) => {
         if (data.cell.section === 'body') {
           const rawRow = data.row.raw;
@@ -834,9 +840,9 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
       return <ArrowUpDown className="w-3.5 h-3.5 text-gray-400 opacity-40 group-hover:opacity-100 transition-opacity" />;
     }
     return sortDirection === 'asc' ? (
-      <ArrowUp className="w-3.5 h-3.5 text-primary dark:text-blue-400 font-bold" />
+      <ArrowUp className="w-3.5 h-3.5 text-primary dark:text-amber-400 font-bold" />
     ) : (
-      <ArrowDown className="w-3.5 h-3.5 text-primary dark:text-blue-400 font-bold" />
+      <ArrowDown className="w-3.5 h-3.5 text-primary dark:text-amber-400 font-bold" />
     );
   };
 
@@ -845,13 +851,13 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
       {/* Top Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-700 flex items-center justify-center text-white shadow-md shadow-amber-500/20">
             <ShieldCheck className="w-6 h-6" />
           </div>
           <div>
             <h1 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight flex items-center gap-2">
               Gerenciadora de Risco
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-primary dark:bg-blue-900/30 dark:text-blue-400 border border-blue-100 dark:border-blue-800">
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-primary dark:bg-amber-900/30 dark:text-amber-400 border border-amber-100 dark:border-amber-800">
                 Operacional
               </span>
             </h1>
@@ -869,7 +875,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
               onClick={() => setActiveTab('operational')}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                 activeTab === 'operational'
-                  ? 'bg-white dark:bg-gray-800 text-primary dark:text-blue-400 shadow-xs'
+                  ? 'bg-white dark:bg-gray-800 text-primary dark:text-amber-400 shadow-xs'
                   : 'text-gray-600 dark:text-gray-300 hover:text-gray-900'
               }`}
             >
@@ -880,7 +886,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
               onClick={() => setActiveTab('analytics')}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                 activeTab === 'analytics'
-                  ? 'bg-white dark:bg-gray-800 text-primary dark:text-blue-400 shadow-xs'
+                  ? 'bg-white dark:bg-gray-800 text-primary dark:text-amber-400 shadow-xs'
                   : 'text-gray-600 dark:text-gray-300 hover:text-gray-900'
               }`}
             >
@@ -891,7 +897,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
               onClick={() => setActiveTab('query_types')}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                 activeTab === 'query_types'
-                  ? 'bg-white dark:bg-gray-800 text-primary dark:text-blue-400 shadow-xs'
+                  ? 'bg-white dark:bg-gray-800 text-primary dark:text-amber-400 shadow-xs'
                   : 'text-gray-600 dark:text-gray-300 hover:text-gray-900'
               }`}
             >
@@ -899,6 +905,26 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
               Modalidades de Consulta
             </button>
           </div>
+
+          {/* Botão RDO Nacional */}
+          <button
+            onClick={() => setIsRdoModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-500/20 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+            title="Abrir painel de análise cadastral e triagem do RDO Nacional (MRB Soluções)"
+          >
+            <ShieldCheck className="w-4 h-4 text-white" />
+            RDO Nacional
+          </button>
+
+          {/* Botão SIGA GR */}
+          <button
+            onClick={() => setIsSigaModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-500/20 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+            title="Abrir painel de integração oficial com a gerenciadora SIGA GR"
+          >
+            <ShieldCheck className="w-4 h-4 text-white" />
+            SIGA GR
+          </button>
 
           {/* Export Buttons */}
           <button
@@ -933,7 +959,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
                 {formatCurrency(stats.totalGasto)}
               </h3>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-primary dark:text-blue-400">
+            <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center text-primary dark:text-amber-400">
               <DollarSign className="w-5 h-5" />
             </div>
           </div>
@@ -1003,22 +1029,22 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
                 Desfecho do Carregamento
               </p>
               <div className="flex items-baseline gap-2 mt-1">
-                <h3 className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
+                <h3 className="text-2xl font-black text-amber-600 dark:text-amber-400">
                   {stats.countSequenciado}
                 </h3>
-                <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
                   ({stats.percentSequenciado.toFixed(1)}% Carregaram)
                 </span>
               </div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+            <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
               <TrendingUp className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-3 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
             <span className="text-emerald-600 dark:text-emerald-400 font-medium">{stats.countConcluido} finalizados</span>
             <span>•</span>
-            <span className="text-blue-600 dark:text-blue-400 font-medium">{stats.countEmAndamento} em andamento</span>
+            <span className="text-amber-600 dark:text-amber-400 font-medium">{stats.countEmAndamento} em andamento</span>
           </div>
         </div>
       </div>
@@ -1189,7 +1215,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
               onClick={() => setShowColumnFilters(prev => !prev)}
               className={`px-2.5 py-1 text-xs font-bold rounded-lg border flex items-center gap-1.5 transition-all ${
                 showColumnFilters
-                  ? 'bg-blue-50 border-blue-200 text-primary dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-300'
+                  ? 'bg-amber-50 border-amber-200 text-primary dark:bg-amber-900/30 dark:border-amber-800 dark:text-amber-300'
                   : 'bg-gray-100 border-gray-200 text-gray-600 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300'
               }`}
             >
@@ -1552,7 +1578,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
                         <p className="font-semibold">Nenhuma consulta de seguradora encontrada para os filtros selecionados.</p>
                         <button
                           onClick={handleClearFilters}
-                          className="text-xs text-primary dark:text-blue-400 hover:underline font-bold"
+                          className="text-xs text-primary dark:text-amber-400 hover:underline font-bold"
                         >
                           Limpar todos os filtros para ver todos os registros
                         </button>
@@ -1564,7 +1590,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
                     return (
                       <tr 
                         key={row.shipment.id}
-                        className={`hover:bg-blue-50/30 dark:hover:bg-gray-700/40 transition-colors ${
+                        className={`hover:bg-amber-50/30 dark:hover:bg-gray-700/40 transition-colors ${
                           row.isWastedCost ? 'bg-red-50/20 dark:bg-red-950/10' : ''
                         }`}
                       >
@@ -1572,7 +1598,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
                         <td className="px-3.5 py-3">
                           <button
                             onClick={() => setSelectedShipmentForDetails(row.shipment)}
-                            className="font-mono font-bold text-primary dark:text-blue-400 hover:underline flex items-center gap-1"
+                            className="font-mono font-bold text-primary dark:text-amber-400 hover:underline flex items-center gap-1"
                           >
                             {row.shipment.id}
                           </button>
@@ -1622,7 +1648,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
                         {/* Cód Liberação */}
                         <td className="px-3.5 py-3 text-center font-mono">
                           {row.releaseCode ? (
-                            <span className="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-bold border border-blue-200 dark:border-blue-800">
+                            <span className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-800">
                               {row.releaseCode}
                             </span>
                           ) : (
@@ -1657,7 +1683,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
                             </span>
                           )}
                           {row.outcomeStatus === 'Em Andamento' && (
-                            <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                            <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
                               {row.shipment.status}
                             </span>
                           )}
@@ -1685,7 +1711,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
                             {!isDemo && (
                               <button
                                 onClick={() => setShipmentToEditRisk(row.shipment)}
-                                className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 transition-colors"
+                                className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 text-amber-600 dark:text-amber-400 transition-colors"
                                 title="Editar modalidade / tipo de consulta"
                               >
                                 <Edit className="w-3.5 h-3.5" />
@@ -1802,8 +1828,8 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
                 </div>
               </div>
 
-              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800/50">
-                <p className="text-xs text-blue-900 dark:text-blue-200 font-medium">
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-100 dark:border-amber-800/50">
+                <p className="text-xs text-amber-900 dark:text-amber-200 font-medium">
                   💡 <strong>Impacto no Custo:</strong> A cada 100 consultas realizadas, aproximadamente{' '}
                   <strong>{stats.percentCancelado.toFixed(0)}</strong> não chegam ao carregamento, representando um custo perdido de{' '}
                   <strong>{formatCurrency(stats.totalDesperdicio)}</strong> no período analisado.
@@ -1913,13 +1939,33 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         />
       )}
 
-      {/* Document Preview Modal */}
-      <DocumentPreviewModal
-        isOpen={!!previewDocument}
-        onClose={() => setPreviewDocument(null)}
-        fileUrl={previewDocument?.url || null}
-        fileName={previewDocument?.name}
-        category={previewDocument?.category}
+      {/* RDO Nacional Modal */}
+      <RdoNacionalModal
+        isOpen={isRdoModalOpen}
+        onClose={() => setIsRdoModalOpen(false)}
+        shipments={shipments}
+        drivers={drivers}
+        vehicles={vehicles}
+        owners={owners}
+        currentUser={currentUser}
+      />
+
+      {/* SIGA GR Modal */}
+      <SigaGrModal
+        isOpen={isSigaModalOpen}
+        onClose={() => setIsSigaModalOpen(false)}
+        shipments={shipments}
+        drivers={drivers}
+        vehicles={vehicles}
+        currentUser={currentUser}
+        onSelectApprovedCode={(code, procNum) => {
+          if (shipmentToEditRisk && onUpdateShipmentData) {
+            onUpdateShipmentData(shipmentToEditRisk.id, {
+              riskReleaseCode: code,
+              riskQueryType: shipmentToEditRisk.riskQueryType || 'SIGA GR',
+            });
+          }
+        }}
       />
     </div>
   );

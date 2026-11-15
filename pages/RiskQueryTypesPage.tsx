@@ -148,7 +148,7 @@ const RiskQueryTypesPage: React.FC<RiskQueryTypesPageProps> = ({
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
           <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-            <Layers className="w-3.5 h-3.5 text-blue-500" /> Total de Modalidades
+            <Layers className="w-3.5 h-3.5 text-amber-500" /> Total de Modalidades
           </div>
           <div className="text-2xl font-black text-gray-900 dark:text-white">
             {stats.total}
@@ -166,9 +166,9 @@ const RiskQueryTypesPage: React.FC<RiskQueryTypesPageProps> = ({
 
         <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
           <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-            <DollarSign className="w-3.5 h-3.5 text-indigo-500" /> Custo Médio
+            <DollarSign className="w-3.5 h-3.5 text-amber-500" /> Custo Médio
           </div>
-          <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
+          <div className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">
             {formatCurrency(stats.avgCost)}
           </div>
         </div>
@@ -255,7 +255,7 @@ const RiskQueryTypesPage: React.FC<RiskQueryTypesPageProps> = ({
                   <tr key={option.id || idx} className="hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors">
                     {/* Ordem */}
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-mono font-bold text-xs border border-blue-200 dark:border-blue-800">
+                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-mono font-bold text-xs border border-amber-200 dark:border-amber-800">
                         {option.orderIndex ?? (idx + 1)}
                       </span>
                     </td>
@@ -323,7 +323,7 @@ const RiskQueryTypesPage: React.FC<RiskQueryTypesPageProps> = ({
                         {canUpdate && (
                           <button
                             onClick={() => handleEdit(option)}
-                            className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                            className="p-1.5 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors"
                             title="Editar Modalidade"
                           >
                             <Edit3 className="w-4 h-4" />

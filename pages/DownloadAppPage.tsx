@@ -54,13 +54,13 @@ const DownloadAppPage: React.FC<DownloadAppPageProps> = ({ companyLogo }) => {
         {companyLogo ? (
           <img src={companyLogo} alt="Logo" className="h-24 mx-auto mb-6 object-contain" />
         ) : (
-          <div className="h-24 w-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <span className="text-3xl text-blue-600 font-bold">AM</span>
+          <div className="h-24 w-24 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <span className="text-3xl text-amber-600 font-bold">TC</span>
           </div>
         )}
         
         <h1 className="text-2xl font-bold text-gray-900 mb-2">
-          Aplicativo AGROMERCANTIL
+          Aplicativo DLLOG TRANSPORTES
         </h1>
         
         <p className="text-gray-600 mb-8">
@@ -75,7 +75,7 @@ const DownloadAppPage: React.FC<DownloadAppPageProps> = ({ companyLogo }) => {
           <div className="space-y-6">
             <button
               onClick={handleInstallClick}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-lg font-semibold py-4 px-8 rounded-xl shadow-lg transition-transform transform hover:scale-105"
+              className="w-full flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-lg font-semibold py-4 px-8 rounded-xl shadow-lg transition-transform transform hover:scale-105"
             >
               <Download className="w-6 h-6" />
               Instalar Aplicativo
@@ -93,7 +93,7 @@ const DownloadAppPage: React.FC<DownloadAppPageProps> = ({ companyLogo }) => {
       </div>
       
       <div className="mt-8 text-center">
-        <a href="/" className="text-blue-600 hover:underline font-medium">
+        <a href="/" className="text-amber-600 hover:underline font-medium">
           Voltar para a tela inicial
         </a>
       </div>

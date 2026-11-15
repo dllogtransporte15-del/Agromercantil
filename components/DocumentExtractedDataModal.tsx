@@ -93,7 +93,7 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
   const getBadgeColor = (type?: string) => {
     switch (type) {
       case 'CT-e':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200 border-blue-300 dark:border-blue-700';
+        return 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-300 dark:border-amber-700';
       case 'MDF-e':
         return 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-200 border-purple-300 dark:border-purple-700';
       case 'Carta Frete':
@@ -101,7 +101,7 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
       case 'Nota Fiscal':
         return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700';
       case 'CIOT':
-        return 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/50 dark:text-cyan-200 border-cyan-300 dark:border-cyan-700';
+        return 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-300 dark:border-amber-700';
       default:
         return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600';
     }
@@ -119,7 +119,7 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-900/80">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+            <div className="p-2.5 rounded-xl bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
               <FileText className="w-6 h-6" />
             </div>
             <div>
@@ -163,7 +163,7 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
           {isLoading ? (
             <div className="py-16 flex flex-col items-center justify-center text-center space-y-3">
-              <RefreshCw className="w-10 h-10 text-indigo-500 animate-spin" />
+              <RefreshCw className="w-10 h-10 text-amber-500 animate-spin" />
               <div className="text-sm font-bold text-slate-700 dark:text-slate-200">
                 Lendo e processando campos do documento...
               </div>
@@ -215,7 +215,7 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
               {/* Grid 1: Identificação & Documento */}
               <div className="bg-white dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 shadow-xs">
                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-indigo-500" /> Identificação do Documento
+                  <FileText className="w-4 h-4 text-amber-500" /> Identificação do Documento
                 </h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                   <div>
@@ -238,7 +238,7 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[11px]">CIOT:</span>
-                    <span className="font-bold text-indigo-600 dark:text-indigo-400 text-sm">
+                    <span className="font-bold text-amber-600 dark:text-amber-400 text-sm">
                       {data.ciot || '-'}
                     </span>
                   </div>
@@ -287,9 +287,9 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
                         {data.carga?.quantidadeVolumes ? `${data.carga.quantidadeVolumes} docs` : '1 doc'}
                       </span>
                     </div>
-                    <div className="bg-indigo-50/60 dark:bg-indigo-950/20 p-2.5 rounded-lg border border-indigo-200/60 dark:border-indigo-800/40">
-                      <span className="text-indigo-700 dark:text-indigo-300 block text-[11px] font-bold">CIOT:</span>
-                      <span className="font-black text-indigo-600 dark:text-indigo-400 text-sm truncate block">
+                    <div className="bg-amber-50/60 dark:bg-amber-950/20 p-2.5 rounded-lg border border-amber-200/60 dark:border-amber-800/40">
+                      <span className="text-amber-700 dark:text-amber-300 block text-[11px] font-bold">CIOT:</span>
+                      <span className="font-black text-amber-600 dark:text-amber-400 text-sm truncate block">
                         {data.ciot || '-'}
                       </span>
                     </div>
@@ -303,15 +303,15 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
                         {formatCurrency(data.carga?.valorMercadoria || data.financeiro?.valorTotalFrete)}
                       </span>
                     </div>
-                    <div className="bg-blue-50/60 dark:bg-blue-950/20 p-2.5 rounded-lg border border-blue-200/60 dark:border-blue-800/40">
-                      <span className="text-blue-700 dark:text-blue-300 block text-[11px] font-bold">Valor dos Produtos:</span>
-                      <span className="font-black text-blue-600 dark:text-blue-400 text-sm">
+                    <div className="bg-amber-50/60 dark:bg-amber-950/20 p-2.5 rounded-lg border border-amber-200/60 dark:border-amber-800/40">
+                      <span className="text-amber-700 dark:text-amber-300 block text-[11px] font-bold">Valor dos Produtos:</span>
+                      <span className="font-black text-amber-600 dark:text-amber-400 text-sm">
                         {formatCurrency(data.carga?.valorMercadoria)}
                       </span>
                     </div>
-                    <div className="bg-indigo-50/60 dark:bg-indigo-950/20 p-2.5 rounded-lg border border-indigo-200/60 dark:border-indigo-800/40">
-                      <span className="text-indigo-700 dark:text-indigo-300 block text-[11px] font-bold">Valor do ICMS:</span>
-                      <span className="font-black text-indigo-600 dark:text-indigo-400 text-sm">
+                    <div className="bg-amber-50/60 dark:bg-amber-950/20 p-2.5 rounded-lg border border-amber-200/60 dark:border-amber-800/40">
+                      <span className="text-amber-700 dark:text-amber-300 block text-[11px] font-bold">Valor do ICMS:</span>
+                      <span className="font-black text-amber-600 dark:text-amber-400 text-sm">
                         {data.financeiro?.valorIcms ? formatCurrency(data.financeiro.valorIcms) : '-'}
                       </span>
                     </div>
@@ -351,7 +351,7 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
                           <span className={`px-3 py-1 rounded-lg text-xs font-black ${
                             effectivePersonType === 'PJ'
                               ? 'bg-purple-600 text-white shadow-xs'
-                              : 'bg-indigo-600 text-white shadow-xs'
+                              : 'bg-amber-600 text-white shadow-xs'
                           }`}>
                             {effectivePersonType === 'PJ' ? 'Pessoa Jurídica (PJ / Empresa)' : 'Pessoa Física (PF / Autônomo)'}
                           </span>
@@ -365,11 +365,11 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
                               {formatCurrency(calc.freteBruto || data.financeiro?.valorTotalFrete)}
                             </span>
                           </div>
-                          <div className="bg-blue-50/60 dark:bg-blue-950/20 p-2.5 rounded-lg border border-blue-200/60 dark:border-blue-800/40">
-                            <span className="text-blue-700 dark:text-blue-300 block text-[11px] font-bold">
+                          <div className="bg-amber-50/60 dark:bg-amber-950/20 p-2.5 rounded-lg border border-amber-200/60 dark:border-amber-800/40">
+                            <span className="text-amber-700 dark:text-amber-300 block text-[11px] font-bold">
                               Adiantamento ({data.financeiro?.porcentagemAdiantamento ? `${data.financeiro.porcentagemAdiantamento}%` : '-'}):
                             </span>
-                            <span className="font-black text-blue-600 dark:text-blue-400 text-sm">
+                            <span className="font-black text-amber-600 dark:text-amber-400 text-sm">
                               {formatCurrency(calc.adiantamento || data.financeiro?.valorAdiantamento)}
                             </span>
                           </div>
@@ -393,7 +393,7 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
                         <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-800 text-xs space-y-2">
                           <div className="font-black text-slate-800 dark:text-slate-100 flex items-center justify-between border-b border-slate-200 dark:border-slate-700/80 pb-2">
                             <span>3.5 CÁLCULO DO SALDO DE FRETE ({effectivePersonType})</span>
-                            <span className="text-[11px] font-mono text-indigo-600 dark:text-indigo-400">
+                            <span className="text-[11px] font-mono text-amber-600 dark:text-amber-400">
                               Subtotal: {formatCurrency(calc.subtotal)}
                             </span>
                           </div>
@@ -483,9 +483,9 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
                         {formatCurrency(data.financeiro?.valorTotalFrete || data.financeiro?.valorReceber)}
                       </span>
                     </div>
-                    <div className="bg-blue-50/60 dark:bg-blue-950/20 p-2.5 rounded-lg border border-blue-200/60 dark:border-blue-800/40">
-                      <span className="text-blue-700 dark:text-blue-300 block text-[11px] font-bold">Valor a Receber:</span>
-                      <span className="font-black text-blue-600 dark:text-blue-400 text-sm">
+                    <div className="bg-amber-50/60 dark:bg-amber-950/20 p-2.5 rounded-lg border border-amber-200/60 dark:border-amber-800/40">
+                      <span className="text-amber-700 dark:text-amber-300 block text-[11px] font-bold">Valor a Receber:</span>
+                      <span className="font-black text-amber-600 dark:text-amber-400 text-sm">
                         {formatCurrency(data.financeiro?.valorReceber || data.financeiro?.valorTotalFrete)}
                       </span>
                     </div>
@@ -495,9 +495,9 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
                         {formatCurrency(data.carga?.valorMercadoria)}
                       </span>
                     </div>
-                    <div className="bg-indigo-50/60 dark:bg-indigo-950/20 p-2.5 rounded-lg border border-indigo-200/60 dark:border-indigo-800/40">
-                      <span className="text-indigo-700 dark:text-indigo-300 block text-[11px] font-bold">ICMS (Valor / Alíq):</span>
-                      <span className="font-black text-indigo-600 dark:text-indigo-400 text-sm">
+                    <div className="bg-amber-50/60 dark:bg-amber-950/20 p-2.5 rounded-lg border border-amber-200/60 dark:border-amber-800/40">
+                      <span className="text-amber-700 dark:text-amber-300 block text-[11px] font-bold">ICMS (Valor / Alíq):</span>
+                      <span className="font-black text-amber-600 dark:text-amber-400 text-sm">
                         {data.financeiro?.valorIcms ? formatCurrency(data.financeiro.valorIcms) : (data.financeiro?.aliquotaIcms ? `${data.financeiro.aliquotaIcms}%` : '-')}
                       </span>
                     </div>
@@ -510,7 +510,7 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
                 {/* Veículo & Rota */}
                 <div className="bg-white dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 shadow-xs space-y-3">
                   <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                    <Truck className="w-4 h-4 text-blue-500" /> Veículo & Trajeto
+                    <Truck className="w-4 h-4 text-amber-500" /> Veículo & Trajeto
                   </h4>
                   <div className="space-y-2 text-xs">
                     <div className="flex justify-between border-b border-slate-100 dark:border-slate-700/50 pb-1.5">
@@ -549,7 +549,7 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
                 {/* Carga & Pesos */}
                 <div className="bg-white dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 shadow-xs space-y-3">
                   <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                    <Scale className="w-4 h-4 text-cyan-500" /> Carga & Pesos
+                    <Scale className="w-4 h-4 text-amber-500" /> Carga & Pesos
                   </h4>
                   <div className="space-y-2 text-xs">
                     {data.documentType !== 'MDF-e' && (
@@ -611,12 +611,12 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
               {data.documentosVinculados && data.documentosVinculados.length > 0 && (
                 <div className="bg-white dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 shadow-xs">
                   <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-indigo-500" /> Documentos Vinculados ({data.documentosVinculados.length})
+                    <Layers className="w-4 h-4 text-amber-500" /> Documentos Vinculados ({data.documentosVinculados.length})
                   </h4>
                   <div className="space-y-1.5 max-h-36 overflow-y-auto">
                     {data.documentosVinculados.map((doc, idx) => (
                       <div key={idx} className="flex items-center justify-between p-2 rounded bg-slate-50 dark:bg-slate-900/50 text-xs font-mono">
-                        <span className="font-bold text-indigo-600 dark:text-indigo-400">{doc.tipo}</span>
+                        <span className="font-bold text-amber-600 dark:text-amber-400">{doc.tipo}</span>
                         <span className="truncate text-slate-600 dark:text-slate-300 max-w-md">{doc.chaveAcesso || doc.numero}</span>
                       </div>
                     ))}

@@ -1,16 +1,21 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import type { Cargo, Client, Product, User, FreightLeg, DailyScheduleEntry, Branch, FreightOffer } from '../types';
+import type { Cargo, Client, Product, User, FreightLeg, DailyScheduleEntry, Branch, FreightOffer, ExpedidorRecebedor } from '../types';
 import { CargoStatus, CargoType, UserProfile, VehicleSetType, VehicleBodyType, DailyScheduleType, FreightCalculationType, INTERNAL_PROFILES } from '../types';
+import { isDeveloperUser, isDemoUser, filterVisibleUsers } from '../auth';
+
+const DEFAULT_CARGO_ALLOWED_PROFILES: UserProfile[] = INTERNAL_PROFILES.filter(p => p !== UserProfile.Desenvolvedor);
 import { PlusIcon } from './icons/PlusIcon';
 import { XIcon } from './icons/XIcon';
 import { PaperclipIcon } from './icons/PaperclipIcon';
 import { UserPlusIcon } from './icons/UserPlusIcon';
-import { Users, Search, Sparkles, History, Zap, Check, Loader2, Globe2 } from 'lucide-react';
+import { Users, Search, Sparkles, History, Zap, Check, Loader2, Globe2, MapPin, Building2, Edit2, Landmark, BadgePercent, CircleDollarSign, Calendar } from 'lucide-react';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { geocodeCity } from '../utils/geocoding';
 import { useToast } from '../hooks/useToast';
-import { autoFormatInput } from '../utils/formatters';
+import { autoFormatInput, formatDemandTypeLabel } from '../utils/formatters';
 import { findRouteHistorySuggestion, RouteHistorySuggestion } from '../utils/routeHistorySuggester';
+import { getExpedidoresRecebedores, saveExpedidorRecebedor } from '../utils/locationStorage';
+import { QuickLocationModal } from './QuickLocationModal';
 
 interface LoadFormModalProps {
   isOpen: boolean;
@@ -23,9 +28,9 @@ interface LoadFormModalProps {
   users: User[];
   loads: Cargo[];
   branches: Branch[];
+  locations?: ExpedidorRecebedor[];
   initialStep?: number;
   offerToConvert?: FreightOffer | null;
-  isDuplicate?: boolean;
 }
 
 const STEPS = ['Informações da Carga', 'Programação Diária', 'Valores e Regras'];
@@ -64,9 +69,9 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   users,
   loads,
   branches,
+  locations,
   initialStep = 0,
-  offerToConvert = null,
-  isDuplicate = false
+  offerToConvert = null
 }) => {
   const getInitialState = (): Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'> => {
     const newSequenceId = loads.length > 0 ? Math.max(...loads.map(c => c.sequenceId)) + 1 : 101;
@@ -79,10 +84,12 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         productId: offerToConvert.productId,
         origin: offerToConvert.origin,
         originLocation: offerToConvert.originLocation || '',
-        originMapLink: '',
+        originMapLink: offerToConvert.originLocation?.startsWith('http') ? offerToConvert.originLocation : '',
+        originCoords: offerToConvert.originCoords,
         destination: offerToConvert.destination,
         destinationLocation: offerToConvert.destinationLocation || '',
-        destinationMapLink: '',
+        destinationMapLink: offerToConvert.destinationLocation?.startsWith('http') ? offerToConvert.destinationLocation : '',
+        destinationCoords: offerToConvert.destinationCoords,
         totalVolume: offerToConvert.totalTonnage,
         scheduledVolume: 0,
         loadedVolume: 0,
@@ -112,11 +119,20 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         schedulingSystemUrl: '',
         schedulingUser: '',
         schedulingPassword: '',
-        allowedProfiles: [...INTERNAL_PROFILES],
+        allowedProfiles: [...DEFAULT_CARGO_ALLOWED_PROFILES],
         tmsLoteNumber: '',
         clientCnpj: offerToConvert.clientCnpj || '',
         clientBranchId: offerToConvert.clientBranchId || '',
-        isExport: offerToConvert.isExport !== undefined ? offerToConvert.isExport : undefined
+        isExport: offerToConvert.isExport !== undefined ? offerToConvert.isExport : undefined,
+        orderNumber: (offerToConvert as any)?.orderNumber || '',
+        packaging: (offerToConvert as any)?.packaging || 'Granel',
+        financialCostEnabled: false,
+        financialCostMonthlyRate: 0,
+        financialCostDaysTerm: 30,
+        financialCostBaseDays: 30,
+        financialCostEffectiveRate: 0,
+        financialCostPerTon: 0,
+        financialCostTotal: 0
       };
     }
 
@@ -161,11 +177,20 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       schedulingSystemUrl: '',
       schedulingUser: '',
       schedulingPassword: '',
-      allowedProfiles: [...INTERNAL_PROFILES],
+      allowedProfiles: [...DEFAULT_CARGO_ALLOWED_PROFILES],
       tmsLoteNumber: '',
       clientCnpj: firstClient?.cnpj || '',
       clientBranchId: '',
-      isExport: undefined
+      isExport: undefined,
+      orderNumber: '',
+      packaging: 'Granel',
+      financialCostEnabled: false,
+      financialCostMonthlyRate: 0,
+      financialCostDaysTerm: firstClient?.paymentTerm || 30,
+      financialCostBaseDays: 30,
+      financialCostEffectiveRate: 0,
+      financialCostPerTon: 0,
+      financialCostTotal: 0
     };
   };
   
@@ -173,6 +198,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   const [load, setLoad] = useState<Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById' | 'scheduledVolume' | 'loadedVolume'> & { createdById?: string }>(getInitialState());
   const [hasMultiLeg, setHasMultiLeg] = useState(false);
   const [showSalesperson, setShowSalesperson] = useState(false);
+  const [showFinancialCost, setShowFinancialCost] = useState(false);
   
   const [newScheduleStartDate, setNewScheduleStartDate] = useState('');
   const [newScheduleEndDate, setNewScheduleEndDate] = useState('');
@@ -192,12 +218,56 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [appliedSuggestion, setAppliedSuggestion] = useState(false);
 
+  // Modal Rápido de Cadastro de Expedidor/Recebedor
+  const [isQuickLocationModalOpen, setIsQuickLocationModalOpen] = useState(false);
+  const [quickLocationTarget, setQuickLocationTarget] = useState<'origin' | 'destination'>('origin');
+  const [quickLocationInitialName, setQuickLocationInitialName] = useState('');
+  const [quickLocationInitialCity, setQuickLocationInitialCity] = useState('');
+  const [quickLocationInitialMapLink, setQuickLocationInitialMapLink] = useState('');
+  const [quickLocationExisting, setQuickLocationExisting] = useState<ExpedidorRecebedor | null>(null);
+
+  const handleOpenQuickLocationModal = (target: 'origin' | 'destination') => {
+    setQuickLocationTarget(target);
+    const currentName = target === 'origin' ? (load.originLocation || '') : (load.destinationLocation || '');
+    const currentCity = target === 'origin' ? (load.origin || '') : (load.destination || '');
+    const currentMapLink = target === 'origin' ? (load.originMapLink || '') : (load.destinationMapLink || '');
+    
+    const existing = locationsList.find(l => l.name.trim().toLowerCase() === currentName.trim().toLowerCase()) || null;
+    
+    setQuickLocationInitialName(currentName);
+    setQuickLocationInitialCity(currentCity);
+    setQuickLocationInitialMapLink(currentMapLink);
+    setQuickLocationExisting(existing);
+    setIsQuickLocationModalOpen(true);
+  };
+
+  const handleQuickLocationSaved = (savedLoc: ExpedidorRecebedor) => {
+    if (quickLocationTarget === 'origin') {
+      setLoad(prev => ({
+        ...prev,
+        originLocation: savedLoc.name,
+        originMapLink: savedLoc.mapLink || prev.originMapLink
+      }));
+    } else {
+      setLoad(prev => ({
+        ...prev,
+        destinationLocation: savedLoc.name,
+        destinationMapLink: savedLoc.mapLink || prev.destinationMapLink
+      }));
+    }
+    showToast(`Local "${savedLoc.name}" salvo e aplicado com sucesso!`, 'success');
+  };
+
   const commercialUsers = useMemo(() => {
-    return users.filter(u => u.profile === UserProfile.Comercial || u.profile === UserProfile.Admin);
-  }, [users]);
+    return filterVisibleUsers(users, currentUser).filter(
+      u => u.profile === UserProfile.Comercial || u.profile === UserProfile.Admin || (isDeveloperUser(currentUser) && isDeveloperUser(u))
+    );
+  }, [users, currentUser]);
 
   const internalUsers = useMemo(() => {
-    return users.filter(u => u.active !== false && u.profile !== UserProfile.Cliente && u.profile !== UserProfile.Motorista);
+    return users.filter(
+      u => u.active !== false && u.profile !== UserProfile.Cliente && u.profile !== UserProfile.Motorista && !isDeveloperUser(u) && !isDemoUser(u)
+    );
   }, [users]);
 
   const filteredInternalUsers = useMemo(() => {
@@ -275,16 +345,12 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 legs.push({ companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0, freightCalculationType: calcType, icmsValue: 0 });
             }
             
-            const newSequenceId = loads.length > 0 ? Math.max(...loads.map(c => c.sequenceId || 0)) + 1 : 101;
-
             setLoad({ 
                 ...editableLoad, 
-                sequenceId: isDuplicate ? newSequenceId : editableLoad.sequenceId,
-                status: isDuplicate ? CargoStatus.EmAndamento : editableLoad.status,
                 freightCalculationType: calcType,
                 icmsValue: editableLoad.icmsValue || 0,
                 freightLegs: legs, 
-                dailySchedule: isDuplicate ? [] : (editableLoad.dailySchedule || []),
+                dailySchedule: editableLoad.dailySchedule || [],
                 observations: editableLoad.observations || '',
                 attachments: editableLoad.attachments || [],
                 allowedVehicleTypes: editableLoad.allowedVehicleTypes || [],
@@ -296,16 +362,25 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 schedulingSystemUrl: editableLoad.schedulingSystemUrl || '',
                 schedulingUser: editableLoad.schedulingUser || '',
                 schedulingPassword: editableLoad.schedulingPassword || '',
-                allowedProfiles: (editableLoad.allowedProfiles && editableLoad.allowedProfiles.length > 0) ? editableLoad.allowedProfiles : [...INTERNAL_PROFILES],
+                allowedProfiles: (editableLoad.allowedProfiles && editableLoad.allowedProfiles.length > 0) ? editableLoad.allowedProfiles.filter(p => p !== UserProfile.Desenvolvedor) : [...DEFAULT_CARGO_ALLOWED_PROFILES],
                 allowedUserIds: (editableLoad.allowedUserIds && editableLoad.allowedUserIds.length > 0) ? editableLoad.allowedUserIds : internalUsers.map(u => u.id),
-                tmsLoteNumber: isDuplicate ? '' : (editableLoad.tmsLoteNumber || ''),
+                tmsLoteNumber: editableLoad.tmsLoteNumber || '',
                 clientCnpj: editableLoad.clientCnpj || '',
                 clientBranchId: editableLoad.clientBranchId || '',
                 isExport: editableLoad.isExport !== undefined ? editableLoad.isExport : undefined,
-                createdById: isDuplicate ? currentUser.id : editableLoad.createdById
+                orderNumber: editableLoad.orderNumber || (editableLoad as any).numeroPedido || '',
+                packaging: editableLoad.packaging || 'Granel',
+                financialCostEnabled: editableLoad.financialCostEnabled ?? false,
+                financialCostMonthlyRate: editableLoad.financialCostMonthlyRate || 0,
+                financialCostDaysTerm: editableLoad.financialCostDaysTerm || 30,
+                financialCostBaseDays: editableLoad.financialCostBaseDays || 30,
+                financialCostEffectiveRate: editableLoad.financialCostEffectiveRate || 0,
+                financialCostPerTon: editableLoad.financialCostPerTon || 0,
+                financialCostTotal: editableLoad.financialCostTotal || 0,
             });
             setHasMultiLeg(editableLoad.freightLegs ? editableLoad.freightLegs.length > 1 : false);
             setShowSalesperson(!!editableLoad.salespersonName);
+            setShowFinancialCost(Boolean(editableLoad.financialCostEnabled || (editableLoad.financialCostMonthlyRate && editableLoad.financialCostMonthlyRate > 0)));
         } else {
             const { scheduledVolume, loadedVolume, ...initialState } = getInitialState();
             const initClient = clients.find(c => c.id === initialState.clientId);
@@ -318,11 +393,13 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
               ...initialState,
               salespersonName: initSalesperson,
               salespersonCommissionPerTon: initCommission,
+              financialCostDaysTerm: initClient?.paymentTerm || 30,
               createdById: currentUser.id,
               allowedUserIds: internalUsers.map(u => u.id)
             });
             setHasMultiLeg(false);
             setShowSalesperson(Boolean(initSalesperson));
+            setShowFinancialCost(false);
         }
     }
     prevIsOpen.current = isOpen;
@@ -371,7 +448,11 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
     hasDriverPfToll,
     displayCompanyFreightTotal,
     displayDriverFreightPjTotal,
-    displayDriverFreightPfTotal
+    displayDriverFreightPfTotal,
+    isFinCostActive,
+    effectiveFinancialRate,
+    financialCostPerTon,
+    financialCostTotal
   } = useMemo(() => {
     const legs = load.freightLegs || [];
     const activeLegs = hasMultiLeg ? legs.slice(0, 2) : legs.slice(0, 1);
@@ -439,14 +520,40 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
     const totalCommission = isFixed
       ? (load.salespersonCommissionPerTon || 0)
       : (load.salespersonCommissionPerTon || 0) * (isPlusIcms ? volumeRef : 1);
+
+    // Custo Financeiro
+    const isFinCostActive = showFinancialCost && Boolean(load.financialCostEnabled);
+    const finMonthlyRate = isFinCostActive ? (Number(load.financialCostMonthlyRate) || 0) : 0;
+    const finDaysTerm = isFinCostActive ? (Number(load.financialCostDaysTerm) || 0) : 0;
+    const finBaseDays = isFinCostActive ? (Number(load.financialCostBaseDays) || 30) : 30;
+    const effectiveFinancialRate = finBaseDays > 0 ? (finMonthlyRate * (finDaysTerm / finBaseDays)) : 0;
+
+    let financialCostValue = 0;
+    let financialCostPerTon = 0;
+    let financialCostTotal = 0;
+
+    if (isFixed) {
+      financialCostValue = Number((totalCompanyFreight * (effectiveFinancialRate / 100)).toFixed(2));
+      financialCostTotal = financialCostValue;
+      financialCostPerTon = (load.totalVolume && load.totalVolume > 0) ? Number((financialCostTotal / load.totalVolume).toFixed(2)) : 0;
+    } else if (isPlusIcms) {
+      financialCostPerTon = Number((totalCompanyFreight * (effectiveFinancialRate / 100)).toFixed(2));
+      financialCostValue = Number(((totalCompanyFreight * volumeRef) * (effectiveFinancialRate / 100)).toFixed(2));
+      financialCostTotal = Number(((totalCompanyFreight * (load.totalVolume || 0)) * (effectiveFinancialRate / 100)).toFixed(2));
+    } else {
+      // Per Ton
+      financialCostPerTon = Number((totalCompanyFreight * (effectiveFinancialRate / 100)).toFixed(2));
+      financialCostValue = financialCostPerTon;
+      financialCostTotal = Number(((totalCompanyFreight * (load.totalVolume || 0)) * (effectiveFinancialRate / 100)).toFixed(2));
+    }
     
     // PJ Margin
-    const netProfitPj = totalNetCompanyValue - totalDriverCostPj - totalCommission;
+    const netProfitPj = totalNetCompanyValue - totalDriverCostPj - totalCommission - financialCostValue;
     const marginPj = (totalNetCompanyValue > 0) ? (netProfitPj / totalNetCompanyValue) * 100 : 0;
     const marginPjPercentage = isNaN(marginPj) || !isFinite(marginPj) ? '0,00%' : `${marginPj.toFixed(2).replace('.', ',')}%`;
 
     // PF Margin
-    const netProfitPf = totalNetCompanyValue - totalDriverCostPf - totalCommission;
+    const netProfitPf = totalNetCompanyValue - totalDriverCostPf - totalCommission - financialCostValue;
     const marginPf = (totalNetCompanyValue > 0) ? (netProfitPf / totalNetCompanyValue) * 100 : 0;
     const marginPfPercentage = isNaN(marginPf) || !isFinite(marginPf) ? '0,00%' : `${marginPf.toFixed(2).replace('.', ',')}%`;
 
@@ -461,9 +568,25 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       hasDriverPfToll,
       displayCompanyFreightTotal,
       displayDriverFreightPjTotal,
-      displayDriverFreightPfTotal
+      displayDriverFreightPfTotal,
+      isFinCostActive,
+      effectiveFinancialRate,
+      financialCostPerTon,
+      financialCostTotal
     };
-  }, [load.freightLegs, hasMultiLeg, load.salespersonCommissionPerTon, load.freightCalculationType, load.totalVolume]);
+  }, [load.freightLegs, hasMultiLeg, load.salespersonCommissionPerTon, load.freightCalculationType, load.totalVolume, showFinancialCost, load.financialCostEnabled, load.financialCostMonthlyRate, load.financialCostDaysTerm, load.financialCostBaseDays]);
+
+  const locationsList = useMemo(() => locations || getExpedidoresRecebedores(), [locations]);
+
+  const originLocationData = useMemo(() => {
+    if (!load.originLocation?.trim()) return null;
+    return locationsList.find(l => l.name.trim().toLowerCase() === load.originLocation?.trim().toLowerCase()) || null;
+  }, [load.originLocation, locationsList]);
+
+  const destinationLocationData = useMemo(() => {
+    if (!load.destinationLocation?.trim()) return null;
+    return locationsList.find(l => l.name.trim().toLowerCase() === load.destinationLocation?.trim().toLowerCase()) || null;
+  }, [load.destinationLocation, locationsList]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
@@ -476,6 +599,21 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         setLoad(prev => ({ ...prev, [name]: parseFloat(value) || 0 }));
     }
     else {
+        // Sugestão de Link do Maps ao selecionar Local cadastrado
+        if (name === 'originLocation' && formattedValue) {
+          const match = locationsList.find(l => l.name.trim().toLowerCase() === formattedValue.trim().toLowerCase());
+          if (match?.mapLink && !load.originMapLink) {
+            setLoad(prev => ({ ...prev, originLocation: formattedValue, originMapLink: match.mapLink }));
+            return;
+          }
+        }
+        if (name === 'destinationLocation' && formattedValue) {
+          const match = locationsList.find(l => l.name.trim().toLowerCase() === formattedValue.trim().toLowerCase());
+          if (match?.mapLink && !load.destinationMapLink) {
+            setLoad(prev => ({ ...prev, destinationLocation: formattedValue, destinationMapLink: match.mapLink }));
+            return;
+          }
+        }
         setLoad(prev => ({ ...prev, [name]: formattedValue }));
     }
   };
@@ -534,6 +672,13 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Se o usuário apertar Enter no teclado virtual do celular em passos intermediários, apenas avança para o próximo passo
+    if (step < STEPS.length) {
+      nextStep();
+      return;
+    }
+
     if (isSubmitting) return;
 
     if (load.isExport === undefined) {
@@ -578,9 +723,38 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
           icmsPercentage: activeLegs[0]?.icmsPercentage || 0,
           originCoords: originCoords || undefined,
           destinationCoords: destinationCoords || undefined,
+          financialCostEnabled: isFinCostActive,
+          financialCostMonthlyRate: isFinCostActive ? (Number(load.financialCostMonthlyRate) || 0) : 0,
+          financialCostDaysTerm: isFinCostActive ? (Number(load.financialCostDaysTerm) || 30) : 30,
+          financialCostBaseDays: isFinCostActive ? (Number(load.financialCostBaseDays) || 30) : 30,
+          financialCostEffectiveRate: Number(effectiveFinancialRate.toFixed(2)),
+          financialCostPerTon: Number(financialCostPerTon.toFixed(2)),
+          financialCostTotal: Number(financialCostTotal.toFixed(2)),
       };
 
-      if (loadToEdit && !isDuplicate) {
+      // Sincronização automática com o cadastro de Expedidor/Recebedor
+      try {
+        if (load.originLocation && load.originLocation.trim()) {
+          saveExpedidorRecebedor({
+            name: load.originLocation.trim(),
+            classification: 'Ambos',
+            mapLink: load.originMapLink || undefined,
+            city: load.origin || undefined
+          });
+        }
+        if (load.destinationLocation && load.destinationLocation.trim()) {
+          saveExpedidorRecebedor({
+            name: load.destinationLocation.trim(),
+            classification: 'Ambos',
+            mapLink: load.destinationMapLink || undefined,
+            city: load.destination || undefined
+          });
+        }
+      } catch (locErr) {
+        console.warn('Erro ao sincronizar expedidor/recebedor automático:', locErr);
+      }
+
+      if (loadToEdit) {
         onSave({
           ...loadToEdit, 
           ...finalLoadData,
@@ -715,45 +889,16 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   const leg2 = load.freightLegs?.[1] || { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-4xl w-full max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-700 transition-all">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4 overscroll-contain">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-6xl w-full max-h-[94vh] md:h-[88vh] flex flex-col border border-gray-100 dark:border-gray-700 transition-all overscroll-contain">
         
         {/* Title */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {isDuplicate 
-                ? `Duplicar Carga (Base #${loadToEdit?.sequenceId || loadToEdit?.id})` 
-                : (loadToEdit ? `Editar Carga #${loadToEdit.sequenceId || loadToEdit.id}` : 'Nova Carga')}
-            </h2>
-            {isDuplicate && (
-              <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700">
-                Nova Carga Duplicada
-              </span>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            title="Fechar"
-          >
-            <XIcon className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Duplicate Notice Banner */}
-        {isDuplicate && (
-          <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl text-emerald-800 dark:text-emerald-200 text-xs sm:text-sm flex items-center gap-2.5">
-            <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-            <span>
-              Criando uma nova carga com base na <strong>Carga #{loadToEdit?.sequenceId || loadToEdit?.id}</strong>. Os dados da rota, valores, produto e regras foram copiados. Ajuste os dados que desejar antes de salvar.
-            </span>
-          </div>
-        )}
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+          {loadToEdit ? 'Editar Carga' : 'Cadastrar Nova Carga'}
+        </h2>
 
         {/* Stepper Header */}
-        <div className="mb-6 flex items-center justify-between border-b dark:border-gray-700 pb-5 px-2">
+        <div className="mb-8 flex items-center justify-between border-b dark:border-gray-700 pb-6 px-2">
             {STEPS.map((s, i) => {
               const isCurrent = i + 1 === step;
               const isCompleted = i + 1 < step;
@@ -784,8 +929,19 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         </div>
         
         {/* Form */}
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+        <form 
+          onSubmit={handleSubmit} 
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+              e.preventDefault();
+              if (step < STEPS.length) {
+                nextStep();
+              }
+            }
+          }}
+          className="flex-1 flex flex-col min-h-0 overflow-hidden"
+        >
+          <div className="flex-1 overflow-y-auto overscroll-contain space-y-6 pr-2">
           
           {/* STEP 1: Informações da Carga */}
           {step === 1 && (
@@ -896,7 +1052,18 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                     {/* Origem (Cidade e Local) */}
                     <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/60 dark:bg-gray-800/40 space-y-2">
-                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Origem (Cidade e Local)</label>
+                        <div className="flex items-center justify-between">
+                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Origem (Cidade e Local)</label>
+                            <button 
+                              type="button" 
+                              onClick={() => handleOpenQuickLocationModal('origin')}
+                              className="px-2 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 transition-colors text-xs font-bold flex items-center gap-1 shadow-2xs"
+                              title="Cadastrar ou editar dados completos do local (CNPJ/CPF, Telefone, WhatsApp)"
+                            >
+                                <MapPin className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                <span>+ Cadastrar Local</span>
+                            </button>
+                        </div>
                         <div className="space-y-2">
                             <input 
                               name="origin" 
@@ -913,6 +1080,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                   value={load.originLocation ?? ''} 
                                   onChange={handleChange} 
                                   placeholder="Local / Fazenda / Galpão" 
+                                  list="expedidores-recebedores-datalist"
                                   className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
                                 />
                                 <input 
@@ -923,6 +1091,26 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                   className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
                                 />
                             </div>
+
+                            {/* Informações fiscais/contato do local de origem */}
+                            {originLocationData && (
+                                <div className="flex items-center justify-between px-2.5 py-1 bg-amber-50/80 dark:bg-amber-950/40 rounded-lg border border-amber-200/80 dark:border-amber-800 text-[11px] text-amber-900 dark:text-amber-200">
+                                    <div className="flex items-center gap-1.5 truncate">
+                                        <Building2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                        <span className="font-semibold truncate">
+                                            {originLocationData.documentNumber ? `${originLocationData.documentType}: ${originLocationData.documentNumber}` : 'Local Cadastrado'}
+                                            {originLocationData.phone ? ` • Tel: ${originLocationData.phone}${originLocationData.isWhatsapp ? ' (Whats)' : ''}` : ''}
+                                        </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenQuickLocationModal('origin')}
+                                      className="text-amber-600 dark:text-amber-400 font-extrabold hover:underline shrink-0 ml-2 flex items-center gap-0.5"
+                                    >
+                                        <Edit2 className="w-3 h-3" /> Editar
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                     
@@ -930,15 +1118,26 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                     <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/60 dark:bg-gray-800/40 space-y-2">
                         <div className="flex items-center justify-between">
                             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Destino (Cidade e Local)</label>
-                            <button 
-                              type="button" 
-                              onClick={() => setHasMultiLeg(prev => !prev)}
-                              className="px-2 py-0.5 rounded-md bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 transition-colors text-xs font-medium flex items-center gap-1"
-                              title="Adicionar mais destinos/pernas"
-                            >
-                                <PlusIcon className="w-3 h-3" />
-                                <span>Perna Extra</span>
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                                <button 
+                                  type="button" 
+                                  onClick={() => handleOpenQuickLocationModal('destination')}
+                                  className="px-2 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 transition-colors text-xs font-bold flex items-center gap-1 shadow-2xs"
+                                  title="Cadastrar ou editar dados completos do local (CNPJ/CPF, Telefone, WhatsApp)"
+                                >
+                                    <MapPin className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                    <span>+ Cadastrar Local</span>
+                                </button>
+                                <button 
+                                  type="button" 
+                                  onClick={() => setHasMultiLeg(prev => !prev)}
+                                  className="px-2 py-0.5 rounded-md bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 transition-colors text-xs font-medium flex items-center gap-1"
+                                  title="Adicionar mais destinos/pernas"
+                                >
+                                    <PlusIcon className="w-3 h-3" />
+                                    <span>Perna Extra</span>
+                                </button>
+                            </div>
                         </div>
                         
                         <div className="space-y-2">
@@ -957,6 +1156,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                   value={load.destinationLocation ?? ''} 
                                   onChange={handleChange} 
                                   placeholder="Local / Porto / Galpão" 
+                                  list="expedidores-recebedores-datalist"
                                   className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
                                 />
                                 <input 
@@ -967,6 +1167,26 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                   className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
                                 />
                             </div>
+
+                            {/* Informações fiscais/contato do local de destino */}
+                            {destinationLocationData && (
+                                <div className="flex items-center justify-between px-2.5 py-1 bg-amber-50/80 dark:bg-amber-950/40 rounded-lg border border-amber-200/80 dark:border-amber-800 text-[11px] text-amber-900 dark:text-amber-200">
+                                    <div className="flex items-center gap-1.5 truncate">
+                                        <Building2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                        <span className="font-semibold truncate">
+                                            {destinationLocationData.documentNumber ? `${destinationLocationData.documentType}: ${destinationLocationData.documentNumber}` : 'Local Cadastrado'}
+                                            {destinationLocationData.phone ? ` • Tel: ${destinationLocationData.phone}${destinationLocationData.isWhatsapp ? ' (Whats)' : ''}` : ''}
+                                        </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenQuickLocationModal('destination')}
+                                      className="text-amber-600 dark:text-amber-400 font-extrabold hover:underline shrink-0 ml-2 flex items-center gap-0.5"
+                                    >
+                                        <Edit2 className="w-3 h-3" /> Editar
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -980,7 +1200,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 )}
 
                 {routeSuggestion && (
-                    <div className="p-3.5 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/90 via-teal-50/60 to-blue-50/40 dark:from-emerald-950/40 dark:via-gray-800 dark:to-teal-950/30 dark:border-emerald-800/60 shadow-xs space-y-2.5">
+                    <div className="p-3.5 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/90 via-teal-50/60 to-amber-50/40 dark:from-emerald-950/40 dark:via-gray-800 dark:to-teal-950/30 dark:border-emerald-800/60 shadow-xs space-y-2.5">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800 dark:text-emerald-300">
                                 <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
@@ -1050,9 +1270,69 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                     {BRAZILIAN_CITIES.map(city => <option key={city} value={city} />)}
                 </datalist>
 
-                {/* Volume Total & Prazo */}
+                <datalist id="expedidores-recebedores-datalist">
+                    {locationsList.map(loc => (
+                      <option key={loc.id} value={loc.name}>
+                        {loc.city ? `${loc.name} (${loc.city}${loc.state ? '/' + loc.state : ''})` : loc.name}
+                      </option>
+                    ))}
+                </datalist>
+
+                {/* Produto, Embalagem, Pedido e Volume */}
                 <div className="border-t dark:border-gray-700 pt-4">
-                    <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2.5">Detalhes do Volume, Prazo e Lote</h3>
+                    <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2.5">Produto, Embalagem, Pedido e Volume</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-3.5">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                              Produto da Carga
+                            </label>
+                            <select 
+                              name="productId" 
+                              value={load.productId} 
+                              onChange={handleChange} 
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs font-medium" 
+                              required
+                            >
+                                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                              Tipo de Embalagem (Ex: Granel, Bigbag, Sacos)
+                            </label>
+                            <input 
+                              list="packaging-options-list"
+                              name="packaging" 
+                              value={load.packaging ?? 'Granel'} 
+                              onChange={handleChange} 
+                              type="text" 
+                              placeholder="Granel, Bigbag, Sacos..."
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs font-medium" 
+                            />
+                            <datalist id="packaging-options-list">
+                                <option value="Granel" />
+                                <option value="Bigbag" />
+                                <option value="Sacos" />
+                                <option value="Granel / Caçamba" />
+                                <option value="Fardos" />
+                                <option value="Tambores" />
+                            </datalist>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                              Nº do Pedido (Cliente / Embarcador)
+                            </label>
+                            <input 
+                              name="orderNumber" 
+                              value={load.orderNumber || ''} 
+                              onChange={handleChange} 
+                              type="text" 
+                              placeholder="Ex: PED-12345, 45009823"
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs font-medium" 
+                            />
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                         <div>
                             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Volume Total Contratado (ton)</label>
@@ -1170,7 +1450,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                            onChange={(e) => setNewScheduleType(e.target.value as DailyScheduleType)} 
                            className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
                          >
-                           {Object.values(DailyScheduleType).map(type => <option key={type} value={type}>{type}</option>)}
+                           {Object.values(DailyScheduleType).map(type => <option key={type} value={type}>{formatDemandTypeLabel(type)}</option>)}
                          </select>
                        </div>
                        <div>
@@ -1258,13 +1538,13 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                             </span>
                         )}
                     </div>
-                    <div className="space-y-1.5 max-h-52 overflow-y-auto pr-2">
+                    <div className="space-y-1.5 max-h-72 overflow-y-auto pr-2">
                         {(load.dailySchedule || []).length > 0 ? (
                             (load.dailySchedule || []).map(entry => (
                                 <div key={entry.date} className="flex justify-between items-center p-2.5 border border-gray-200 rounded-lg dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xs">
                                     <div className="flex items-center gap-3">
                                         <p className="font-bold text-gray-800 dark:text-gray-200 text-xs w-24">{new Date(entry.date + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
-                                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">{entry.type}</span>
+                                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">{formatDemandTypeLabel(entry.type)}</span>
                                         <span className="text-xs font-bold text-gray-900 dark:text-white">{(entry.tonnage || 0).toLocaleString('pt-BR')} ton</span>
                                     </div>
                                     <button type="button" onClick={() => handleRemoveSchedule(entry.date)} className="p-1 text-red-500 hover:text-red-700"><XIcon className="w-3.5 h-3.5"/></button>
@@ -1292,7 +1572,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                         </div>
                         <div className="flex items-center gap-2 self-start sm:self-auto">
                             <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-900 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-700 shadow-2xs">
-                                {(load.allowedUserIds || []).length} / {internalUsers.length} com acesso
+                                {(load.allowedUserIds || []).filter(id => internalUsers.some(u => u.id === id)).length} / {internalUsers.length} com acesso
                             </span>
                         </div>
                     </div>
@@ -1328,7 +1608,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                     </div>
 
                     {/* Tabela / Lista em Linhas */}
-                    <div className="max-h-52 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl divide-y divide-gray-100 dark:divide-gray-800 bg-gray-50/50 dark:bg-gray-900/30">
+                    <div className="max-h-72 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl divide-y divide-gray-100 dark:divide-gray-800 bg-gray-50/50 dark:bg-gray-900/30">
                         {filteredInternalUsers.length > 0 ? (
                             filteredInternalUsers.map((u) => {
                                 const isAllowed = (load.allowedUserIds || []).includes(u.id);
@@ -1386,7 +1666,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 )}
 
                 {routeSuggestion && (
-                    <div className="p-3.5 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/90 via-teal-50/60 to-blue-50/40 dark:from-emerald-950/40 dark:via-gray-800 dark:to-teal-950/30 dark:border-emerald-800/60 shadow-xs space-y-2.5">
+                    <div className="p-3.5 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/90 via-teal-50/60 to-amber-50/40 dark:from-emerald-950/40 dark:via-gray-800 dark:to-teal-950/30 dark:border-emerald-800/60 shadow-xs space-y-2.5">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800 dark:text-emerald-300">
                                 <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
@@ -1455,13 +1735,13 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                     load.isExport === undefined 
                         ? 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 shadow-sm' 
                         : load.isExport 
-                            ? 'bg-blue-50/70 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800' 
+                            ? 'bg-amber-50/70 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800' 
                             : 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
                 }`}>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="space-y-0.5">
                             <label className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                                <Globe2 className={`h-4 w-4 ${load.isExport ? 'text-blue-600' : 'text-emerald-600'}`} />
+                                <Globe2 className={`h-4 w-4 ${load.isExport ? 'text-amber-600' : 'text-emerald-600'}`} />
                                 <span>Operação: A carga é destinada à exportação?</span>
                                 <span className="text-red-500 font-bold">*</span>
                             </label>
@@ -1469,7 +1749,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                 {load.isExport === undefined ? (
                                     <span className="text-amber-700 dark:text-amber-400 font-semibold">⚠️ Seleção obrigatória: informe se a carga é Exportação ou Mercado Interno.</span>
                                 ) : load.isExport ? (
-                                    <span className="text-blue-700 dark:text-blue-300 font-medium">✓ Carga classificada como <strong>Exportação</strong>.</span>
+                                    <span className="text-amber-700 dark:text-amber-300 font-medium">✓ Carga classificada como <strong>Exportação</strong>.</span>
                                 ) : (
                                     <span className="text-emerald-700 dark:text-emerald-300 font-medium">✓ Carga classificada como <strong>Mercado Interno (Nacional)</strong>.</span>
                                 )}
@@ -1493,7 +1773,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                 onClick={() => setLoad(prev => ({ ...prev, isExport: true }))}
                                 className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border shadow-2xs ${
                                     load.isExport === true
-                                        ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20 ring-2 ring-blue-400/40'
+                                        ? 'bg-amber-600 text-white border-amber-600 shadow-amber-500/20 ring-2 ring-amber-400/40'
                                         : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
                                 }`}
                             >
@@ -1631,11 +1911,11 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                             {(load.freightCalculationType === FreightCalculationType.PerTonPlusIcms || leg1.hasIcms) && (
                                 <div className="space-y-1">
                                     <div className="flex justify-between items-center">
-                                        <label className={`block text-[11px] font-semibold ${load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wide' : 'text-gray-600 dark:text-gray-400'}`}>
+                                        <label className={`block text-[11px] font-semibold ${load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'text-amber-600 dark:text-amber-400 font-bold uppercase tracking-wide' : 'text-gray-600 dark:text-gray-400'}`}>
                                             ICMS (%)
                                         </label>
                                         {load.freightCalculationType === FreightCalculationType.PerTonPlusIcms && (leg1.companyFreightValuePerTon || 0) > 0 && (leg1.icmsPercentage || 0) > 0 ? (
-                                            <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                                            <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
                                                 +{((leg1.companyFreightValuePerTon || 0) * ((leg1.icmsPercentage || 0) / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/t
                                             </span>
                                         ) : null}
@@ -1645,7 +1925,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                       onChange={(e) => handleLegChange(0, 'icmsPercentage', e.target.value)} 
                                       type="number" 
                                       placeholder="Ex: 12" 
-                                      className={`py-1.5 px-2.5 w-full border ${load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'border-2 border-blue-400 dark:border-blue-500 font-bold' : 'border-gray-300 dark:border-gray-600'} rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white shadow-2xs`} 
+                                      className={`py-1.5 px-2.5 w-full border ${load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'border-2 border-amber-400 dark:border-amber-500 font-bold' : 'border-gray-300 dark:border-gray-600'} rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white shadow-2xs`} 
                                       step="0.01"
                                     />
                                 </div>
@@ -1771,11 +2051,11 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                 {(load.freightCalculationType === FreightCalculationType.PerTonPlusIcms || leg2.hasIcms) && (
                                     <div className="space-y-1">
                                         <div className="flex justify-between items-center">
-                                            <label className={`block text-[11px] font-semibold ${load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wide' : 'text-gray-600 dark:text-gray-400'}`}>
+                                            <label className={`block text-[11px] font-semibold ${load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'text-amber-600 dark:text-amber-400 font-bold uppercase tracking-wide' : 'text-gray-600 dark:text-gray-400'}`}>
                                                 ICMS (%)
                                             </label>
                                             {load.freightCalculationType === FreightCalculationType.PerTonPlusIcms && (leg2.companyFreightValuePerTon || 0) > 0 && (leg2.icmsPercentage || 0) > 0 ? (
-                                                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                                                <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
                                                     +{((leg2.companyFreightValuePerTon || 0) * ((leg2.icmsPercentage || 0) / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/t
                                                 </span>
                                             ) : null}
@@ -1785,7 +2065,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                           onChange={(e) => handleLegChange(1, 'icmsPercentage', e.target.value)} 
                                           type="number" 
                                           placeholder="Ex: 12" 
-                                          className={`py-1.5 px-2.5 w-full border ${load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'border-2 border-blue-400 dark:border-blue-500 font-bold' : 'border-gray-300 dark:border-gray-600'} rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white shadow-2xs`} 
+                                          className={`py-1.5 px-2.5 w-full border ${load.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? 'border-2 border-amber-400 dark:border-amber-500 font-bold' : 'border-gray-300 dark:border-gray-600'} rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white shadow-2xs`} 
                                           step="0.01"
                                         />
                                     </div>
@@ -1906,24 +2186,45 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                     </div>
                 </div>
 
-                {/* Comissão de Vendedor Externo */}
+                {/* Comissão de Vendedor Externo & Custo Financeiro */}
                 <div className="border-t dark:border-gray-700 pt-4">
-                    <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Comissão de Vendedor Externo</h3>
-                        {!showSalesperson && (
-                            <button 
-                                type="button" 
-                                onClick={() => setShowSalesperson(true)}
-                                className="flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-400"
-                            >
-                                <UserPlusIcon className="h-3.5 w-3.5" />
-                                <span>Adicionar Vendedor</span>
-                            </button>
-                        )}
+                    <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
+                        <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Comissão de Vendedor Externo & Custos</h3>
+                        <div className="flex items-center gap-2">
+                            {!showSalesperson && (
+                                <button 
+                                    type="button" 
+                                    onClick={() => setShowSalesperson(true)}
+                                    className="flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 cursor-pointer"
+                                >
+                                    <UserPlusIcon className="h-3.5 w-3.5" />
+                                    <span>Adicionar Vendedor</span>
+                                </button>
+                            )}
+                            {!showFinancialCost && (
+                                <button 
+                                    type="button" 
+                                    onClick={() => {
+                                        setShowFinancialCost(true);
+                                        setLoad(prev => ({ 
+                                            ...prev, 
+                                            financialCostEnabled: true,
+                                            financialCostMonthlyRate: prev.financialCostMonthlyRate || 2.0,
+                                            financialCostDaysTerm: prev.financialCostDaysTerm || 30,
+                                            financialCostBaseDays: prev.financialCostBaseDays || 30,
+                                        }));
+                                    }}
+                                    className="flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-800 dark:text-amber-400 cursor-pointer"
+                                >
+                                    <CircleDollarSign className="h-3.5 w-3.5" />
+                                    <span>+ Adicionar Custo Financeiro</span>
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {showSalesperson && (
-                        <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900/40 shadow-xs space-y-2.5">
+                        <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900/40 shadow-xs space-y-2.5 mb-3">
                             <div className="flex justify-between items-center">
                                 <h4 className="font-bold text-xs text-gray-500 uppercase tracking-wider">Dados do Vendedor</h4>
                                 <button 
@@ -1932,7 +2233,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                         setShowSalesperson(false);
                                         setLoad(prev => ({ ...prev, salespersonName: '', salespersonCommissionPerTon: 0 }));
                                     }}
-                                    className="text-xs font-bold text-red-500 hover:text-red-700"
+                                    className="text-xs font-bold text-red-500 hover:text-red-700 cursor-pointer"
                                 >
                                     Remover
                                 </button>
@@ -1959,6 +2260,180 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                         className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white" 
                                         step="0.01"
                                     />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showFinancialCost && (
+                        <div className="p-3.5 border border-amber-200 dark:border-amber-900/60 rounded-xl bg-amber-50/30 dark:bg-amber-950/20 shadow-xs space-y-3">
+                            <div className="flex justify-between items-center pb-2 border-b border-amber-100 dark:border-amber-900/40">
+                                <div className="flex items-center gap-1.5">
+                                    <Landmark className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                                    <h4 className="font-bold text-xs text-amber-900 dark:text-amber-200 uppercase tracking-wider">Custo Financeiro da Carga</h4>
+                                    <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300">
+                                        Pro Rata
+                                    </span>
+                                </div>
+                                <button 
+                                    type="button" 
+                                    onClick={() => {
+                                        setShowFinancialCost(false);
+                                        setLoad(prev => ({ 
+                                            ...prev, 
+                                            financialCostEnabled: false, 
+                                            financialCostMonthlyRate: 0, 
+                                            financialCostDaysTerm: 30, 
+                                            financialCostBaseDays: 30,
+                                            financialCostEffectiveRate: 0, 
+                                            financialCostPerTon: 0, 
+                                            financialCostTotal: 0 
+                                        }));
+                                    }}
+                                    className="text-xs font-bold text-red-500 hover:text-red-700 dark:hover:text-red-400 cursor-pointer"
+                                >
+                                    Remover / Desativar
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                {/* 1. Taxa Mensal (% a.m.) */}
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                        Taxa Mensal (% a.m.)
+                                    </label>
+                                    <div className="relative">
+                                        <input 
+                                            name="financialCostMonthlyRate" 
+                                            type="number" 
+                                            step="0.01"
+                                            min="0"
+                                            value={load.financialCostMonthlyRate || ''} 
+                                            onChange={e => {
+                                                const raw = e.target.value;
+                                                if (raw === '') {
+                                                    setLoad(prev => ({ ...prev, financialCostMonthlyRate: undefined }));
+                                                    return;
+                                                }
+                                                const val = parseFloat(raw);
+                                                setLoad(prev => ({ ...prev, financialCostMonthlyRate: isNaN(val) ? undefined : val }));
+                                            }}
+                                            placeholder="Ex: 2,00" 
+                                            className="py-2 pl-3 pr-12 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm font-semibold text-gray-900 dark:text-white"
+                                        />
+                                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 dark:text-gray-400">
+                                            % a.m.
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* 2. Base de Cálculo (dias) */}
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                        Base de Cálculo
+                                    </label>
+                                    <select 
+                                        name="financialCostBaseDays"
+                                        value={load.financialCostBaseDays || 30}
+                                        onChange={e => {
+                                            const val = parseInt(e.target.value, 10);
+                                            setLoad(prev => ({ ...prev, financialCostBaseDays: isNaN(val) ? 30 : val }));
+                                        }}
+                                        className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm font-semibold text-gray-900 dark:text-white"
+                                    >
+                                        <option value="30">30 dias (Mês comercial pro rata)</option>
+                                        <option value="360">360 dias (Ano comercial)</option>
+                                        <option value="365">365 dias (Ano civil)</option>
+                                    </select>
+                                </div>
+
+                                {/* 3. Prazo de Pagamento da Carga (Dias) */}
+                                <div>
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                            Prazo de Recebimento
+                                        </label>
+                                        <div className="flex items-center gap-1">
+                                            {[30, 45, 60].map(dias => (
+                                                <button
+                                                    key={dias}
+                                                    type="button"
+                                                    onClick={() => setLoad(prev => ({ ...prev, financialCostDaysTerm: dias }))}
+                                                    className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition-colors cursor-pointer ${
+                                                        Number(load.financialCostDaysTerm) === dias
+                                                            ? 'bg-amber-600 text-white'
+                                                            : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200'
+                                                    }`}
+                                                >
+                                                    {dias}d
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="relative">
+                                        <input 
+                                            name="financialCostDaysTerm" 
+                                            type="number" 
+                                            min="0"
+                                            value={load.financialCostDaysTerm || ''} 
+                                            onChange={e => {
+                                                const raw = e.target.value;
+                                                if (raw === '') {
+                                                    setLoad(prev => ({ ...prev, financialCostDaysTerm: undefined }));
+                                                    return;
+                                                }
+                                                const val = parseInt(raw, 10);
+                                                setLoad(prev => ({ ...prev, financialCostDaysTerm: isNaN(val) ? undefined : val }));
+                                            }}
+                                            placeholder="Ex: 45" 
+                                            className="py-2 pl-3 pr-12 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm font-semibold text-gray-900 dark:text-white"
+                                        />
+                                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 dark:text-gray-400">
+                                            dias
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 4. Painel de Pré-Visualização / Resumo em Tempo Real */}
+                            <div className="p-3 bg-white dark:bg-slate-800/90 rounded-lg border border-amber-200/80 dark:border-amber-800/60 shadow-2xs">
+                                <div className="text-[11px] font-bold text-amber-900 dark:text-amber-300 uppercase tracking-tight mb-2 flex items-center justify-between">
+                                    <span className="flex items-center gap-1">
+                                        <BadgePercent className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                        Memória de Cálculo & Pré-Visualização
+                                    </span>
+                                    <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 lowercase">
+                                        incidência s/ frete empresa
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                    <div className="p-2 rounded-md bg-amber-50/60 dark:bg-slate-700/50 border border-amber-100 dark:border-slate-600">
+                                        <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Alíquota Efetiva</p>
+                                        <p className="text-sm font-black text-amber-700 dark:text-amber-300 font-mono">
+                                            {effectiveFinancialRate.toFixed(2).replace('.', ',')}%
+                                        </p>
+                                        <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-0.5">
+                                            {load.financialCostMonthlyRate || 0}% a.m. × ({load.financialCostDaysTerm || 30}/{load.financialCostBaseDays || 30}d)
+                                        </p>
+                                    </div>
+                                    <div className="p-2 rounded-md bg-amber-50/60 dark:bg-slate-700/50 border border-amber-100 dark:border-slate-600">
+                                        <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Custo por Tonelada</p>
+                                        <p className="text-sm font-black text-rose-600 dark:text-rose-400 font-mono">
+                                            R$ {financialCostPerTon.toFixed(2).replace('.', ',')} / ton
+                                        </p>
+                                        <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-0.5">
+                                            s/ Frete Empresa R$ {totalCompanyFreight.toFixed(2).replace('.', ',')}/t
+                                        </p>
+                                    </div>
+                                    <div className="p-2 rounded-md bg-amber-50/60 dark:bg-slate-700/50 border border-amber-100 dark:border-slate-600">
+                                        <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Custo Total Estimado</p>
+                                        <p className="text-sm font-black text-rose-600 dark:text-rose-400 font-mono">
+                                            R$ {financialCostTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </p>
+                                        <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-0.5">
+                                            calculado p/ lote de {(load.totalVolume || 0).toLocaleString('pt-BR')} ton
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -2013,7 +2488,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                             {load.allowedVehicleTypes.map(avt => (
                                 <div 
                                   key={avt.setType} 
-                                  className="flex justify-between items-center p-2.5 bg-blue-50/80 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800/50 rounded-lg shadow-2xs"
+                                  className="flex justify-between items-center p-2.5 bg-amber-50/80 dark:bg-amber-900/30 border border-amber-100 dark:border-amber-800/50 rounded-lg shadow-2xs"
                                 >
                                     <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">
                                         <span className="font-bold">{avt.setType}:</span> {avt.bodyTypes.join(', ')}
@@ -2059,6 +2534,40 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                             >
                                 {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                             </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Tipo de Embalagem</label>
+                            <input 
+                              list="packaging-options-list-step3"
+                              name="packaging" 
+                              value={load.packaging ?? 'Granel'} 
+                              onChange={handleChange} 
+                              type="text" 
+                              placeholder="Granel, Bigbag, Sacos..."
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white" 
+                            />
+                            <datalist id="packaging-options-list-step3">
+                                <option value="Granel" />
+                                <option value="Bigbag" />
+                                <option value="Sacos" />
+                                <option value="Granel / Caçamba" />
+                                <option value="Fardos" />
+                                <option value="Tambores" />
+                            </datalist>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Nº do Pedido</label>
+                            <input 
+                              name="orderNumber" 
+                              value={load.orderNumber || ''} 
+                              onChange={handleChange} 
+                              type="text" 
+                              placeholder="Ex: PED-12345, 45009823"
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white" 
+                            />
                         </div>
                         <div>
                             <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Status da Carga</label>
@@ -2110,19 +2619,28 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                     </button>
                   )}
 
-                    {step === STEPS.length && (
+                  {step === STEPS.length && (
                     <button 
                       type="submit" 
                       disabled={isSubmitting}
                       className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] text-white font-bold rounded-xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95 disabled:opacity-50"
                     >
-                      {isSubmitting ? 'Salvando...' : (isDuplicate ? 'Cadastrar Carga Duplicada' : (loadToEdit ? 'Salvar Alterações' : 'Confirmar Registro'))}
+                      {isSubmitting ? 'Salvando...' : (loadToEdit ? 'Salvar Alterações' : 'Confirmar Registro')}
                     </button>
                   )}
               </div>
           </div>
         </form>
 
+        <QuickLocationModal
+          isOpen={isQuickLocationModalOpen}
+          onClose={() => setIsQuickLocationModalOpen(false)}
+          onSaved={handleQuickLocationSaved}
+          initialName={quickLocationInitialName}
+          initialCity={quickLocationInitialCity}
+          initialMapLink={quickLocationInitialMapLink}
+          existingLocation={quickLocationExisting}
+        />
       </div>
     </div>
   );

@@ -1,14 +1,19 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { Client, Product, FreightOffer } from '../types';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import type { Client, Product, FreightOffer, ExpedidorRecebedor, User } from '../types';
 import { FreightOfferStatus } from '../types';
 import { 
   XIcon, PackageIcon, MapPinIcon, CalendarIcon, ScaleIcon, PaperclipIcon, 
-  Navigation, Route as RouteIcon, Loader2, AlertCircle, CheckCircle2, Clock, Building2
+  Navigation, Route as RouteIcon, Loader2, AlertCircle, CheckCircle2, Clock, Building2,
+  MapPin, Edit2
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { supabase } from '../supabase';
+import { calculateOfferRoute, type ResolvedWaypoint } from '../services/routeDistanceService';
+import { BRAZILIAN_CITIES } from '../brazilianCities';
+import { getExpedidoresRecebedores, fetchRemoteExpedidoresRecebedores } from '../utils/locationStorage';
+import { QuickLocationModal } from './QuickLocationModal';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -17,14 +22,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-interface Waypoint {
-  label: string;
-  subLabel?: string;
-  lat: number;
-  lng: number;
-  isExact: boolean;
-  type: 'origin' | 'destination' | 'via';
-}
+type Waypoint = ResolvedWaypoint;
 
 interface RouteData {
   distanceKm: number;
@@ -32,6 +30,7 @@ interface RouteData {
   coordinates: [number, number][];
   bounds: L.LatLngBounds | null;
   waypoints: Waypoint[];
+  isExact?: boolean;
 }
 
 interface FreightOfferModalProps {
@@ -42,6 +41,8 @@ interface FreightOfferModalProps {
   currentClient?: Client;
   onSave: (offer: Omit<FreightOffer, 'id' | 'createdAt'> | FreightOffer) => Promise<void>;
   editingOffer?: FreightOffer | null;
+  locations?: ExpedidorRecebedor[];
+  currentUser?: User | null;
 }
 
 // React Error Boundary to isolate Leaflet map rendering errors
@@ -89,7 +90,7 @@ function MapUpdater({ bounds }: { bounds: L.LatLngBounds | null }) {
 const DEFAULT_CENTER: [number, number] = [-15.7801, -47.9292];
 
 const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
-  isOpen, onClose, clients, products, currentClient, onSave, editingOffer
+  isOpen, onClose, clients, products, currentClient, onSave, editingOffer, locations, currentUser
 }) => {
   const [formData, setFormData] = useState({
     origin: '',
@@ -118,6 +119,41 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
   const [selectedBranchKey, setSelectedBranchKey] = useState<string>('matriz');
   const [selectedClientCnpj, setSelectedClientCnpj] = useState<string>('');
   const [selectedBranchId, setSelectedBranchId] = useState<string>('');
+
+  // Locations list for quick lookup & datalist
+  const [locationsList, setLocationsList] = useState<ExpedidorRecebedor[]>(() => locations || getExpedidoresRecebedores());
+
+  useEffect(() => {
+    if (locations && locations.length > 0) {
+      setLocationsList(locations);
+    } else {
+      setLocationsList(getExpedidoresRecebedores());
+      fetchRemoteExpedidoresRecebedores().then(remote => {
+        if (remote && remote.length > 0) {
+          setLocationsList(remote);
+        }
+      }).catch(err => console.warn('Erro ao carregar locais remotos:', err));
+    }
+  }, [locations, isOpen]);
+
+  // Modal Rápido de Cadastro de Expedidor/Recebedor
+  const [isQuickLocationModalOpen, setIsQuickLocationModalOpen] = useState(false);
+  const [quickLocationTarget, setQuickLocationTarget] = useState<'origin' | 'destination' | 'via'>('origin');
+  const [quickLocationViaIndex, setQuickLocationViaIndex] = useState<number | null>(null);
+  const [quickLocationInitialName, setQuickLocationInitialName] = useState('');
+  const [quickLocationInitialCity, setQuickLocationInitialCity] = useState('');
+  const [quickLocationInitialMapLink, setQuickLocationInitialMapLink] = useState('');
+  const [quickLocationExisting, setQuickLocationExisting] = useState<ExpedidorRecebedor | null>(null);
+
+  const originLocationData = useMemo(() => {
+    if (!formData.originLocation?.trim()) return null;
+    return locationsList.find(l => l.name.trim().toLowerCase() === formData.originLocation?.trim().toLowerCase()) || null;
+  }, [formData.originLocation, locationsList]);
+
+  const destinationLocationData = useMemo(() => {
+    if (!formData.destinationLocation?.trim()) return null;
+    return locationsList.find(l => l.name.trim().toLowerCase() === formData.destinationLocation?.trim().toLowerCase()) || null;
+  }, [formData.destinationLocation, locationsList]);
 
   // Reset modal state when opening/closing or when editingOffer changes
   useEffect(() => {
@@ -171,216 +207,6 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
     }
   }, [isOpen, editingOffer, currentClient, clients]);
 
-  const parseCoordinatesFromText = (str: string | undefined): { lat: number; lng: number } | null => {
-    if (!str) return null;
-    const trimmed = str.trim();
-    
-    // 1. Direct "lat, lng" e.g. -16.2341, -47.9123 or -16.2341 -47.9123
-    const directCoordMatch = trimmed.match(/^(-?\d{1,2}\.\d+)\s*[\s,]\s*(-?\d{1,3}\.\d+)$/);
-    if (directCoordMatch) {
-      const lat = parseFloat(directCoordMatch[1]);
-      const lng = parseFloat(directCoordMatch[2]);
-      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-        return { lat, lng };
-      }
-    }
-
-    // 2. Google Maps @lat,lng e.g. maps.google.com/maps/@-16.2341,-47.9123,17z
-    const atCoordMatch = trimmed.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-    if (atCoordMatch) {
-      const lat = parseFloat(atCoordMatch[1]);
-      const lng = parseFloat(atCoordMatch[2]);
-      if (!isNaN(lat) && !isNaN(lng)) {
-        return { lat, lng };
-      }
-    }
-
-    // 3. Google Maps 3d/4d params e.g. !3d-16.2341!4d-47.9123 or 3d-16.2341!4d-47.9123
-    const d3d4Match = trimmed.match(/!?3d(-?\d+\.\d+)!?4d(-?\d+\.\d+)/);
-    if (d3d4Match) {
-      const lat = parseFloat(d3d4Match[1]);
-      const lng = parseFloat(d3d4Match[2]);
-      if (!isNaN(lat) && !isNaN(lng)) {
-        return { lat, lng };
-      }
-    }
-
-    // 4. Google Maps query/ll params e.g. ?q=-16.2341,-47.9123 or &ll=-16.2341,-47.9123
-    const paramMatch = trimmed.match(/[?&](?:q|ll|destination|origin|center)=(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/i);
-    if (paramMatch) {
-      const lat = parseFloat(paramMatch[1]);
-      const lng = parseFloat(paramMatch[2]);
-      if (!isNaN(lat) && !isNaN(lng)) {
-        return { lat, lng };
-      }
-    }
-
-    // 5. Google Maps /place/lat,lng/ or /dir/lat,lng/
-    const pathMatch = trimmed.match(/\/(?:place|dir|search)\/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/i);
-    if (pathMatch) {
-      const lat = parseFloat(pathMatch[1]);
-      const lng = parseFloat(pathMatch[2]);
-      if (!isNaN(lat) && !isNaN(lng)) {
-        return { lat, lng };
-      }
-    }
-
-    return null;
-  };
-
-  const extractPlaceNameFromUrl = (url: string): string | null => {
-    const match = url.match(/\/place\/([^\/@?]+)/);
-    if (match && match[1]) {
-      try {
-        const decoded = decodeURIComponent(match[1].replace(/\+/g, ' ')).trim();
-        if (decoded && !/^-?\d+\.\d+/.test(decoded)) {
-          return decoded;
-        }
-      } catch (e) {
-        return match[1].replace(/\+/g, ' ').trim();
-      }
-    }
-    return null;
-  };
-
-  const resolveLocationToWaypoint = async (
-    locationStr: string | undefined,
-    cityStr: string,
-    type: 'origin' | 'destination' | 'via'
-  ): Promise<Waypoint | null> => {
-    let targetLocation = locationStr?.trim() || '';
-    let extractedCoords = parseCoordinatesFromText(targetLocation);
-    let extractedPlaceName: string | null = null;
-
-    const urlMatch = targetLocation.match(/(https?:\/\/[^\s]+)/i);
-    const url = urlMatch ? urlMatch[0] : null;
-
-    if (url && !extractedCoords) {
-      extractedPlaceName = extractPlaceNameFromUrl(url);
-
-      if (url.includes('goo.gl') || url.includes('maps.app') || url.includes('shorturl') || url.includes('bit.ly') || url.includes('t.co')) {
-        try {
-          const proxyResp = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
-          if (proxyResp.ok) {
-            const data = await proxyResp.json();
-            const finalUrl = data.status?.url || data.contents || '';
-            extractedCoords = parseCoordinatesFromText(finalUrl);
-            if (!extractedPlaceName) {
-              extractedPlaceName = extractPlaceNameFromUrl(finalUrl);
-            }
-          }
-        } catch (e) {
-          console.warn('Could not unshorten URL via proxy:', e);
-        }
-      }
-    }
-
-    if (extractedCoords) {
-      const cleanLabel = targetLocation.replace(/https?:\/\/[^\s]+/g, '').trim();
-      const label = cleanLabel && cleanLabel.length > 2 && !cleanLabel.startsWith('-')
-        ? cleanLabel 
-        : (extractedPlaceName || (type === 'origin' ? 'Origem' : type === 'destination' ? 'Destino' : 'Ponto de Apoio'));
-
-      return {
-        label,
-        subLabel: cityStr ? `Localização Exata (${cityStr})` : `Coordenadas: ${extractedCoords.lat.toFixed(4)}, ${extractedCoords.lng.toFixed(4)}`,
-        lat: extractedCoords.lat,
-        lng: extractedCoords.lng,
-        isExact: true,
-        type
-      };
-    }
-
-    const cityCoords = parseCoordinatesFromText(cityStr);
-    if (cityCoords) {
-      return {
-        label: `Coordenadas: ${cityCoords.lat.toFixed(4)}, ${cityCoords.lng.toFixed(4)}`,
-        lat: cityCoords.lat,
-        lng: cityCoords.lng,
-        isExact: true,
-        type
-      };
-    }
-
-    const cleanStr = (s: string) => s.replace(/https?:\/\/[^\s]+/g, '').replace(/[\\/]/g, ' ').trim();
-    const cleanLoc = cleanStr(targetLocation);
-    const cleanCity = cleanStr(cityStr);
-
-    if (extractedPlaceName && cleanCity) {
-      try {
-        const query = `${extractedPlaceName}, ${cleanCity}, Brasil`;
-        const resp = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=pt-br&countrycodes=br`
-        );
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data && data.length > 0) {
-            return {
-              label: extractedPlaceName,
-              subLabel: cleanCity,
-              lat: parseFloat(data[0].lat),
-              lng: parseFloat(data[0].lon),
-              isExact: true,
-              type
-            };
-          }
-        }
-      } catch (e) {
-        console.warn('Geocoding extracted place name failed:', e);
-      }
-    }
-
-    if (cleanLoc && cleanLoc.length > 2) {
-      try {
-        const query = `${cleanLoc}, ${cleanCity}, Brasil`;
-        const resp = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=pt-br&countrycodes=br`
-        );
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data && data.length > 0) {
-            return {
-              label: cleanLoc,
-              subLabel: cleanCity,
-              lat: parseFloat(data[0].lat),
-              lng: parseFloat(data[0].lon),
-              isExact: true,
-              type
-            };
-          }
-        }
-      } catch (e) {
-        console.warn('Geocoding exact location text failed:', e);
-      }
-    }
-
-    if (cleanCity && cleanCity.length > 2) {
-      try {
-        const query = `${cleanCity}, Brasil`;
-        const resp = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=pt-br&countrycodes=br`
-        );
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data && data.length > 0) {
-            return {
-              label: cleanCity,
-              subLabel: (cleanLoc || extractedPlaceName) ? `Local: "${cleanLoc || extractedPlaceName}" (não mapeado exatamente)` : undefined,
-              lat: parseFloat(data[0].lat),
-              lng: parseFloat(data[0].lon),
-              isExact: false,
-              type
-            };
-          }
-        }
-      } catch (e) {
-        console.warn('Geocoding city failed:', e);
-      }
-    }
-
-    return null;
-  };
-
   // Route calculation callback
   const calculateRoute = useCallback(async () => {
     const originCity = formData.origin.trim();
@@ -396,64 +222,33 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
     setRouteError(null);
 
     try {
-      // Resolve Origin
-      const originRes = await resolveLocationToWaypoint(formData.originLocation, formData.origin, 'origin');
-      if (!originRes) {
-        setRouteError(`Não foi possível localizar a Origem "${formData.origin}".`);
-        setIsCalculatingRoute(false);
-        return;
+      const result = await calculateOfferRoute({
+        origin: formData.origin,
+        originLocation: formData.originLocation,
+        destination: formData.destination,
+        destinationLocation: formData.destinationLocation,
+        additionalDestinations: additionalDestinations
+      });
+
+      if (!result) {
+        throw new Error('Não foi possível calcular a rota para as localizações informadas.');
       }
 
-      // Resolve Additional Destinations
-      const resolvedVias: Waypoint[] = [];
-      for (const addDest of additionalDestinations) {
-        if (addDest.city && addDest.city.trim().length >= 3) {
-          const viaRes = await resolveLocationToWaypoint(addDest.location, addDest.city, 'via');
-          if (viaRes) resolvedVias.push(viaRes);
-        }
-      }
-
-      // Resolve Main Destination
-      const destRes = await resolveLocationToWaypoint(formData.destinationLocation, formData.destination, 'destination');
-      if (!destRes) {
-        setRouteError(`Não foi possível localizar o Destino "${formData.destination}".`);
-        setIsCalculatingRoute(false);
-        return;
-      }
-
-      const allWaypoints = [originRes, ...resolvedVias, destRes];
-
-      // Fetch OSRM Route
-      const waypointsParam = allWaypoints.map(w => `${w.lng},${w.lat}`).join(';');
-      const osrmResp = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${waypointsParam}?overview=full&geometries=geojson`
-      );
-
-      if (!osrmResp.ok) {
-        throw new Error('Falha no serviço de rotas.');
-      }
-
-      const osrmData = await osrmResp.json();
-      if (osrmData.code !== 'Ok' || !osrmData.routes || osrmData.routes.length === 0) {
-        throw new Error('Rota não encontrada entre as localizações.');
-      }
-
-      const route = osrmData.routes[0];
-      const distanceKm = route.distance / 1000;
-      const durationMin = Math.round(route.duration / 60);
-
-      const coordinates: [number, number][] = route.geometry.coordinates.map(
-        (coord: [number, number]) => [coord[1], coord[0]]
-      );
-
+      const coordinates: [number, number][] = result.coordinates && result.coordinates.length > 0
+        ? result.coordinates
+        : [
+            [result.originCoords.lat, result.originCoords.lng],
+            [result.destinationCoords.lat, result.destinationCoords.lng]
+          ];
       const bounds = L.latLngBounds(coordinates);
 
       setRouteData({
-        distanceKm,
-        durationMin,
+        distanceKm: result.distanceKm,
+        durationMin: result.durationMin,
         coordinates,
         bounds,
-        waypoints: allWaypoints
+        waypoints: [result.originWaypoint, result.destinationWaypoint],
+        isExact: result.isExact
       });
     } catch (err: any) {
       console.error('Error calculating route:', err);
@@ -481,8 +276,87 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
   // EARLY RETURN FOR CLOSED MODAL MUST BE AFTER ALL HOOKS!
   if (!isOpen) return null;
 
+  const handleOpenQuickLocationModal = (target: 'origin' | 'destination' | 'via', viaIndex?: number) => {
+    setQuickLocationTarget(target);
+    setQuickLocationViaIndex(viaIndex !== undefined ? viaIndex : null);
+
+    let currentName = '';
+    let currentCity = '';
+
+    if (target === 'origin') {
+      currentName = formData.originLocation || '';
+      currentCity = formData.origin || '';
+    } else if (target === 'destination') {
+      currentName = formData.destinationLocation || '';
+      currentCity = formData.destination || '';
+    } else if (target === 'via' && viaIndex !== undefined && additionalDestinations[viaIndex]) {
+      currentName = additionalDestinations[viaIndex].location || '';
+      currentCity = additionalDestinations[viaIndex].city || '';
+    }
+
+    const existing = locationsList.find(l => l.name.trim().toLowerCase() === currentName.trim().toLowerCase()) || null;
+
+    setQuickLocationInitialName(currentName);
+    setQuickLocationInitialCity(currentCity);
+    setQuickLocationInitialMapLink(existing?.mapLink || '');
+    setQuickLocationExisting(existing);
+    setIsQuickLocationModalOpen(true);
+  };
+
+  const handleQuickLocationSaved = (savedLoc: ExpedidorRecebedor) => {
+    setLocationsList(prev => {
+      const exists = prev.some(l => l.id === savedLoc.id || l.name.trim().toLowerCase() === savedLoc.name.trim().toLowerCase());
+      if (exists) {
+        return prev.map(l => (l.id === savedLoc.id || l.name.trim().toLowerCase() === savedLoc.name.trim().toLowerCase()) ? savedLoc : l);
+      }
+      return [savedLoc, ...prev];
+    });
+
+    if (quickLocationTarget === 'origin') {
+      setFormData(prev => ({
+        ...prev,
+        originLocation: savedLoc.name,
+        origin: prev.origin.trim() ? prev.origin : (savedLoc.city ? `${savedLoc.city}${savedLoc.state ? ' - ' + savedLoc.state : ''}` : prev.origin)
+      }));
+    } else if (quickLocationTarget === 'destination') {
+      setFormData(prev => ({
+        ...prev,
+        destinationLocation: savedLoc.name,
+        destination: prev.destination.trim() ? prev.destination : (savedLoc.city ? `${savedLoc.city}${savedLoc.state ? ' - ' + savedLoc.state : ''}` : prev.destination)
+      }));
+    } else if (quickLocationTarget === 'via' && quickLocationViaIndex !== null) {
+      handleAdditionalDestinationChange(quickLocationViaIndex, 'location', savedLoc.name);
+      if (savedLoc.city && !additionalDestinations[quickLocationViaIndex]?.city?.trim()) {
+        handleAdditionalDestinationChange(quickLocationViaIndex, 'city', `${savedLoc.city}${savedLoc.state ? ' - ' + savedLoc.state : ''}`);
+      }
+    }
+    setIsQuickLocationModalOpen(false);
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
+    if (name === 'originLocation' && value) {
+      const match = locationsList.find(l => l.name.trim().toLowerCase() === value.trim().toLowerCase());
+      if (match?.city && !formData.origin.trim()) {
+        setFormData(prev => ({
+          ...prev,
+          originLocation: value,
+          origin: `${match.city}${match.state ? ' - ' + match.state : ''}`
+        }));
+        return;
+      }
+    }
+    if (name === 'destinationLocation' && value) {
+      const match = locationsList.find(l => l.name.trim().toLowerCase() === value.trim().toLowerCase());
+      if (match?.city && !formData.destination.trim()) {
+        setFormData(prev => ({
+          ...prev,
+          destinationLocation: value,
+          destination: `${match.city}${match.state ? ' - ' + match.state : ''}`
+        }));
+        return;
+      }
+    }
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
@@ -573,6 +447,10 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
           observations: formData.observations,
           additionalDestinations: additionalDestinations.filter(d => d.city.trim() !== ''),
           attachments: mergedAttachments,
+          originCoords: routeData ? { lat: routeData.waypoints[0].lat, lng: routeData.waypoints[0].lng } : editingOffer.originCoords,
+          destinationCoords: routeData ? { lat: routeData.waypoints[routeData.waypoints.length - 1].lat, lng: routeData.waypoints[routeData.waypoints.length - 1].lng } : editingOffer.destinationCoords,
+          distanceKm: routeData ? Math.round(routeData.distanceKm) : editingOffer.distanceKm,
+          isExactDistance: routeData ? routeData.isExact : editingOffer.isExactDistance,
           history: [
             ...(editingOffer.history || []),
             {
@@ -603,6 +481,10 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
           observations: formData.observations,
           additionalDestinations: additionalDestinations.filter(d => d.city.trim() !== ''),
           attachments: uploadedUrls,
+          originCoords: routeData ? { lat: routeData.waypoints[0].lat, lng: routeData.waypoints[0].lng } : undefined,
+          destinationCoords: routeData ? { lat: routeData.waypoints[routeData.waypoints.length - 1].lat, lng: routeData.waypoints[routeData.waypoints.length - 1].lng } : undefined,
+          distanceKm: routeData ? Math.round(routeData.distanceKm) : undefined,
+          isExactDistance: routeData ? routeData.isExact : undefined,
         });
       }
       onClose();
@@ -627,8 +509,8 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
         {/* Modal Header */}
         <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg">
-              <PackageIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+            <div className="p-2 bg-amber-50 dark:bg-amber-900/30 rounded-lg">
+              <PackageIcon className="w-6 h-6 text-amber-600 dark:text-amber-400" />
             </div>
             <div>
               <h2 className="text-xl font-bold text-gray-800 dark:text-white">
@@ -659,9 +541,9 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                   if (!targetClient || branches.length === 0) return null;
 
                   return (
-                    <div className="p-4 bg-indigo-50/70 dark:bg-indigo-900/25 rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 space-y-2">
-                      <label className="block text-xs font-bold text-indigo-900 dark:text-indigo-200 uppercase tracking-wide flex items-center gap-1.5">
-                        <Building2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <div className="p-4 bg-amber-50/70 dark:bg-amber-900/25 rounded-xl border border-amber-200/80 dark:border-amber-800/60 space-y-2">
+                      <label className="block text-xs font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wide flex items-center gap-1.5">
+                        <Building2 className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                         CNPJ / Filial Solicitante da Cotação <span className="text-red-500">*</span>
                       </label>
                       <select
@@ -679,7 +561,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                             setSelectedClientCnpj(targetClient.cnpj || '');
                           }
                         }}
-                        className="w-full px-3 py-2 text-sm border border-indigo-300 dark:border-indigo-600 rounded-lg dark:bg-gray-700 dark:text-white font-medium focus:ring-2 focus:ring-indigo-500 shadow-xs"
+                        className="w-full px-3 py-2 text-sm border border-amber-300 dark:border-amber-600 rounded-lg dark:bg-gray-700 dark:text-white font-medium focus:ring-2 focus:ring-amber-500 shadow-xs"
                       >
                         <option value="matriz">
                           Matriz — CNPJ: {targetClient.cnpj} {targetClient.city ? `(${targetClient.city}/${targetClient.state})` : ''}
@@ -690,7 +572,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                           </option>
                         ))}
                       </select>
-                      <p className="text-[11px] text-indigo-700 dark:text-indigo-300">
+                      <p className="text-[11px] text-amber-700 dark:text-amber-300">
                         Selecione para qual CNPJ ou unidade filial esta cotação de frete pertence.
                       </p>
                     </div>
@@ -699,7 +581,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
 
                 <div className="bg-gray-50 dark:bg-gray-700/40 p-4 rounded-xl border border-gray-200/80 dark:border-gray-600 space-y-4">
                   <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
-                    <MapPinIcon className="w-4 h-4 text-indigo-500" />
+                    <MapPinIcon className="w-4 h-4 text-amber-500" />
                     Origem & Destino
                   </h3>
 
@@ -711,12 +593,60 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                           <MapPinIcon className="h-4 w-4 text-emerald-500" />
                         </div>
-                        <input required type="text" name="origin" value={formData.origin} onChange={handleChange} className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: Serra do Salitre - MG" />
+                        <input 
+                          required 
+                          type="text" 
+                          name="origin" 
+                          value={formData.origin} 
+                          onChange={handleChange} 
+                          list="cities-list"
+                          className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500 shadow-xs" 
+                          placeholder="Ex: Serra do Salitre - MG" 
+                        />
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Local da Origem (Exato)</label>
-                      <input type="text" name="originLocation" value={formData.originLocation} onChange={handleChange} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: Eurochem / Fazenda Saia Velha" />
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">Local da Origem (Exato)</label>
+                        <button 
+                          type="button" 
+                          onClick={() => handleOpenQuickLocationModal('origin')}
+                          className="px-2 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 transition-colors text-xs font-bold flex items-center gap-1 shadow-2xs"
+                          title="Cadastrar ou editar dados completos do local (CNPJ/CPF, Telefone, WhatsApp)"
+                        >
+                          <MapPin className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                          <span>+ Cadastrar Local</span>
+                        </button>
+                      </div>
+                      <input 
+                        type="text" 
+                        name="originLocation" 
+                        value={formData.originLocation} 
+                        onChange={handleChange} 
+                        list="expedidores-recebedores-datalist"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500 shadow-xs" 
+                        placeholder="Ex: Eurochem / Fazenda Saia Velha" 
+                      />
+
+                      {/* Informações fiscais/contato do local de origem */}
+                      {originLocationData && (
+                        <div className="mt-1 flex items-center justify-between px-2.5 py-1 bg-amber-50/80 dark:bg-amber-950/40 rounded-lg border border-amber-200/80 dark:border-amber-800 text-[11px] text-amber-900 dark:text-amber-200">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <Building2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span className="font-semibold truncate">
+                              {originLocationData.documentNumber ? `${originLocationData.documentType}: ${originLocationData.documentNumber}` : 'Local Cadastrado'}
+                              {originLocationData.phone ? ` • Tel: ${originLocationData.phone}${originLocationData.isWhatsapp ? ' (Whats)' : ''}` : ''}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenQuickLocationModal('origin')}
+                            className="text-amber-600 dark:text-amber-400 font-extrabold hover:underline shrink-0 ml-2 flex items-center gap-0.5"
+                          >
+                            <Edit2 className="w-3 h-3" /> Editar
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -729,42 +659,152 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <MapPinIcon className="h-4 w-4 text-red-500" />
                           </div>
-                          <input required type="text" name="destination" value={formData.destination} onChange={handleChange} className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: Luziânia - GO" />
+                          <input 
+                            required 
+                            type="text" 
+                            name="destination" 
+                            value={formData.destination} 
+                            onChange={handleChange} 
+                            list="cities-list"
+                            className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500 shadow-xs" 
+                            placeholder="Ex: Luziânia - GO" 
+                          />
                         </div>
-                        <button type="button" onClick={handleAddDestination} className="p-2 text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex-shrink-0 text-xs font-bold" title="Adicionar outro destino">
+                        <button type="button" onClick={handleAddDestination} className="p-2 text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors flex-shrink-0 text-xs font-bold" title="Adicionar outro destino">
                           + Via
                         </button>
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Local do Destino (Exato)</label>
-                      <input type="text" name="destinationLocation" value={formData.destinationLocation} onChange={handleChange} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: Rodovia GO 010 km193" />
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">Local do Destino (Exato)</label>
+                        <button 
+                          type="button" 
+                          onClick={() => handleOpenQuickLocationModal('destination')}
+                          className="px-2 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 transition-colors text-xs font-bold flex items-center gap-1 shadow-2xs"
+                          title="Cadastrar ou editar dados completos do local (CNPJ/CPF, Telefone, WhatsApp)"
+                        >
+                          <MapPin className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                          <span>+ Cadastrar Local</span>
+                        </button>
+                      </div>
+                      <input 
+                        type="text" 
+                        name="destinationLocation" 
+                        value={formData.destinationLocation} 
+                        onChange={handleChange} 
+                        list="expedidores-recebedores-datalist"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500 shadow-xs" 
+                        placeholder="Ex: Rodovia GO 010 km193" 
+                      />
+
+                      {/* Informações fiscais/contato do local de destino */}
+                      {destinationLocationData && (
+                        <div className="mt-1 flex items-center justify-between px-2.5 py-1 bg-amber-50/80 dark:bg-amber-950/40 rounded-lg border border-amber-200/80 dark:border-amber-800 text-[11px] text-amber-900 dark:text-amber-200">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <Building2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span className="font-semibold truncate">
+                              {destinationLocationData.documentNumber ? `${destinationLocationData.documentType}: ${destinationLocationData.documentNumber}` : 'Local Cadastrado'}
+                              {destinationLocationData.phone ? ` • Tel: ${destinationLocationData.phone}${destinationLocationData.isWhatsapp ? ' (Whats)' : ''}` : ''}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenQuickLocationModal('destination')}
+                            className="text-amber-600 dark:text-amber-400 font-extrabold hover:underline shrink-0 ml-2 flex items-center gap-0.5"
+                          >
+                            <Edit2 className="w-3 h-3" /> Editar
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   {/* Additional Destinations */}
-                  {additionalDestinations.map((dest, idx) => (
-                    <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-gray-200 dark:border-gray-600">
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Via / Destino {idx + 1} (Cidade/UF)</label>
-                        <div className="flex items-center gap-2">
-                          <div className="relative flex-1">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <MapPinIcon className="h-4 w-4 text-indigo-500" />
+                  {additionalDestinations.map((dest, idx) => {
+                    const viaLocData = dest.location?.trim()
+                      ? locationsList.find(l => l.name.trim().toLowerCase() === dest.location.trim().toLowerCase()) || null
+                      : null;
+
+                    return (
+                      <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-gray-200 dark:border-gray-600">
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Via / Destino {idx + 1} (Cidade/UF)</label>
+                          <div className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <MapPinIcon className="h-4 w-4 text-amber-500" />
+                              </div>
+                              <input 
+                                required 
+                                type="text" 
+                                value={dest.city} 
+                                onChange={e => handleAdditionalDestinationChange(idx, 'city', e.target.value)} 
+                                list="cities-list"
+                                className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500 shadow-xs" 
+                                placeholder="Ex: Cristalina - GO" 
+                              />
                             </div>
-                            <input required type="text" value={dest.city} onChange={e => handleAdditionalDestinationChange(idx, 'city', e.target.value)} className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: Cristalina - GO" />
+                            <button type="button" onClick={() => handleRemoveDestination(idx)} className="p-2 text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors flex-shrink-0 text-xs font-bold" title="Remover destino">
+                              -
+                            </button>
                           </div>
-                          <button type="button" onClick={() => handleRemoveDestination(idx)} className="p-2 text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors flex-shrink-0 text-xs font-bold" title="Remover destino">
-                            -
-                          </button>
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">Local do Destino Via {idx + 1}</label>
+                            <button 
+                              type="button" 
+                              onClick={() => handleOpenQuickLocationModal('via', idx)}
+                              className="px-2 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 transition-colors text-xs font-bold flex items-center gap-1 shadow-2xs"
+                              title="Cadastrar ou editar dados completos do local (CNPJ/CPF, Telefone, WhatsApp)"
+                            >
+                              <MapPin className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                              <span>+ Cadastrar Local</span>
+                            </button>
+                          </div>
+                          <input 
+                            type="text" 
+                            value={dest.location} 
+                            onChange={e => handleAdditionalDestinationChange(idx, 'location', e.target.value)} 
+                            list="expedidores-recebedores-datalist"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500 shadow-xs" 
+                            placeholder="Ex: Silo Central" 
+                          />
+                          {viaLocData && (
+                            <div className="mt-1 flex items-center justify-between px-2.5 py-1 bg-amber-50/80 dark:bg-amber-950/40 rounded-lg border border-amber-200/80 dark:border-amber-800 text-[11px] text-amber-900 dark:text-amber-200">
+                              <div className="flex items-center gap-1.5 truncate">
+                                <Building2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                <span className="font-semibold truncate">
+                                  {viaLocData.documentNumber ? `${viaLocData.documentType}: ${viaLocData.documentNumber}` : 'Local Cadastrado'}
+                                  {viaLocData.phone ? ` • Tel: ${viaLocData.phone}${viaLocData.isWhatsapp ? ' (Whats)' : ''}` : ''}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenQuickLocationModal('via', idx)}
+                                className="text-amber-600 dark:text-amber-400 font-extrabold hover:underline shrink-0 ml-2 flex items-center gap-0.5"
+                              >
+                                <Edit2 className="w-3 h-3" /> Editar
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Local do Destino Via {idx + 1}</label>
-                        <input type="text" value={dest.location} onChange={e => handleAdditionalDestinationChange(idx, 'location', e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: Silo Central" />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+
+                  <datalist id="cities-list">
+                    {BRAZILIAN_CITIES.map(city => <option key={city} value={city} />)}
+                  </datalist>
+
+                  <datalist id="expedidores-recebedores-datalist">
+                    {locationsList.map(loc => (
+                      <option key={loc.id} value={loc.name}>
+                        {loc.city ? `${loc.name} (${loc.city}${loc.state ? '/' + loc.state : ''})` : loc.name}
+                      </option>
+                    ))}
+                  </datalist>
                 </div>
 
                 {/* Cargo Details */}
@@ -775,7 +815,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <ScaleIcon className="h-4 w-4 text-gray-400" />
                       </div>
-                      <input required type="number" min="0" step="0.01" name="totalTonnage" value={formData.totalTonnage} onChange={handleChange} className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: 500" />
+                      <input required type="number" min="0" step="0.01" name="totalTonnage" value={formData.totalTonnage} onChange={handleChange} className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500" placeholder="Ex: 500" />
                     </div>
                   </div>
 
@@ -785,13 +825,13 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <CalendarIcon className="h-4 w-4 text-gray-400" />
                       </div>
-                      <input type="text" name="dailySchedule" value={formData.dailySchedule} onChange={handleChange} className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: 50 ton/dia, ou Livre" />
+                      <input type="text" name="dailySchedule" value={formData.dailySchedule} onChange={handleChange} className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500" placeholder="Ex: 50 ton/dia, ou Livre" />
                     </div>
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Produto *</label>
-                    <select required name="productId" value={formData.productId} onChange={handleChange} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500">
+                    <select required name="productId" value={formData.productId} onChange={handleChange} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500">
                       <option value="">Selecione um produto</option>
                       {products.map(p => (
                         <option key={p.id} value={p.id}>{p.name}</option>
@@ -801,7 +841,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Tipo de Frete</label>
-                    <select name="freightType" value={formData.freightType} onChange={handleChange} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-medium focus:ring-2 focus:ring-indigo-500">
+                    <select name="freightType" value={formData.freightType} onChange={handleChange} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-medium focus:ring-2 focus:ring-amber-500">
                       <option value="CIF">CIF (Pago pelo Remetente)</option>
                       <option value="FOB">FOB (Pago pelo Destinatário)</option>
                     </select>
@@ -821,7 +861,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                             icmsPercentage: val ? prev.icmsPercentage : ''
                           }));
                         }}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-medium focus:ring-2 focus:ring-indigo-500"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-medium focus:ring-2 focus:ring-amber-500"
                       >
                         <option value="false">Não (Sem ICMS / Isento)</option>
                         <option value="true">Sim (Com ICMS)</option>
@@ -837,7 +877,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                             value={formData.icmsPercentage}
                             onChange={handleChange}
                             placeholder="% ICMS"
-                            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500"
                           />
                         </div>
                       )}
@@ -880,7 +920,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Observações / Informações Adicionais</label>
-                  <textarea name="observations" value={formData.observations} onChange={handleChange} rows={2} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: Necessário agendamento prévio, veículo sider..." />
+                  <textarea name="observations" value={formData.observations} onChange={handleChange} rows={2} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500" placeholder="Ex: Necessário agendamento prévio, veículo sider..." />
                 </div>
               </form>
             </div>
@@ -891,7 +931,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                 {/* Route Header Badge */}
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-gray-200 dark:border-gray-600">
                   <div className="flex items-center gap-2">
-                    <RouteIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                    <RouteIcon className="w-5 h-5 text-amber-600 dark:text-amber-400" />
                     <h3 className="text-sm font-bold text-gray-800 dark:text-white">Roteirização da Oferta</h3>
                   </div>
 
@@ -900,7 +940,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                       type="button"
                       onClick={calculateRoute}
                       disabled={isCalculatingRoute}
-                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
                       title="Calcular rota de acordo com as coordenadas ou localizações informadas"
                     >
                       <Navigation className="w-3.5 h-3.5 text-white" />
@@ -908,20 +948,20 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                     </button>
 
                     {isCalculatingRoute && (
-                      <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 rounded-full text-xs font-semibold animate-pulse">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
+                      <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 rounded-full text-xs font-semibold animate-pulse">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600 dark:text-amber-400" />
                         Calculando...
                       </div>
                     )}
 
                     {routeData && !isCalculatingRoute && (
                       <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-800 dark:text-indigo-200 rounded-full text-xs font-bold shadow-sm">
-                          <RouteIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 rounded-full text-xs font-bold shadow-sm">
+                          <RouteIcon className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                           {routeData.distanceKm.toFixed(0)} km
                         </div>
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded-full text-xs font-bold shadow-sm">
-                          <Clock className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 rounded-full text-xs font-bold shadow-sm">
+                          <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                           {formatDurationText(routeData.durationMin)}
                         </div>
                       </div>
@@ -957,7 +997,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                       {routeData?.coordinates && routeData.coordinates.length > 0 && (
                         <Polyline
                           positions={routeData.coordinates}
-                          color="#4f46e5"
+                          color="#A67142"
                           weight={5}
                           opacity={0.85}
                         />
@@ -967,7 +1007,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                         <Marker key={idx} position={[wp.lat, wp.lng]}>
                           <Popup>
                             <div className="text-xs">
-                              <strong className="block text-indigo-700 font-bold mb-1">
+                              <strong className="block text-amber-700 font-bold mb-1">
                                 {wp.type === 'origin' ? '📍 Origem' : wp.type === 'destination' ? '🏁 Destino' : `Via ${idx}`}
                               </strong>
                               <div className="font-semibold text-gray-800">{wp.label}</div>
@@ -985,7 +1025,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
 
                   {!routeData && !isCalculatingRoute && !routeError && (
                     <div className="absolute inset-0 bg-white/70 dark:bg-gray-800/70 backdrop-blur-[2px] flex flex-col items-center justify-center p-6 text-center z-[1000]">
-                      <Navigation className="w-10 h-10 text-indigo-400 mb-2 animate-bounce" />
+                      <Navigation className="w-10 h-10 text-amber-400 mb-2 animate-bounce" />
                       <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Digite a Origem e Destino</p>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-xs">
                         A rota será calculada e desenhada automaticamente no mapa assim que os campos forem preenchidos.
@@ -1002,7 +1042,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                       {routeData.waypoints.map((wp, i) => (
                         <div key={i} className="flex items-center justify-between bg-white dark:bg-gray-800 p-2 rounded-lg border border-gray-200/80 dark:border-gray-700">
                           <div className="flex items-center gap-2 overflow-hidden">
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white shrink-0 ${wp.type === 'origin' ? 'bg-emerald-600' : wp.type === 'destination' ? 'bg-red-600' : 'bg-indigo-600'}`}>
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white shrink-0 ${wp.type === 'origin' ? 'bg-emerald-600' : wp.type === 'destination' ? 'bg-red-600' : 'bg-amber-600'}`}>
                               {wp.type === 'origin' ? 'Origem' : wp.type === 'destination' ? 'Destino' : `Via ${i}`}
                             </span>
                             <span className="font-semibold text-gray-800 dark:text-gray-200 truncate">{wp.label}</span>
@@ -1029,19 +1069,30 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                 Rota mapeada: {routeData.distanceKm.toFixed(0)} km em {formatDurationText(routeData.durationMin)}
               </span>
             ) : (
-              <span>Preencha os campos obrigatórios para criar a oferta</span>
+              <span>{editingOffer ? 'Preencha os campos para salvar as alterações' : 'Preencha os campos obrigatórios para criar a oferta'}</span>
             )}
           </div>
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
               Cancelar
             </button>
-            <button type="submit" form="freight-offer-form" disabled={isSubmitting} className="px-5 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 shadow-md">
-              {isSubmitting ? 'Salvando...' : 'Criar Oferta de Frete'}
+            <button type="submit" form="freight-offer-form" disabled={isSubmitting} className="px-5 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors disabled:opacity-50 shadow-md">
+              {isSubmitting ? 'Salvando...' : (editingOffer ? 'Salvar Oferta' : 'Criar Oferta de Frete')}
             </button>
           </div>
         </div>
       </div>
+
+      {/* Quick Location Modal */}
+      <QuickLocationModal
+        isOpen={isQuickLocationModalOpen}
+        onClose={() => setIsQuickLocationModalOpen(false)}
+        onSaved={handleQuickLocationSaved}
+        initialName={quickLocationInitialName}
+        initialCity={quickLocationInitialCity}
+        initialMapLink={quickLocationInitialMapLink}
+        existingLocation={quickLocationExisting}
+      />
     </div>
   );
 };

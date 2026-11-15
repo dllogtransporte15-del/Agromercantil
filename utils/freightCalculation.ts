@@ -146,12 +146,17 @@ export function calculateAdvanceAndBalance({
   advancePercentage?: number;
   driverFreightType?: 'PF' | 'PJ';
 }): AdvanceAndBalanceResult {
-  const totalFreight = driverFreightValue !== undefined && driverFreightValue > 0
-    ? driverFreightValue
-    : (driverFreightRate && tonnage ? driverFreightRate * tonnage : 0);
+  const safeDriverFreightVal = (driverFreightValue !== undefined && !isNaN(Number(driverFreightValue)) && Number(driverFreightValue) > 0)
+    ? Number(driverFreightValue)
+    : 0;
 
-  const tagVal = Number(tollValue || 0);
-  const advPct = advancePercentage !== undefined && !isNaN(advancePercentage) ? Number(advancePercentage) : 70;
+  const safeRate = (driverFreightRate !== undefined && !isNaN(Number(driverFreightRate))) ? Number(driverFreightRate) : 0;
+  const safeTonnage = (tonnage !== undefined && !isNaN(Number(tonnage))) ? Number(tonnage) : 0;
+
+  const totalFreight = safeDriverFreightVal > 0 ? safeDriverFreightVal : (safeRate * safeTonnage);
+
+  const tagVal = Math.max(0, (!isNaN(Number(tollValue)) ? Number(tollValue) : 0));
+  const advPct = (advancePercentage !== undefined && !isNaN(Number(advancePercentage))) ? Math.min(100, Math.max(0, Number(advancePercentage))) : 70;
 
   // Base do frete líquida de pedágio
   const baseFreight = Math.max(0, totalFreight - tagVal);
@@ -235,4 +240,95 @@ export function applyAdvanceCalculationToShipment(shipment: Shipment, cargo?: Ca
     tollValue: result.tollValue,
     balanceToReceiveValue: result.balanceToReceiveValue,
   };
+}
+
+/**
+ * Verifica se um embarque tem 100% de adiantamento (frete pago integralmente no adiantamento e saldo R$ 0,00).
+ * Cobre com segurança e precisão:
+ * 1. shipment.advancePercentage >= 100
+ * 2. shipment.documents?.porcentagem_adiantamento >= 100 ou '100%'
+ * 3. Saldo a receber cadastrado explicitamente zerado: balanceToReceiveValue <= 0.01 (com advanceValue > 0)
+ * 4. Documentos da Carta Frete com saldo zerado: documents?.saldo <= 0.01 ou documents?.saldo_motorista <= 0.01 (com advanceValue > 0)
+ * 5. Frete integralmente coberto pelo adiantamento + pedágio (+ deduções de TAC no caso de PF):
+ *    - Para PF (TAC): advanceValue + tollValue + tacDeductions >= driverFreightValue - 2.00
+ *    - Para PJ (ETC): advanceValue + tollValue >= driverFreightValue - 2.00
+ */
+export function isShipment100PercentAdvance(shipment?: Partial<Shipment> | null): boolean {
+  if (!shipment) return false;
+
+  // 1. Porcentagem cadastrada >= 100%
+  if (shipment.advancePercentage !== undefined && !isNaN(Number(shipment.advancePercentage)) && Number(shipment.advancePercentage) >= 100) {
+    return true;
+  }
+
+  // 2. Porcentagem extraída dos documentos
+  const docs = (shipment.documents || {}) as any;
+  const docPct = docs.porcentagem_adiantamento ?? docs.porcentagemAdiantamento ?? docs.advance_percentage;
+  if (docPct !== undefined && !isNaN(Number(docPct)) && Number(docPct) >= 100) {
+    return true;
+  }
+
+  // 3. Saldo a receber zerado cadastrado no sistema (desde que tenha adiantamento registrado > 0)
+  const advVal = Number(shipment.advanceValue) || 0;
+  const balVal = shipment.balanceToReceiveValue !== undefined ? Number(shipment.balanceToReceiveValue) : undefined;
+  if (balVal !== undefined && balVal <= 0.01 && advVal > 0) {
+    return true;
+  }
+
+  // 4. Saldo zerado nos documentos da Carta Frete (com adiantamento > 0)
+  const docSaldo = docs.saldo_motorista ?? docs.saldo ?? docs.valor_saldo;
+  if (docSaldo !== undefined && !isNaN(Number(docSaldo)) && Number(docSaldo) <= 0.01 && advVal > 0) {
+    return true;
+  }
+
+  // 5. Verificação matemática considerando deduções de PF (TAC) e tolerância de centavos
+  const freightVal = Number(shipment.driverFreightValue) || 0;
+  const tollVal = Number(shipment.tollValue) || 0;
+  if (freightVal > 0 && advVal > 0) {
+    const isPf = shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC';
+    const tacDeductions = isPf ? calculateTacTaxDeductions(freightVal, tollVal) : null;
+    const totalDeductions = tacDeductions ? Number((tacDeductions.inss + tacDeductions.sestSenat + tacDeductions.irrf).toFixed(2)) : 0;
+    
+    // Total pago na conta + pedágio em TAG + deduções fiscais de TAC retidas na fonte
+    const totalCovered = advVal + tollVal + totalDeductions;
+    if (totalCovered >= freightVal - 2.00) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Verifica se um embarque tem explicitamente 0% de adiantamento (ou seja, sem nenhum adiantamento antes da descarga).
+ * Proteção: Se houver qualquer valor de adiantamento em dinheiro (> R$ 1,00) ou comprovante, NUNCA é 0%.
+ */
+export function isShipment0PercentAdvance(shipment?: Partial<Shipment> | null, explicitPct?: number): boolean {
+  if (!shipment) return false;
+
+  // Se existe valor de adiantamento informado ou no documento > R$ 1,00, NUNCA é 0% de adiantamento
+  const advVal = Number(shipment.advanceValue) || 0;
+  const docs = (shipment.documents || {}) as any;
+  const docAdvVal = Number(docs.valor_adiantamento ?? docs.adiantamento ?? docs.advance_value) || 0;
+  if (advVal > 1.00 || docAdvVal > 1.00) {
+    return false;
+  }
+
+  // Se já possui comprovante de adiantamento anexado, NUNCA é 0%
+  const advReceipt = docs['Comprovante de Adiantamento'] ?? docs.comprovante_adiantamento;
+  if (Array.isArray(advReceipt) ? advReceipt.length > 0 : Boolean(advReceipt)) {
+    return false;
+  }
+
+  // Se o parâmetro explícito foi passado e é estritamente 0
+  if (explicitPct !== undefined && !isNaN(Number(explicitPct))) {
+    return Number(explicitPct) === 0;
+  }
+
+  // Se o shipment tem porcentagem cadastrada estritamente 0
+  if (shipment.advancePercentage !== undefined && !isNaN(Number(shipment.advancePercentage))) {
+    return Number(shipment.advancePercentage) === 0;
+  }
+
+  return false;
 }

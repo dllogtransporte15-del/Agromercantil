@@ -105,7 +105,7 @@ const IndicatedDriversModal: React.FC<IndicatedDriversModalProps> = ({
         <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 rounded-t-xl">
           <div>
             <h2 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
-              <UserIcon className="w-6 h-6 text-primary dark:text-blue-400" />
+              <UserIcon className="w-6 h-6 text-primary dark:text-amber-400" />
               Motoristas Indicados
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -164,7 +164,7 @@ const IndicatedDriversModal: React.FC<IndicatedDriversModalProps> = ({
                             key={idx} 
                             className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
                                 isDDD 
-                                ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-100 dark:border-blue-800/50' 
+                                ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-100 dark:border-amber-800/50' 
                                 : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-800/50'
                             }`}
                           >

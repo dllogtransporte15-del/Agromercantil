@@ -22,11 +22,11 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
 
-    "types": ["node", "vite/client"],
+    "types": ["node", "vite/client", "vite-plugin-pwa/react"],
     "paths": {
       "@/*": ["./*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx", "vite-env.d.ts", ".env.local"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "dist", "dev-dist"]
 }

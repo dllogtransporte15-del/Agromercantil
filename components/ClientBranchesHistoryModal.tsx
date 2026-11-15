@@ -202,9 +202,9 @@ export const ClientBranchesHistoryModal: React.FC<ClientBranchesHistoryModalProp
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-gray-200 dark:border-gray-700 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-50/80 via-white to-indigo-50/80 dark:from-gray-800 dark:via-gray-800 dark:to-gray-800/80 flex items-center justify-between shrink-0">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-amber-50/80 via-white to-amber-50/80 dark:from-gray-800 dark:via-gray-800 dark:to-gray-800/80 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3.5">
-            <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md">
+            <div className="p-2.5 bg-amber-600 text-white rounded-xl shadow-md">
               <Building2 className="w-6 h-6" />
             </div>
             <div>
@@ -212,7 +212,7 @@ export const ClientBranchesHistoryModal: React.FC<ClientBranchesHistoryModalProp
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                   {client.nomeFantasia || client.razaoSocial}
                 </h2>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                   {branchesList.length} {branchesList.length === 1 ? 'CNPJ (Matriz)' : 'Filiais & Matriz'}
                 </span>
               </div>
@@ -230,7 +230,7 @@ export const ClientBranchesHistoryModal: React.FC<ClientBranchesHistoryModalProp
                   onClose();
                   onNavigateToReports();
                 }}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-all"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-all"
               >
                 <FileText className="w-3.5 h-3.5" />
                 <span>Relatório Completo</span>
@@ -250,7 +250,7 @@ export const ClientBranchesHistoryModal: React.FC<ClientBranchesHistoryModalProp
 
           {/* Top Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 rounded-xl shadow-md">
+            <div className="bg-gradient-to-br from-amber-500 to-amber-600 text-white p-4 rounded-xl shadow-md">
               <div className="flex items-center justify-between opacity-80 text-xs font-semibold uppercase tracking-wider mb-1">
                 <span>Volume no Mês</span>
                 <TrendingUp className="w-4 h-4" />
@@ -261,7 +261,7 @@ export const ClientBranchesHistoryModal: React.FC<ClientBranchesHistoryModalProp
               <p className="text-[11px] opacity-80 mt-1">Soma de todas as filiais no mês corrente</p>
             </div>
 
-            <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white p-4 rounded-xl shadow-md">
+            <div className="bg-gradient-to-br from-amber-500 to-amber-600 text-white p-4 rounded-xl shadow-md">
               <div className="flex items-center justify-between opacity-80 text-xs font-semibold uppercase tracking-wider mb-1">
                 <span>Embarques no Mês</span>
                 <Truck className="w-4 h-4" />
@@ -287,7 +287,7 @@ export const ClientBranchesHistoryModal: React.FC<ClientBranchesHistoryModalProp
           {/* Filiais Breakdown Grid */}
           <div>
             <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <Building2 className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               Detalhamento por Unidade / Filial
             </h3>
             
@@ -303,14 +303,14 @@ export const ClientBranchesHistoryModal: React.FC<ClientBranchesHistoryModalProp
                     onClick={() => setSelectedBranchId(isSelected ? 'all' : branch.id)}
                     className={`p-4 rounded-xl border transition-all cursor-pointer relative ${
                       isSelected
-                        ? 'border-blue-600 bg-blue-50/70 dark:bg-blue-900/30 ring-2 ring-blue-500/40 shadow-sm'
-                        : 'border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-white dark:hover:bg-gray-800'
+                        ? 'border-amber-600 bg-amber-50/70 dark:bg-amber-900/30 ring-2 ring-amber-500/40 shadow-sm'
+                        : 'border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 hover:border-amber-300 dark:hover:border-amber-700 hover:bg-white dark:hover:bg-gray-800'
                     }`}
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <span className={`w-2 h-2 rounded-full ${branch.isMatriz ? 'bg-indigo-500' : 'bg-blue-500'}`} />
+                          <span className={`w-2 h-2 rounded-full ${branch.isMatriz ? 'bg-amber-500' : 'bg-amber-500'}`} />
                           <h4 className="font-bold text-gray-900 dark:text-white text-sm">
                             {branch.name}
                           </h4>
@@ -320,7 +320,7 @@ export const ClientBranchesHistoryModal: React.FC<ClientBranchesHistoryModalProp
                         </p>
                       </div>
                       {branch.isMatriz && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
                           Matriz
                         </span>
                       )}
@@ -337,14 +337,14 @@ export const ClientBranchesHistoryModal: React.FC<ClientBranchesHistoryModalProp
                         <span className="text-gray-500 dark:text-gray-400">Volume no Mês:</span>
                         <span className="font-bold text-gray-900 dark:text-white">
                           {stats.monthVolume.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} t
-                          <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold ml-1">({pct.toFixed(1)}%)</span>
+                          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold ml-1">({pct.toFixed(1)}%)</span>
                         </span>
                       </div>
 
                       {/* Progress Bar */}
                       <div className="w-full bg-gray-200 dark:bg-gray-700 h-1.5 rounded-full overflow-hidden">
                         <div
-                          className="bg-blue-600 h-full rounded-full transition-all duration-300"
+                          className="bg-amber-600 h-full rounded-full transition-all duration-300"
                           style={{ width: `${Math.min(100, pct)}%` }}
                         />
                       </div>
@@ -379,14 +379,14 @@ export const ClientBranchesHistoryModal: React.FC<ClientBranchesHistoryModalProp
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     placeholder="Filtrar por placa, motorista, rota..."
-                    className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none w-52 sm:w-64"
+                    className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-amber-500 outline-none w-52 sm:w-64"
                   />
                 </div>
 
                 {selectedBranchId !== 'all' && (
                   <button
                     onClick={() => setSelectedBranchId('all')}
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                    className="text-xs text-amber-600 dark:text-amber-400 hover:underline font-semibold"
                   >
                     Ver Todas
                   </button>
@@ -418,10 +418,10 @@ export const ClientBranchesHistoryModal: React.FC<ClientBranchesHistoryModalProp
                         <tr
                           key={shipment.id}
                           onClick={() => onOpenShipmentDetails && onOpenShipmentDetails(shipment)}
-                          className="hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors cursor-pointer"
+                          className="hover:bg-amber-50/50 dark:hover:bg-amber-900/20 transition-colors cursor-pointer"
                         >
                           <td className="px-4 py-3 font-mono">
-                            <div className="font-bold text-blue-600 dark:text-blue-400">
+                            <div className="font-bold text-amber-600 dark:text-amber-400">
                               #{shipment.id.substring(0, 8)}
                             </div>
                             <div className="text-[10px] text-gray-500 dark:text-gray-400">
@@ -465,7 +465,7 @@ export const ClientBranchesHistoryModal: React.FC<ClientBranchesHistoryModalProp
                           </td>
 
                           <td className="px-4 py-3 text-center">
-                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                               {shipment.status}
                             </span>
                           </td>

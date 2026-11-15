@@ -267,7 +267,7 @@ export const DocumentAttachmentCard: React.FC<DocumentAttachmentCardProps> = ({
   return (
     <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl">
       <div className="flex items-center gap-2 truncate">
-        <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
+        <FileText className="w-4 h-4 text-amber-500 flex-shrink-0" />
         <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">
           {attachment.length > 50 ? `${attachment.substring(0, 45)}...` : attachment}
         </span>
@@ -277,7 +277,7 @@ export const DocumentAttachmentCard: React.FC<DocumentAttachmentCardProps> = ({
           href={attachment}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-blue-600 dark:text-blue-400 font-semibold hover:underline flex items-center gap-1"
+          className="text-xs text-amber-600 dark:text-amber-400 font-semibold hover:underline flex items-center gap-1"
         >
           Abrir <ExternalLink className="w-3 h-3" />
         </a>

@@ -328,7 +328,7 @@ export default function StayCalculator({ companyId }: StayCalculatorProps) {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-lg font-medium flex items-center text-slate-800">
-              <FileText className="w-5 h-5 mr-2 text-indigo-500" />
+              <FileText className="w-5 h-5 mr-2 text-amber-500" />
               Dados da Estadia
             </h2>
             <button 
@@ -353,7 +353,7 @@ export default function StayCalculator({ companyId }: StayCalculatorProps) {
                 }}
                 className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs md:text-sm font-bold transition-all ${
                   formData.calculationType === 'TON_HOUR'
-                    ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/60'
+                    ? 'bg-white text-amber-600 shadow-sm border border-slate-200/60'
                     : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
@@ -368,7 +368,7 @@ export default function StayCalculator({ companyId }: StayCalculatorProps) {
                 }}
                 className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs md:text-sm font-bold transition-all ${
                   formData.calculationType === 'DAILY_FIXED'
-                    ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/60'
+                    ? 'bg-white text-amber-600 shadow-sm border border-slate-200/60'
                     : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
@@ -385,7 +385,7 @@ export default function StayCalculator({ companyId }: StayCalculatorProps) {
               </label>
               <input 
                 type="text" name="clientName" value={formData.clientName} onChange={handleInputChange} list="clients-list"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" 
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all" 
                 placeholder="Clique para selecionar ou digite um novo" 
               />
               <datalist id="clients-list">
@@ -394,27 +394,27 @@ export default function StayCalculator({ companyId }: StayCalculatorProps) {
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700 flex items-center"><User className="w-4 h-4 mr-1.5 text-slate-400" /> Motorista *</label>
-              <input type="text" name="driver" value={formData.driver} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Nome completo" />
+              <input type="text" name="driver" value={formData.driver} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all" placeholder="Nome completo" />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700 flex items-center"><Truck className="w-4 h-4 mr-1.5 text-slate-400" /> Placa do Veículo *</label>
-              <input type="text" name="plate" value={formData.plate} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="ABC-1234" />
+              <input type="text" name="plate" value={formData.plate} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all" placeholder="ABC-1234" />
             </div>
             <div className="space-y-1.5 md:col-span-2">
               <label className="text-sm font-medium text-slate-700 flex items-center"><FileDigit className="w-4 h-4 mr-1.5 text-slate-400" /> Nota Fiscal</label>
-              <input type="text" name="invoice" value={formData.invoice} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Número da NF" />
+              <input type="text" name="invoice" value={formData.invoice} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all" placeholder="Número da NF" />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700 flex items-center"><MapPin className="w-4 h-4 mr-1.5 text-slate-400" /> Origem *</label>
-              <input type="text" name="origin" value={formData.origin} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Cidade - Estado" />
+              <input type="text" name="origin" value={formData.origin} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all" placeholder="Cidade - Estado" />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700 flex items-center"><MapPin className="w-4 h-4 mr-1.5 text-slate-400" /> Destino *</label>
-              <input type="text" name="destination" value={formData.destination} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Cidade - Estado" />
+              <input type="text" name="destination" value={formData.destination} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all" placeholder="Cidade - Estado" />
             </div>
             <div className="space-y-1.5 md:col-span-2">
               <label className="text-sm font-medium text-slate-700 flex items-center"><MapPin className="w-4 h-4 mr-1.5 text-slate-400" /> Local do Evento</label>
-              <select name="location" value={formData.location} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-white">
+              <select name="location" value={formData.location} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all bg-white">
                 <option value="Origem">Origem (Carregamento)</option>
                 <option value="Destino">Destino (Descarregamento)</option>
               </select>
@@ -424,11 +424,11 @@ export default function StayCalculator({ companyId }: StayCalculatorProps) {
               <>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-slate-700 flex items-center"><Weight className="w-4 h-4 mr-1.5 text-slate-400" /> Peso (Toneladas) *</label>
-                  <input type="number" step="0.01" name="weight" value={formData.weight} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Ex: 57.94" />
+                  <input type="number" step="0.01" name="weight" value={formData.weight} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all" placeholder="Ex: 57.94" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-slate-700 flex items-center"><DollarSign className="w-4 h-4 mr-1.5 text-slate-400" /> Valor Ton/Hora (R$) *</label>
-                  <input type="number" step="0.01" name="valuePerHour" value={formData.valuePerHour} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Ex: 0.80" />
+                  <input type="number" step="0.01" name="valuePerHour" value={formData.valuePerHour} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all" placeholder="Ex: 0.80" />
                 </div>
               </>
             ) : (
@@ -439,7 +439,7 @@ export default function StayCalculator({ companyId }: StayCalculatorProps) {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-slate-700 flex items-center justify-between">
-                    <span className="flex items-center"><Calendar className="w-4 h-4 mr-1.5 text-indigo-400" /> Qtd. de Diárias</span>
+                    <span className="flex items-center"><Calendar className="w-4 h-4 mr-1.5 text-amber-400" /> Qtd. de Diárias</span>
                     {result?.autoDays !== undefined && (
                       <span className="text-[10px] text-slate-400">Calculado: {result.autoDays} d</span>
                     )}
@@ -451,28 +451,28 @@ export default function StayCalculator({ companyId }: StayCalculatorProps) {
                     name="daysCount" 
                     value={formData.daysCount} 
                     onChange={handleInputChange} 
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-all" 
                     placeholder={result?.autoDays ? `${result.autoDays} (automático)` : 'Ex: 1'} 
                   />
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
                   <label className="text-sm font-medium text-slate-700 flex items-center"><Weight className="w-4 h-4 mr-1.5 text-slate-400" /> Peso da Carga (Opcional p/ Diária)</label>
-                  <input type="number" step="0.01" name="weight" value={formData.weight} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Ex: 57.94 (informativo)" />
+                  <input type="number" step="0.01" name="weight" value={formData.weight} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all" placeholder="Ex: 57.94 (informativo)" />
                 </div>
               </>
             )}
 
             <div className="space-y-1.5 md:col-span-2">
               <label className="text-sm font-medium text-slate-700 flex items-center"><Clock className="w-4 h-4 mr-1.5 text-slate-400" /> Tolerância (Horas)</label>
-              <input type="number" step="0.5" name="tolerance" value={formData.tolerance} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Ex: 12" />
+              <input type="number" step="0.5" name="tolerance" value={formData.tolerance} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all" placeholder="Ex: 12" />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700 flex items-center"><Clock className="w-4 h-4 mr-1.5 text-slate-400" /> Data/Hora Entrada *</label>
-              <input type="datetime-local" name="entryDate" value={formData.entryDate} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" />
+              <input type="datetime-local" name="entryDate" value={formData.entryDate} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all" />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700 flex items-center"><Clock className="w-4 h-4 mr-1.5 text-slate-400" /> Data/Hora Saída *</label>
-              <input type="datetime-local" name="exitDate" value={formData.exitDate} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" />
+              <input type="datetime-local" name="exitDate" value={formData.exitDate} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all" />
             </div>
           </div>
         </div>
@@ -482,9 +482,9 @@ export default function StayCalculator({ companyId }: StayCalculatorProps) {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full">
           <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
             <h2 className="text-lg font-medium flex items-center text-slate-800">
-              <Calculator className="w-5 h-5 mr-2 text-indigo-500" /> Resumo do Cálculo
+              <Calculator className="w-5 h-5 mr-2 text-amber-500" /> Resumo do Cálculo
             </h2>
-            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${formData.calculationType === 'DAILY_FIXED' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
+            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${formData.calculationType === 'DAILY_FIXED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
               {formData.calculationType === 'DAILY_FIXED' ? 'Diária Fixa' : 'Ton / Hora'}
             </span>
           </div>
@@ -499,7 +499,7 @@ export default function StayCalculator({ companyId }: StayCalculatorProps) {
                   </div>
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                     <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Horas Cobráveis</div>
-                    <div className="text-xl font-semibold text-indigo-600">{formatNumber(result.chargeableHours, 1)}h</div>
+                    <div className="text-xl font-semibold text-amber-600">{formatNumber(result.chargeableHours, 1)}h</div>
                     <div className="text-xs text-slate-400 mt-1">Desconto de {result.tolerance}h</div>
                   </div>
                 </div>
@@ -525,7 +525,7 @@ export default function StayCalculator({ companyId }: StayCalculatorProps) {
                     <>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-500">Qtd. de Diárias</span>
-                        <span className="font-bold text-indigo-600">{result.daysCount} diária(s)</span>
+                        <span className="font-bold text-amber-600">{result.daysCount} diária(s)</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-500">Valor por Diária</span>
@@ -550,7 +550,7 @@ export default function StayCalculator({ companyId }: StayCalculatorProps) {
                       <CheckCircle2 className="w-5 h-5 mr-2 text-emerald-500" /> Dados salvos com sucesso no histórico!
                     </div>
                   )}
-                  <button onClick={handleSave} className="w-full flex items-center justify-center px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-medium text-sm shadow-sm">
+                  <button onClick={handleSave} className="w-full flex items-center justify-center px-4 py-3 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors font-medium text-sm shadow-sm">
                     <Save className="w-4 h-4 mr-2" /> Salvar Estadia
                   </button>
                   <div className="grid grid-cols-2 gap-3">

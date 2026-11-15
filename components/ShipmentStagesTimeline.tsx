@@ -4,9 +4,30 @@ import {
   CheckCircle2, Clock, AlertCircle, XCircle, FileText, Eye, 
   ExternalLink, User as UserIcon, Calendar, ShieldCheck, Scale, 
   DollarSign, Truck, MapPin, Building, CreditCard, ChevronDown, 
-  ChevronUp, Check, Info, ArrowRight, Sparkles, AlertTriangle
+  ChevronUp, Check, Info, ArrowRight, Sparkles, AlertTriangle, FileCheck,
+  MessageCircle, Send
 } from 'lucide-react';
-import { openDocumentInNewTab } from '../utils/documentViewer';
+import { openDocumentInNewTab, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
+import { findProductForCargo, checkRequiresRiskManagement } from '../utils';
+import { isShipment100PercentAdvance, isShipment0PercentAdvance } from '../utils/freightCalculation';
+import { useToast } from '../hooks/useToast';
+import { 
+  dispatchShipmentWhatsAppTrigger, 
+  ShipmentWhatsAppTriggerType, 
+  SHIPMENT_TRIGGER_TEMPLATES 
+} from '../services/shipmentWhatsAppAutomation';
+import { formatDisplayPhone } from '../services/whatsappService';
+
+const STAGE_TRIGGER_MAP: Partial<Record<ShipmentStatus, ShipmentWhatsAppTriggerType>> = {
+  [ShipmentStatus.PreCadastro]: 'risk_pending',
+  [ShipmentStatus.AguardandoSeguradora]: 'risk_pending',
+  [ShipmentStatus.AguardandoCarregamento]: 'risk_approved',
+  [ShipmentStatus.AguardandoFiscal]: 'fiscal_emitted',
+  [ShipmentStatus.AguardandoAdiantamento]: 'advance_paid',
+  [ShipmentStatus.AguardandoAgendamento]: 'in_transit',
+  [ShipmentStatus.AguardandoDescarga]: 'awaiting_discharge',
+  [ShipmentStatus.Finalizado]: 'balance_paid',
+};
 
 interface ShipmentStagesTimelineProps {
   shipment: Shipment;
@@ -32,92 +53,101 @@ export interface StageDefinition {
 export const STAGES_DEFINITIONS: StageDefinition[] = [
   {
     status: ShipmentStatus.PreCadastro,
-    title: 'Cadastro do Embarque',
-    shortTitle: 'Cadastro',
+    title: 'Triagem / Pré-Cadastro',
+    shortTitle: 'Triagem / Pré-Cadastro',
     stepNumber: 1,
     icon: <Truck className="w-4 h-4" />,
-    description: 'Criação do embarque, vinculação de motorista, placas e previsão de carga.',
+    description: 'Cadastro e checagem inicial de documentação, motorista, placas e previsão de carga.',
     associatedDocTypes: ['Arquivos Iniciais', 'Comprovante de Cadastro'],
   },
   {
     status: ShipmentStatus.AguardandoSeguradora,
-    title: 'Gerenciamento de Risco (GR)',
-    shortTitle: 'Seguradora',
+    title: 'Análise de Risco (PGR)',
+    shortTitle: 'Análise de Risco (PGR)',
     stepNumber: 2,
     icon: <ShieldCheck className="w-4 h-4" />,
-    description: 'Consulta da ficha cadastral e liberação do motorista/veículo na seguradora.',
-    associatedDocTypes: ['Comprovação da Liberação da Seguradora'],
+    description: 'Consulta/liberação na gerenciadora de risco e seguradora.',
+    associatedDocTypes: ['Comprovação da Liberação da Seguradora', 'Consulta de Risco', 'Liberação GR'],
   },
   {
     status: ShipmentStatus.AguardandoCarregamento,
-    title: 'Carregamento & Rota',
-    shortTitle: 'Carregamento',
+    title: 'Aguardando Check-in / Carga',
+    shortTitle: 'Aguardando Check-in / Carga',
     stepNumber: 3,
     icon: <Scale className="w-4 h-4" />,
-    description: 'Pesagem na balança de origem, emissão do ticket de carga e definição da rota.',
-    associatedDocTypes: ['Ticket de Carregamento'],
+    description: 'Veículo apto aguardando autorização de pátio, pesagem na origem e anexação de ticket.',
+    associatedDocTypes: ['Ticket de Carregamento', 'Ticket de Pesagem'],
   },
   {
     status: ShipmentStatus.AguardandoNota,
-    title: 'Faturamento / Nota Fiscal',
-    shortTitle: 'Nota Fiscal',
+    title: 'Emissão Fiscal (CT-e / NF-e)',
+    shortTitle: 'Emissão Fiscal (CT-e / NF-e)',
     stepNumber: 4,
     icon: <FileText className="w-4 h-4" />,
-    description: 'Emissão da NF-e pelo cliente/embarcador e registro dos dados para pagamento.',
-    associatedDocTypes: ['Nota Fiscal', 'Nota Fiscal (NF-e)'],
+    description: 'Faturamento e vinculação fiscal pelo embarcador/cliente.',
+    associatedDocTypes: ['Nota Fiscal (NF-e)', 'NF-e', 'NFe'],
   },
   {
     status: ShipmentStatus.AguardandoFiscal,
-    title: 'Emissão Fiscal & Viagem',
-    shortTitle: 'Fiscal (CT-e)',
+    title: 'Emissão Fiscal (CT-e & MDF-e)',
+    shortTitle: 'Emissão Fiscal (CT-e & MDF-e)',
     stepNumber: 5,
     icon: <FileText className="w-4 h-4" />,
-    description: 'Emissão do CT-e, MDF-e, Contrato de Transporte e Carta Frete da viagem.',
-    associatedDocTypes: ['CT-e', 'MDF-e', 'Carta Frete', 'Documentos de Viagem (CT-e, MDF-e, Contrato)', 'Outros'],
+    description: 'Emissão dos documentos fiscais de transporte (CT-e, MDF-e, CIOT e Contrato de Frete).',
+    associatedDocTypes: ['Documentos de Viagem (CT-e, MDF-e, Contrato)', 'CT-e', 'MDF-e', 'Contrato de Transporte', 'CIOT', 'Carta Frete'],
   },
   {
     status: ShipmentStatus.AguardandoAdiantamento,
-    title: 'Pagamento de Adiantamento',
-    shortTitle: 'Adiantamento',
+    title: 'Liberação de Adiantamento',
+    shortTitle: 'Liberação de Adiantamento',
     stepNumber: 6,
     icon: <CreditCard className="w-4 h-4" />,
-    description: 'Liberação do adiantamento em conta bancária/PIX e crédito do Vale-Pedágio (Tag).',
+    description: 'Validação do adiantamento financeiro (conta bancária/PIX) e crédito do Vale-Pedágio (Tag).',
     associatedDocTypes: ['Comprovante de Adiantamento'],
   },
   {
     status: ShipmentStatus.AguardandoAgendamento,
-    title: 'Agendamento no Destino',
-    shortTitle: 'Agendamento',
+    title: 'Agendamento de Descarga (Slot)',
+    shortTitle: 'Agendamento de Descarga (Slot)',
     stepNumber: 7,
     icon: <Calendar className="w-4 h-4" />,
-    description: 'Agendamento de janela para descarga da mercadoria no destinatário.',
-    associatedDocTypes: ['Comprovante de Agendamento'],
+    description: 'Marcação da janela de descarregamento ou troca de NF-e no destinatário.',
+    associatedDocTypes: ['Comprovante de Agendamento', 'Agendamento ou Troca de NF-e'],
   },
   {
     status: ShipmentStatus.AguardandoDescarga,
-    title: 'Descarga & Pesagem Final',
-    shortTitle: 'Descarga',
+    title: 'Em Trânsito / Aguardando Descarga',
+    shortTitle: 'Em Trânsito / Aguardando Descarga',
     stepNumber: 8,
     icon: <Scale className="w-4 h-4" />,
-    description: 'Descarregamento no destino, pesagem final e apuração de quebra ou sobra de peso.',
+    description: 'Veículo em rota ou fila de descarga, pesagem final e apuração de quebra ou sobra.',
     associatedDocTypes: ['Comprovante de Descarga'],
   },
   {
-    status: ShipmentStatus.AguardandoPagamentoSaldo,
-    title: 'Quitação de Saldo',
-    shortTitle: 'Pagamento Saldo',
+    status: ShipmentStatus.ValidacaoTicket,
+    title: 'Valid. de Ticket',
+    shortTitle: 'Valid. Ticket',
     stepNumber: 9,
+    icon: <FileCheck className="w-4 h-4" />,
+    description: 'Conferência do ticket de balança anexado e validação do peso descarregado.',
+    associatedDocTypes: ['Comprovante de Descarga', 'Ticket de Balança', 'Ticket de Descarga', 'Validação de Ticket e Peso', 'Valid. de Ticket'],
+  },
+  {
+    status: ShipmentStatus.AguardandoPagamentoSaldo,
+    title: 'Liquidação de Saldo',
+    shortTitle: 'Liquidação de Saldo',
+    stepNumber: 10,
     icon: <DollarSign className="w-4 h-4" />,
-    description: 'Apuração do saldo líquido (descontos de quebra ou abono) e pagamento final.',
+    description: 'Prestação de contas, apuração do saldo líquido e quitação final.',
     associatedDocTypes: ['Comprovante de Pagamento de Saldo'],
   },
   {
     status: ShipmentStatus.Finalizado,
-    title: 'Conclusão do Embarque',
-    shortTitle: 'Finalizado',
-    stepNumber: 10,
+    title: 'Operação Concluída',
+    shortTitle: 'Operação Concluída',
+    stepNumber: 11,
     icon: <CheckCircle2 className="w-4 h-4" />,
-    description: 'Embarque 100% finalizado com apuração do lucro real e conciliação de custos.',
+    description: 'Ciclo finalizado com apuração do lucro real e conciliação de custos.',
     associatedDocTypes: [],
   },
 ];
@@ -131,6 +161,7 @@ const ORDERED_STATUS_KEYS = [
   ShipmentStatus.AguardandoAdiantamento,
   ShipmentStatus.AguardandoAgendamento,
   ShipmentStatus.AguardandoDescarga,
+  ShipmentStatus.ValidacaoTicket,
   ShipmentStatus.AguardandoPagamentoSaldo,
   ShipmentStatus.Finalizado,
 ];
@@ -148,26 +179,45 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
   const isClientUser = currentUser?.profile === UserProfile.Cliente || (currentUser?.profile as string) === 'Cliente';
 
   const visibleStageDefinitions = React.useMemo(() => {
-    const is100PctAdv = (shipment.advancePercentage !== undefined && shipment.advancePercentage >= 100) ||
-                        (shipment.balanceToReceiveValue !== undefined && shipment.balanceToReceiveValue <= 0.001 && shipment.advanceValue !== undefined && shipment.advanceValue > 0);
+    const is0PctAdv = isShipment0PercentAdvance(shipment);
+    const is100PctAdv = isShipment100PercentAdvance(shipment);
+    
     const omitSaldo = isClientUser || (is100PctAdv && shipment.status !== ShipmentStatus.AguardandoPagamentoSaldo);
+    const omitAdiantamento = is0PctAdv && shipment.status !== ShipmentStatus.AguardandoAdiantamento;
 
-    if (omitSaldo) {
-      return STAGES_DEFINITIONS.filter(s => s.status !== ShipmentStatus.AguardandoPagamentoSaldo).map((s, idx) => ({
-        ...s,
-        stepNumber: idx + 1,
-        description: s.status === ShipmentStatus.Finalizado 
-          ? 'Embarque finalizado e entrega concluída com sucesso.' 
-          : (s.status === ShipmentStatus.AguardandoFiscal && isClientUser
-              ? 'Emissão do CT-e, MDF-e e documentos fiscais da viagem.'
-              : s.description),
-        associatedDocTypes: isClientUser 
-          ? s.associatedDocTypes.filter(d => !d.toLowerCase().includes('carta frete'))
-          : s.associatedDocTypes
-      }));
+    const product = findProductForCargo(products, cargo);
+    const doesNotRequireGr = !checkRequiresRiskManagement(cargo, product);
+    const omitSeguradora = doesNotRequireGr && shipment.status !== ShipmentStatus.AguardandoSeguradora;
+
+    const omitAgendamento = !cargo?.requiresScheduling && shipment.status !== ShipmentStatus.AguardandoAgendamento;
+
+    let list = STAGES_DEFINITIONS;
+    if (omitSeguradora) {
+      list = list.filter(s => s.status !== ShipmentStatus.AguardandoSeguradora);
     }
-    return STAGES_DEFINITIONS;
-  }, [isClientUser, shipment.advancePercentage, shipment.balanceToReceiveValue, shipment.advanceValue, shipment.status]);
+    if (omitSaldo) {
+      list = list.filter(s => s.status !== ShipmentStatus.AguardandoPagamentoSaldo);
+    }
+    if (omitAdiantamento) {
+      list = list.filter(s => s.status !== ShipmentStatus.AguardandoAdiantamento);
+    }
+    if (omitAgendamento) {
+      list = list.filter(s => s.status !== ShipmentStatus.AguardandoAgendamento);
+    }
+
+    return list.map((s, idx) => ({
+      ...s,
+      stepNumber: idx + 1,
+      description: s.status === ShipmentStatus.Finalizado 
+        ? 'Embarque finalizado e entrega concluída com sucesso.' 
+        : (s.status === ShipmentStatus.AguardandoFiscal && isClientUser
+            ? 'Emissão do CT-e, MDF-e e documentos fiscais da viagem.'
+            : s.description),
+      associatedDocTypes: isClientUser 
+        ? s.associatedDocTypes.filter(d => !d.toLowerCase().includes('carta frete'))
+        : s.associatedDocTypes
+    }));
+  }, [isClientUser, shipment.advancePercentage, shipment.balanceToReceiveValue, shipment.advanceValue, shipment.driverFreightValue, shipment.status, products, cargo]);
 
   // Inicializa a aba ativa com o status atual do embarque
   const initialActiveStage = React.useMemo(() => {
@@ -179,6 +229,32 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
   const [viewMode, setViewMode] = useState<'tabs' | 'list'>('tabs');
   const [expandedStage, setExpandedStage] = useState<ShipmentStatus | null>(null);
   const [filterMode, setFilterMode] = useState<'all' | 'completed' | 'active'>('all');
+  const [isSendingWa, setIsSendingWa] = useState<ShipmentStatus | null>(null);
+  const { showToast } = useToast();
+
+  const handleSendStageWhatsApp = async (stageStatus: ShipmentStatus) => {
+    const triggerType = STAGE_TRIGGER_MAP[stageStatus];
+    if (!triggerType) return;
+    setIsSendingWa(stageStatus);
+    try {
+      const res = await dispatchShipmentWhatsAppTrigger(triggerType, {
+        shipment,
+        cargo,
+        client: clients.find(c => c.id === cargo?.clientId),
+        user: currentUser,
+        targetStatus: stageStatus
+      });
+      if (res.success) {
+        showToast(res.message || `WhatsApp enviado para ${shipment.driverName}!`, 'success');
+      } else {
+        showToast(res.error || 'Não foi possível enviar WhatsApp.', 'warning');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao enviar WhatsApp.', 'error');
+    } finally {
+      setIsSendingWa(null);
+    }
+  };
 
   // Atualiza a aba ativa caso o status do embarque mude externamente
   React.useEffect(() => {
@@ -263,18 +339,13 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
     const map: { [key: string]: { docType: string; url: string; fileName: string }[] } = {};
     const docsObj = shipment.documents || {};
 
-    const ignoredDocKeys = new Set([
-      'pix_key', 'cte_number', 'payment_method', 'risk_query_cost', 
-      'risk_query_type', 'cte_emission_date', 'risk_release_code', 
-      'advance_percentage', 'toll_value', 'advance_value', 'balance_value', 
-      'balance_to_receive_value', 'discount_value', 'net_balance_value', 
-      'unloaded_tonnage', 'loaded_tonnage'
-    ]);
-
     Object.entries(docsObj).forEach(([docType, val]) => {
-      if (ignoredDocKeys.has(docType.toLowerCase().trim()) || docType.startsWith('_')) return;
+      if (isDocumentMetadataKey(docType)) return;
       if (isClientUser && docType.toLowerCase().includes('carta frete')) return;
-      const urls = (Array.isArray(val) ? val : (typeof val === 'string' ? [val] : [])).filter(u => typeof u === 'string' && u.trim() !== '');
+
+      const rawUrls = (Array.isArray(val) ? val : (typeof val === 'string' ? [val] : []));
+      // Filtra estritamente para manter apenas arquivos e URLs navegáveis reais
+      const urls = rawUrls.filter(u => isActualDocumentUrl(u));
       if (urls.length === 0) return;
 
       // Encontra a etapa correspondente
@@ -362,7 +433,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
       <div className="bg-slate-900/95 text-white p-4 rounded-2xl border border-slate-700/80 shadow-lg">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-indigo-500/20 text-indigo-400 rounded-lg border border-indigo-500/30">
+            <div className="p-1.5 bg-amber-500/20 text-amber-400 rounded-lg border border-amber-500/30">
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
@@ -386,7 +457,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                 onClick={() => setViewMode('tabs')}
                 className={`px-2 py-1 rounded-lg transition-all cursor-pointer ${
                   viewMode === 'tabs'
-                    ? 'bg-indigo-600 text-white shadow-xs'
+                    ? 'bg-amber-600 text-white shadow-xs'
                     : 'text-slate-400 hover:text-white'
                 }`}
                 title="Visualização otimizada por abas individuais"
@@ -398,7 +469,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                 onClick={() => setViewMode('list')}
                 className={`px-2 py-1 rounded-lg transition-all cursor-pointer ${
                   viewMode === 'list'
-                    ? 'bg-indigo-600 text-white shadow-xs'
+                    ? 'bg-amber-600 text-white shadow-xs'
                     : 'text-slate-400 hover:text-white'
                 }`}
                 title="Visualizar todas as etapas em lista completa"
@@ -410,7 +481,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
             <div className="flex items-center gap-2 pl-2 border-l border-slate-700/80">
               <div className="text-right">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Progresso</span>
-                <span className={`text-sm font-black ${completionPercentage === 100 ? 'text-emerald-400' : 'text-blue-400'}`}>
+                <span className={`text-sm font-black ${completionPercentage === 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
                   {completionPercentage}%
                 </span>
               </div>
@@ -419,7 +490,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                   className={`h-full transition-all duration-500 rounded-full ${
                     completionPercentage === 100
                       ? 'bg-emerald-500'
-                      : 'bg-gradient-to-r from-blue-500 to-indigo-500'
+                      : 'bg-gradient-to-r from-amber-500 to-amber-500'
                   }`}
                   style={{ width: `${Math.max(5, completionPercentage)}%` }}
                 />
@@ -447,11 +518,11 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                 }}
                 className={`flex flex-col items-center text-center p-2 rounded-xl transition-all cursor-pointer border relative ${
                   viewMode === 'tabs' && isTabActive
-                    ? 'bg-indigo-950/80 border-indigo-400 text-white ring-2 ring-indigo-400/80 shadow-lg shadow-indigo-950'
+                    ? 'bg-amber-950/80 border-amber-400 text-white ring-2 ring-amber-400/80 shadow-lg shadow-amber-950'
                     : state === 'completed'
                     ? 'bg-emerald-950/40 border-emerald-500/40 hover:bg-emerald-900/50 text-emerald-300'
                     : state === 'active'
-                    ? 'bg-blue-900/60 border-blue-400 hover:bg-blue-800/80 text-blue-200 ring-1 ring-blue-400/30'
+                    ? 'bg-amber-900/60 border-amber-400 hover:bg-amber-800/80 text-amber-200 ring-1 ring-amber-400/30'
                     : state === 'canceled'
                     ? 'bg-red-950/40 border-red-500/40 hover:bg-red-900/50 text-red-300'
                     : 'bg-slate-800/60 border-slate-700/60 hover:bg-slate-800 text-slate-400'
@@ -463,7 +534,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                     state === 'completed'
                       ? 'bg-emerald-500 text-slate-950'
                       : state === 'active'
-                      ? 'bg-blue-400 text-slate-950 animate-pulse'
+                      ? 'bg-amber-400 text-slate-950 animate-pulse'
                       : state === 'canceled'
                       ? 'bg-red-500 text-white'
                       : 'bg-slate-700 text-slate-300'
@@ -480,7 +551,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
 
                 {/* Marcador triangular indicando a aba ativa */}
                 {viewMode === 'tabs' && isTabActive && (
-                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-indigo-500 rotate-45 rounded-2xs" />
+                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-amber-500 rotate-45 rounded-2xs" />
                 )}
               </button>
             );
@@ -491,7 +562,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-2 mt-3 pt-2.5 border-t border-slate-800 text-xs">
           <div className="flex items-center gap-1 text-[11px] text-slate-400">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-400"></span> Concluído
-            <span className="inline-block w-2 h-2 rounded-full bg-blue-400 ml-2"></span> Atual
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-400 ml-2"></span> Atual
             <span className="inline-block w-2 h-2 rounded-full bg-slate-500 ml-2"></span> Pendente
           </div>
 
@@ -505,14 +576,14 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
               >
                 <span>← Etapa Anterior</span>
               </button>
-              <span className="text-[11px] font-mono font-bold text-indigo-300">
+              <span className="text-[11px] font-mono font-bold text-amber-300">
                 {currentActiveTabIndex + 1} de {visibleStageDefinitions.length}
               </span>
               <button
                 type="button"
                 onClick={handleNextStage}
                 disabled={currentActiveTabIndex >= visibleStageDefinitions.length - 1}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-xs transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <span>Próxima Etapa →</span>
               </button>
@@ -524,7 +595,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                 onClick={() => setFilterMode('all')}
                 className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
                   filterMode === 'all'
-                    ? 'bg-indigo-600 text-white'
+                    ? 'bg-amber-600 text-white'
                     : 'bg-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
@@ -546,7 +617,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                 onClick={() => setFilterMode('active')}
                 className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
                   filterMode === 'active'
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-amber-600 text-white'
                     : 'bg-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
@@ -574,7 +645,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                 state === 'completed'
                   ? 'bg-white dark:bg-gray-800/90 border-emerald-200 dark:border-emerald-800/60 shadow-xs'
                   : state === 'active'
-                  ? 'bg-blue-50/40 dark:bg-slate-800/90 border-blue-300 dark:border-blue-600 shadow-md ring-1 ring-blue-400/30'
+                  ? 'bg-amber-50/40 dark:bg-slate-800/90 border-amber-300 dark:border-amber-600 shadow-md ring-1 ring-amber-400/30'
                   : state === 'canceled'
                   ? 'bg-red-50/30 dark:bg-gray-800/90 border-red-300 dark:border-red-800/60'
                   : 'bg-gray-50/70 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700/60 opacity-85'
@@ -584,7 +655,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
               <div
                 onClick={() => setExpandedStage(isExpanded ? (expandedStage === stage.status ? '__none__' as any : null) : stage.status)}
                 className={`p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-2.5 cursor-pointer hover:bg-gray-100/60 dark:hover:bg-gray-700/40 transition-colors ${
-                  state === 'active' ? 'bg-blue-100/40 dark:bg-blue-950/20' : ''
+                  state === 'active' ? 'bg-amber-100/40 dark:bg-amber-950/20' : ''
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -592,7 +663,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                     state === 'completed'
                       ? 'bg-emerald-500 text-white'
                       : state === 'active'
-                      ? 'bg-blue-600 text-white ring-2 ring-blue-400/40'
+                      ? 'bg-amber-600 text-white ring-2 ring-amber-400/40'
                       : state === 'canceled'
                       ? 'bg-red-600 text-white'
                       : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
@@ -609,7 +680,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                         state === 'completed'
                           ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
                           : state === 'active'
-                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border-blue-300 dark:border-blue-700 animate-pulse'
+                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-700 animate-pulse'
                           : state === 'canceled'
                           ? 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300 border-red-300 dark:border-red-800'
                           : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600'
@@ -618,7 +689,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                       </span>
 
                       {docs.length > 0 && (
-                        <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
+                        <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800 flex items-center gap-1">
                           📎 {docs.length} {docs.length === 1 ? 'anexo' : 'anexos'}
                         </span>
                       )}
@@ -652,7 +723,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                   <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border border-gray-200/80 dark:border-gray-700/60 text-xs">
                     <div className="flex items-center gap-2 flex-wrap">
                       <div className="flex items-center gap-1 text-gray-600 dark:text-gray-300">
-                        <UserIcon className="w-3.5 h-3.5 text-indigo-500" />
+                        <UserIcon className="w-3.5 h-3.5 text-amber-500" />
                         <span className="font-semibold">Responsável:</span>
                         <strong className="text-gray-900 dark:text-white">
                           {stageUserName || 'Sistema Automático / Pendente'}
@@ -696,7 +767,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                       </div>
                       <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
                         <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">Tipo de Frete</span>
-                        <span className="font-extrabold text-indigo-600 dark:text-indigo-400 block">{shipment.driverFreightType || 'PJ'}</span>
+                        <span className="font-extrabold text-amber-600 dark:text-amber-400 block">{shipment.driverFreightType || 'PJ'}</span>
                         <span className="text-[10px] text-gray-400 block truncate">{shipment.paymentMethod || 'PIX - E-FRETE'}</span>
                       </div>
                     </div>
@@ -704,9 +775,9 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
 
                   {stage.status === ShipmentStatus.AguardandoSeguradora && (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-                      <div className="p-2.5 bg-blue-50/50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
-                        <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase block mb-0.5">Código de Liberação GR</span>
-                        <span className="font-mono font-black text-sm text-blue-950 dark:text-blue-100 block">
+                      <div className="p-2.5 bg-amber-50/50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800">
+                        <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase block mb-0.5">Código de Liberação GR</span>
+                        <span className="font-mono font-black text-sm text-amber-950 dark:text-amber-100 block">
                           {shipment.riskReleaseCode || 'Não informado / Pendente'}
                         </span>
                       </div>
@@ -746,9 +817,9 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
 
                   {stage.status === ShipmentStatus.AguardandoNota && (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-                      <div className="p-2.5 bg-blue-50/50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
-                        <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase block mb-0.5">Número da NF-e</span>
-                        <span className="font-mono font-bold text-sm text-blue-950 dark:text-blue-100 block">
+                      <div className="p-2.5 bg-amber-50/50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800">
+                        <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase block mb-0.5">Número da NF-e</span>
+                        <span className="font-mono font-bold text-sm text-amber-950 dark:text-amber-100 block">
                           {shipment.nfeNumber ? `NF-e nº ${shipment.nfeNumber}` : 'Documento anexado'}
                         </span>
                       </div>
@@ -771,13 +842,13 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
 
                   {stage.status === ShipmentStatus.AguardandoFiscal && (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-                      <div className="p-2.5 bg-blue-50/50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
-                        <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase block mb-0.5">CT-e Emitido</span>
-                        <span className="font-mono font-bold text-sm text-blue-950 dark:text-blue-100 block">
+                      <div className="p-2.5 bg-amber-50/50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800">
+                        <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase block mb-0.5">CT-e Emitido</span>
+                        <span className="font-mono font-bold text-sm text-amber-950 dark:text-amber-100 block">
                           {shipment.cteNumber ? `CT-e nº ${shipment.cteNumber}` : 'CT-e Emitido'}
                         </span>
                         {shipment.cteEmissionDate && (
-                          <span className="text-[10px] text-blue-600 dark:text-blue-400 block font-semibold mt-0.5">
+                          <span className="text-[10px] text-amber-600 dark:text-amber-400 block font-semibold mt-0.5">
                             Emissão: {shipment.cteEmissionDate}
                           </span>
                         )}
@@ -816,9 +887,9 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                             {shipment.advancePercentage !== undefined ? shipment.advancePercentage : 80}%
                           </span>
                         </div>
-                        <div className="p-2.5 bg-blue-50/50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
-                          <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase block mb-0.5">Adiantamento em Conta</span>
-                          <span className="font-black text-sm text-blue-950 dark:text-blue-100 block">
+                        <div className="p-2.5 bg-amber-50/50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800">
+                          <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase block mb-0.5">Adiantamento em Conta</span>
+                          <span className="font-black text-sm text-amber-950 dark:text-amber-100 block">
                             {formatCurrency(shipment.advanceValue)}
                           </span>
                         </div>
@@ -881,6 +952,37 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                     </div>
                   )}
 
+                  {stage.status === ShipmentStatus.ValidacaoTicket && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                      <div className="p-2.5 bg-amber-50/50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800">
+                        <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase block mb-0.5">Peso Descarregado / Balança</span>
+                        <span className="font-mono font-black text-sm text-amber-900 dark:text-amber-100 block">
+                          {shipment.unloadedTonnage ? `${shipment.unloadedTonnage} ton` : 'Aguardando validação'}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">Peso Carregado (Origem)</span>
+                        <span className="font-mono font-bold text-sm text-gray-900 dark:text-white block">
+                          {shipment.shipmentTonnage || '---'} ton
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">Diferença de Balança (Quebra/Sobra)</span>
+                        {shipment.unloadedTonnage && shipment.shipmentTonnage ? (
+                          <span className={`font-mono font-black text-sm block ${
+                            (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                          }`}>
+                            {(shipment.unloadedTonnage - shipment.shipmentTonnage).toFixed(3)} ton ({((shipment.unloadedTonnage - shipment.shipmentTonnage) * 1000).toFixed(0)} kg)
+                          </span>
+                        ) : (
+                          <span className="font-mono text-gray-400 block">---</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {!isClientUser && stage.status === ShipmentStatus.AguardandoPagamentoSaldo && (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
                       <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
@@ -908,9 +1010,9 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                     <div className={`grid gap-2.5 text-xs ${isClientUser ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2 sm:grid-cols-4'}`}>
                       {isClientUser ? (
                         <>
-                          <div className="p-2.5 bg-blue-50/50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
-                            <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase block mb-0.5">Valor Total do Frete</span>
-                            <span className="font-black text-sm text-blue-950 dark:text-blue-100 block">
+                          <div className="p-2.5 bg-amber-50/50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800">
+                            <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase block mb-0.5">Valor Total do Frete</span>
+                            <span className="font-black text-sm text-amber-950 dark:text-amber-100 block">
                               {formatCurrency(shipment.realProfitData?.companyFreight || (cargo?.companyFreightValuePerTon ? cargo.companyFreightValuePerTon * (shipment.shipmentTonnage || 0) : 0))}
                             </span>
                           </div>
@@ -926,9 +1028,9 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                         </>
                       ) : (
                         <>
-                          <div className="p-2.5 bg-blue-50/50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
-                            <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase block mb-0.5">Faturamento Empresa</span>
-                            <span className="font-black text-sm text-blue-950 dark:text-blue-100 block">
+                          <div className="p-2.5 bg-amber-50/50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800">
+                            <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase block mb-0.5">Faturamento Empresa</span>
+                            <span className="font-black text-sm text-amber-950 dark:text-amber-100 block">
                               {formatCurrency(shipment.realProfitData?.companyFreight || (cargo?.companyFreightValuePerTon ? cargo.companyFreightValuePerTon * (shipment.shipmentTonnage || 0) : 0))}
                             </span>
                           </div>
@@ -968,7 +1070,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                             className="p-2 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 shadow-2xs"
                           >
                             <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>
                               <div className="truncate">
                                 <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 block truncate">
                                   {doc.docType}
@@ -983,7 +1085,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                               <button
                                 type="button"
                                 onClick={() => openDocumentInNewTab(doc.url, `${doc.docType} - ${doc.fileName}`)}
-                                className="p-1.5 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-indigo-600 dark:text-indigo-400 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-bold transition-all shadow-2xs"
+                                className="p-1.5 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-amber-600 dark:text-amber-400 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-bold transition-all shadow-2xs"
                                 title="Abrir documento em nova aba"
                               >
                                 <ExternalLink className="w-3.5 h-3.5" />
@@ -993,7 +1095,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => onInspectFile(doc.url, doc.docType, doc.fileName)}
-                                  className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold transition-all shadow-2xs"
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[10px] font-bold transition-all shadow-2xs"
                                   title="Ver dados e campos extraídos pelo OCR"
                                 >
                                   <Eye className="w-3 h-3" />
@@ -1004,6 +1106,50 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                           </div>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Bloco Operacional de Notificação WhatsApp */}
+                  {STAGE_TRIGGER_MAP[stage.status] && (
+                    <div className="pt-3 border-t border-gray-100 dark:border-gray-700/60 flex flex-wrap items-center justify-between gap-3 p-3 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-200/80 dark:border-emerald-800/40">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-lg bg-emerald-600 text-white shadow-xs">
+                          <MessageCircle className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-emerald-950 dark:text-emerald-100">
+                              WhatsApp Automático: {SHIPMENT_TRIGGER_TEMPLATES[STAGE_TRIGGER_MAP[stage.status]!].name}
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                              Disparo Automático
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-gray-600 dark:text-gray-300 block">
+                            Motorista: <strong>{shipment.driverName}</strong> • {shipment.driverContact ? formatDisplayPhone(shipment.driverContact) : 'Telefone não cadastrado'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={isSendingWa === stage.status || !shipment.driverContact}
+                        onClick={() => handleSendStageWhatsApp(stage.status)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                        title="Reenviar manualmente a mensagem oficial desta etapa para o WhatsApp do motorista"
+                      >
+                        {isSendingWa === stage.status ? (
+                          <>
+                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            <span>Enviando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-3.5 h-3.5" />
+                            <span>Reenviar WhatsApp</span>
+                          </>
+                        )}
+                      </button>
                     </div>
                   )}
                 </div>

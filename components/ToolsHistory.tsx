@@ -118,7 +118,7 @@ export default function History({ companyId, companyLogo }: HistoryProps) {
     doc.setFontSize(20);
     doc.setTextColor(40, 40, 40);
     doc.setFont('helvetica', 'bold');
-    doc.text('AGROMERCANTIL', hasLogo ? 30 : 14, 19);
+    doc.text('DLLOG TRANSPORTES', hasLogo ? 30 : 14, 19);
 
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
@@ -168,7 +168,7 @@ export default function History({ companyId, companyLogo }: HistoryProps) {
     doc.setTextColor(40, 40, 40);
     doc.setFont('helvetica', 'bold');
     // x=28 se tiver logo (14+12+2 de respiro); y=19 para alinhar com o centro vertical da logo de 12mm
-    doc.text('AGROMERCANTIL', hasLogo ? 30 : 14, 19);
+    doc.text('DLLOG TRANSPORTES', hasLogo ? 30 : 14, 19);
 
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
@@ -211,14 +211,14 @@ export default function History({ companyId, companyLogo }: HistoryProps) {
         <div className="flex bg-white rounded-lg p-1 border border-slate-200 self-start">
           <button
             onClick={() => setActiveTab('stays')}
-            className={`flex items-center py-2 px-4 rounded-md text-sm font-medium transition-colors ${activeTab === 'stays' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
+            className={`flex items-center py-2 px-4 rounded-md text-sm font-medium transition-colors ${activeTab === 'stays' ? 'bg-amber-50 text-amber-700' : 'text-slate-600 hover:bg-slate-50'}`}
           >
             <Clock className="w-4 h-4 mr-2" />
             Histórico de Estadias
           </button>
           <button
             onClick={() => setActiveTab('quotes')}
-            className={`flex items-center py-2 px-4 rounded-md text-sm font-medium transition-colors ${activeTab === 'quotes' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
+            className={`flex items-center py-2 px-4 rounded-md text-sm font-medium transition-colors ${activeTab === 'quotes' ? 'bg-amber-50 text-amber-700' : 'text-slate-600 hover:bg-slate-50'}`}
           >
             <Calculator className="w-4 h-4 mr-2" />
             Histórico de Cotações
@@ -235,7 +235,7 @@ export default function History({ companyId, companyLogo }: HistoryProps) {
           </button>
           <button
             onClick={activeTab === 'stays' ? exportStaysPDF : exportQuotesPDF}
-            className="flex items-center text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 px-3 py-2 rounded-lg transition-colors shadow-sm"
+            className="flex items-center text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 px-3 py-2 rounded-lg transition-colors shadow-sm"
           >
             <FileText className="w-3.5 h-3.5 mr-1.5" />
             PDF (Lista)
@@ -263,7 +263,7 @@ export default function History({ companyId, companyLogo }: HistoryProps) {
             value={filterClient}
             onChange={e => setFilterClient(e.target.value)}
             placeholder="Filtrar por Cliente"
-            className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-400 outline-none"
+            className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none"
           />
         </div>
 
@@ -276,7 +276,7 @@ export default function History({ companyId, companyLogo }: HistoryProps) {
               type="date"
               value={filterDateFrom}
               onChange={e => setFilterDateFrom(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-400 outline-none"
+              className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none"
             />
           </div>
           <div className="relative">
@@ -287,7 +287,7 @@ export default function History({ companyId, companyLogo }: HistoryProps) {
               type="date"
               value={filterDateTo}
               onChange={e => setFilterDateTo(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-400 outline-none"
+              className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none"
             />
           </div>
           {activeTab === 'stays' && (
@@ -300,13 +300,13 @@ export default function History({ companyId, companyLogo }: HistoryProps) {
                 value={filterDriverOrPlate}
                 onChange={e => setFilterDriverOrPlate(e.target.value)}
                 placeholder="Filtrar por Motorista ou Placa"
-                className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-400 outline-none"
+                className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none"
               />
             </div>
           )}
         </div>
 
-        <p className="text-xs text-indigo-600 font-medium">
+        <p className="text-xs text-amber-600 font-medium">
           Foram encontrados <strong>{activeData.length}</strong> registros
           {activeData.length !== totalData.length && ` de ${totalData.length}`} para este filtro.
         </p>
@@ -395,7 +395,7 @@ export default function History({ companyId, companyLogo }: HistoryProps) {
                     <td className="px-4 py-3 font-medium text-slate-800">{quote.clientName || '-'}</td>
                     <td className="px-4 py-3">
                       <div className="text-xs text-slate-600 flex items-center"><MapPin className="w-3 h-3 mr-1 text-emerald-500 flex-shrink-0" />{quote.origin}</div>
-                      <div className="text-xs text-slate-600 flex items-center mt-1"><MapPin className="w-3 h-3 mr-1 text-indigo-500 flex-shrink-0" />{quote.destination}</div>
+                      <div className="text-xs text-slate-600 flex items-center mt-1"><MapPin className="w-3 h-3 mr-1 text-amber-500 flex-shrink-0" />{quote.destination}</div>
                       <div className="text-[10px] text-slate-400 mt-1 font-medium">{quote.distance} km</div>
                     </td>
                     <td className="px-4 py-3">

@@ -64,7 +64,7 @@ const CoordenadorReport: React.FC<CoordenadorReportProps> = ({ shipments, cargos
           <StatCard 
             title="Margem de Lucro Total (Período)" 
             value={totalProfitMargin} 
-            icon={<DollarSignIcon className="w-8 h-8 text-blue-500"/>} 
+            icon={<DollarSignIcon className="w-8 h-8 text-amber-500"/>} 
             formatAsCurrency 
           />
       </div>
@@ -80,7 +80,7 @@ const CoordenadorReport: React.FC<CoordenadorReportProps> = ({ shipments, cargos
             {coordenadores.map(coordenador => (
               <div key={coordenador.id} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 flex justify-between items-center">
                 <div className="flex items-center">
-                    <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 mr-4">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center text-amber-600 dark:text-amber-400 mr-4">
                         <UsersIcon className="w-5 h-5" />
                     </div>
                     <div>

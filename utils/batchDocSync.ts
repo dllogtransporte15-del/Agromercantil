@@ -1,5 +1,5 @@
 import { Shipment } from '../types';
-import { extractDetailedDocData, DetailedDocumentData } from './fiscalDocParser';
+import { extractDetailedDocData, DetailedDocumentData, isStrictNotaFiscalCategory } from './fiscalDocParser';
 import { calculateShipmentExpenses } from './operationalExpensesCalculator';
 
 export interface SyncProgressCallback {
@@ -49,10 +49,20 @@ export async function syncSingleShipmentDocuments(
             updated.cteEmissionDate = extracted.emissionDate;
             hasChanges = true;
           }
+          if (extracted.remetente?.razaoSocial || extracted.tomador?.razaoSocial || extracted.tomador?.cnpjCpf) {
+            const currentDocs = (updated.documents || shipment.documents || {}) as any;
+            updated.documents = {
+              ...currentDocs,
+              ...(extracted.remetente?.razaoSocial ? { cte_remetente: extracted.remetente.razaoSocial } : {}),
+              ...(extracted.tomador?.razaoSocial ? { cte_tomador: extracted.tomador.razaoSocial } : {}),
+              ...(extracted.tomador?.cnpjCpf ? { cte_tomador_cnpj: extracted.tomador.cnpjCpf } : {}),
+            };
+            hasChanges = true;
+          }
         }
 
-        // 2. Sincronização Nota Fiscal
-        if (extracted.documentType === 'Nota Fiscal' || docType.toLowerCase().includes('nota fiscal') || docType.toLowerCase().includes('danfe') || docType.toLowerCase().includes('nfe')) {
+        // 2. Sincronização Nota Fiscal (apenas campo estrito "Nota Fiscal")
+        if (isStrictNotaFiscalCategory(docType)) {
           if (extracted.docNumber && shipment.nfeNumber !== extracted.docNumber) {
             updated.nfeNumber = extracted.docNumber;
             hasChanges = true;
@@ -73,6 +83,17 @@ export async function syncSingleShipmentDocuments(
 
         // 4. Sincronização Carta Frete / Contrato de Frete
         if (extracted.documentType === 'Carta Frete' || docType.toLowerCase().includes('carta frete') || docType.toLowerCase().includes('contrato') || docType.toLowerCase().includes('e-frete')) {
+          if (extracted.ciot && (shipment.ciotNumber !== extracted.ciot || shipment.ciot !== extracted.ciot)) {
+            updated.ciotNumber = extracted.ciot;
+            updated.ciot = extracted.ciot;
+            const currentDocs = (updated.documents || shipment.documents || {}) as any;
+            updated.documents = {
+              ...currentDocs,
+              ciot_number: extracted.ciot,
+              ciot: extracted.ciot,
+            };
+            hasChanges = true;
+          }
           if (extracted.financeiro?.porcentagemAdiantamento !== undefined && shipment.advancePercentage !== extracted.financeiro.porcentagemAdiantamento) {
             updated.advancePercentage = extracted.financeiro.porcentagemAdiantamento;
             hasChanges = true;
@@ -81,16 +102,29 @@ export async function syncSingleShipmentDocuments(
             updated.advanceValue = extracted.financeiro.valorAdiantamento;
             hasChanges = true;
           }
-          if (extracted.financeiro?.valorPedagio !== undefined && shipment.tollValue !== extracted.financeiro.valorPedagio) {
+          const tollExplicitlyZero = shipment.tollValue !== undefined && shipment.tollValue !== null && Number(shipment.tollValue) === 0;
+          if (extracted.financeiro?.valorPedagio !== undefined && shipment.tollValue !== extracted.financeiro.valorPedagio && !(tollExplicitlyZero && extracted.financeiro.valorPedagio > 0)) {
             updated.tollValue = extracted.financeiro.valorPedagio;
             hasChanges = true;
           }
-          if (extracted.financeiro?.valorSaldo !== undefined && shipment.balanceToReceiveValue !== extracted.financeiro.valorSaldo) {
-            updated.balanceToReceiveValue = extracted.financeiro.valorSaldo;
+          const saldoFromDoc = extracted.calculoSaldoFrete?.subtotal !== undefined 
+            ? extracted.calculoSaldoFrete.subtotal 
+            : extracted.financeiro?.valorSaldo;
+          if (saldoFromDoc !== undefined && shipment.balanceToReceiveValue !== saldoFromDoc) {
+            updated.balanceToReceiveValue = saldoFromDoc;
             hasChanges = true;
           }
           if (extracted.financeiro?.chavePix && !shipment.pixKey) {
             updated.pixKey = extracted.financeiro.chavePix;
+            hasChanges = true;
+          }
+          if (extracted.calculoSaldoFrete?.sestSenat !== undefined) {
+            const currentRealProfit: any = { ...(shipment.realProfitData || {}), ...(updated.realProfitData || {}) };
+            currentRealProfit.sestSenat = extracted.calculoSaldoFrete.sestSenat;
+            if (extracted.calculoSaldoFrete.inssRetido !== undefined) {
+              currentRealProfit.inssRetido = extracted.calculoSaldoFrete.inssRetido;
+            }
+            updated.realProfitData = currentRealProfit;
             hasChanges = true;
           }
         }

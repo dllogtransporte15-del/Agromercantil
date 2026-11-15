@@ -18,6 +18,9 @@ dist-ssr
 .env.development
 .env.production
 .env.staging
+.env.vercel
+invoices_backup_row888.json
+scratch/
 
 # Editor directories and files
 .vscode/*
@@ -30,7 +33,13 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
-
-# Scratch scripts and temporary files
-scratch/
-
+.mcp.json
+dev-dist
+current_errors.txt
+logo_base64.txt
+theme_base64.txt
+save_logo.mjs
+test_db.js
+test_offer.ts
+.agents
+.cursor

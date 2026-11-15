@@ -61,7 +61,7 @@ const ProductFormModal: React.FC<{
           <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
             {productToEdit ? 'Editar Produto' : 'Novo Produto'}
             {productToEdit && (
-              <span className="text-xs font-mono font-bold px-2.5 py-0.5 bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800">
+              <span className="text-xs font-mono font-bold px-2.5 py-0.5 bg-amber-50 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300 rounded-lg border border-amber-200 dark:border-amber-800">
                 ID: {productToEdit.id}
               </span>
             )}
@@ -85,7 +85,7 @@ const ProductFormModal: React.FC<{
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="Ex: Soja, Milho, Açúcar..."
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
               required
             />
           </div>
@@ -96,7 +96,7 @@ const ProductFormModal: React.FC<{
             <select
               value={unit}
               onChange={e => setUnit(e.target.value as ProductUnit)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
             >
               {Object.values(ProductUnit).map(u => (
                 <option key={u} value={u}>{UNIT_LABELS[u]}</option>
@@ -120,7 +120,7 @@ const ProductFormModal: React.FC<{
               <button
                 type="button"
                 onClick={() => setRequiresRiskManagement(prev => !prev)}
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
                   requiresRiskManagement ? 'bg-orange-500' : 'bg-emerald-500'
                 }`}
                 aria-pressed={requiresRiskManagement}
@@ -162,7 +162,7 @@ const ProductFormModal: React.FC<{
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium"
             >
               {productToEdit ? 'Salvar Alterações' : 'Adicionar Produto'}
             </button>
@@ -215,7 +215,7 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
         {canCreate && (
           <button
             onClick={handleOpenModal}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 font-medium transition-colors"
+            className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 font-medium transition-colors"
           >
             + Novo Produto
           </button>
@@ -229,7 +229,7 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
           placeholder="Buscar produto por nome ou ID..."
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
-          className="w-full max-w-sm px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full max-w-sm px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
         />
       </div>
 
@@ -245,7 +245,7 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
             {canCreate && (
               <button
                 onClick={handleOpenModal}
-                className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="mt-4 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
               >
                 Cadastrar primeiro produto
               </button>
@@ -266,7 +266,7 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
               {filteredProducts.map(product => (
                 <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                       {product.id}
                     </span>
                   </td>
@@ -274,7 +274,7 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
                     {product.name}
                   </td>
                   <td className="px-6 py-4">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
                       {UNIT_LABELS[product.unit] || product.unit}
                     </span>
                   </td>
@@ -296,7 +296,7 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
                       {canUpdate && (
                         <button
                           onClick={() => handleEdit(product)}
-                          className="px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                          className="px-3 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors"
                         >
                           Editar
                         </button>

@@ -74,14 +74,14 @@ const EditScheduledDateTimeModal: React.FC<EditScheduledDateTimeModalProps> = ({
             />
           </div>
 
-          <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800/50 mt-4">
+          <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-100 dark:border-amber-800/50 mt-4">
             <div className="flex gap-3">
-              <div className="text-blue-500 mt-0.5">
+              <div className="text-amber-500 mt-0.5">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="text-xs text-blue-700 dark:text-blue-300 leading-relaxed font-medium">
+              <p className="text-xs text-amber-700 dark:text-amber-300 leading-relaxed font-medium">
                 Esta alteração será registrada no histórico do embarque e servirá para controle de agendamento na coleta/descarga.
               </p>
             </div>

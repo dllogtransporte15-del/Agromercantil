@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { User, Shipment, FreightOffer, Cargo, Driver, Ticket, Page, Client, Product, Vehicle } from '../types';
-import { UserProfile, ShipmentStatus, FreightOfferStatus, TicketStatus } from '../types';
-import { isDemoUser } from '../auth';
+import { UserProfile, ShipmentStatus, FreightOfferStatus, TicketStatus, CargoStatus } from '../types';
+import { isDemoUser, isDeveloperUser } from '../auth';
 import { BellIcon } from './icons/BellIcon';
 import { playAlertSound } from '../utils/audioAlert';
 import { 
@@ -25,7 +25,7 @@ import OrderRequestDecisionModal from './OrderRequestDecisionModal';
 
 export interface SystemAlert {
   id: string;
-  type: 'order_request' | 'client_freight_offer' | 'fiscal_sla' | 'insurance_sla' | 'financial_sla' | 'ticket';
+  type: 'order_request' | 'client_freight_offer' | 'fiscal_sla' | 'insurance_sla' | 'financial_sla' | 'ticket' | 'new_cargo';
   title: string;
   message: string;
   timestamp: string;
@@ -74,7 +74,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [decisionOffer, setDecisionOffer] = useState<FreightOffer | null>(null);
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(() => {
-    return (localStorage.getItem('agromercantil_audio_muted') ?? localStorage.getItem('transcunha_audio_muted')) === 'true';
+    return localStorage.getItem('transcunha_audio_muted') === 'true';
   });
 
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -94,7 +94,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
   const toggleAudioMute = () => {
     const nextState = !isAudioMuted;
     setIsAudioMuted(nextState);
-    localStorage.setItem('agromercantil_audio_muted', String(nextState));
+    localStorage.setItem('transcunha_audio_muted', String(nextState));
   };
 
   const cargoMap = useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
@@ -113,6 +113,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
   // Avaliar todos os alertas aplicáveis ao usuário logado
   const activeAlerts = useMemo(() => {
+    if (user.profile === UserProfile.Cliente) return [];
     const alerts: SystemAlert[] = [];
     const now = Date.now();
 
@@ -120,21 +121,28 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     const isFiscal = user.profile === UserProfile.Fiscal;
     const isSeguradora = user.profile === UserProfile.GerenciadoraDeRisco;
     const isFinanceiro = user.profile === UserProfile.Financeiro;
-    const isAdminOrDiretor = !isDemo && (user.profile === UserProfile.Admin || user.profile === UserProfile.Diretor);
-    const isCommercialOrSupervisor = !isDemo && [
+    const isAdminOrDiretor = !isDemo && (isDeveloperUser(user) || user.profile === UserProfile.Desenvolvedor || user.profile === UserProfile.Admin || user.profile === UserProfile.Diretor || user.profile === UserProfile.GerenciadoraDeRisco);
+    const isCommercialOrSupervisor = !isDemo && (isDeveloperUser(user) || [
+      UserProfile.Desenvolvedor,
       UserProfile.Comercial,
       UserProfile.GerenteComercial,
       UserProfile.Supervisor,
       UserProfile.Admin,
       UserProfile.Diretor
-    ].includes(user.profile);
-    const isClient = user.profile === UserProfile.Cliente && !!user.clientId;
+    ].includes(user.profile));
     const isMotorista = user.profile === UserProfile.Motorista;
 
     // 1. REGRA EMBARCADORES: Solicitação de ordem de algum motorista
     if (isEmbarcador || isAdminOrDiretor) {
       freightOffers.forEach(offer => {
         if (offer.status !== FreightOfferStatus.Pendente || !offer.driverId) return;
+
+        const reqTime = new Date(offer.requestTimestamp || (offer as any).createdAt || Date.now()).getTime();
+        const now = Date.now();
+        const elapsedMs = now - reqTime;
+
+        // Se já passaram 10 minutos sem aceite ou recusa, a solicitação expirou
+        if (elapsedMs >= 10 * 60 * 1000) return;
 
         const cargo = offer.cargoId ? cargoMap.get(offer.cargoId) : undefined;
         const driver = driverMap.get(offer.driverId || '');
@@ -149,14 +157,15 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
         const driverName = driver?.name || 'Motorista';
         const cargoSeq = cargo ? cargo.sequenceId : (offer.cargoId || 'N/A');
+        const remainingMinutes = Math.max(1, Math.ceil((10 * 60 * 1000 - elapsedMs) / 60000));
 
         alerts.push({
           id: `order_${offer.id}`,
           type: 'order_request',
           title: 'Solicitação de Ordem de Carregamento',
-          message: `${driverName} solicitou ordem de carregamento para a Carga #${cargoSeq}.`,
+          message: `${driverName} solicitou ordem de carregamento para a Carga #${cargoSeq}. (Expira em ~${remainingMinutes} min)`,
           timestamp: offer.requestTimestamp || (offer as any).createdAt || new Date().toISOString(),
-          urgency: 'warning',
+          urgency: remainingMinutes <= 3 ? 'critical' : 'warning',
           targetPage: 'operational-loads',
           relatedId: offer.id
         });
@@ -184,11 +193,14 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
           });
         } else if (offer.status === FreightOfferStatus.Recusada) {
           const lastLog = offer.history?.[offer.history.length - 1];
+          const isExpired = lastLog?.description?.includes('Solicitação exp.') || lastLog?.description?.includes('expirada');
           alerts.push({
             id: `driver_refused_${offer.id}`,
             type: 'order_request',
-            title: 'Ordem de Carregamento Recusada',
-            message: `Sua solicitação de ordem para a Carga #${cargoSeq} foi recusada.${lastLog?.description ? ` (${lastLog.description})` : ''}`,
+            title: isExpired ? 'Solicitação de Ordem Expirada' : 'Ordem de Carregamento Recusada',
+            message: isExpired
+              ? `Sua solicitação de ordem para a Carga #${cargoSeq} expirou por falta de resposta em 10 minutos (Motivo: Solicitação exp.).`
+              : `Sua solicitação de ordem para a Carga #${cargoSeq} foi recusada.${lastLog?.description ? ` (${lastLog.description})` : ''}`,
             timestamp: lastLog?.timestamp || offer.requestTimestamp || offer.createdAt,
             urgency: 'warning',
             targetPage: 'dashboard',
@@ -238,39 +250,6 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
             timestamp: offer.history?.[offer.history.length - 1]?.timestamp || offer.createdAt,
             urgency: 'warning',
             targetPage: 'freight-offers-history',
-            relatedId: offer.id
-          });
-        }
-      });
-    }
-
-    // 2.1 RETORNO AO CLIENTE: Avisar cliente quando transportadora responder cotação
-    if (isClient) {
-      freightOffers.forEach(offer => {
-        if (offer.driverId || offer.clientId !== user.clientId) return;
-        const product = productMap.get(offer.productId);
-        const productName = product?.name || 'Mercadoria';
-
-        if (offer.status === FreightOfferStatus.AnaliseCliente) {
-          alerts.push({
-            id: `client_price_${offer.id}`,
-            type: 'client_freight_offer',
-            title: 'Preço de Frete Disponível',
-            message: `A transportadora enviou o valor de R$ ${(offer.freightValuePerTon || 0).toFixed(2)}/ton para ${productName}.`,
-            timestamp: offer.history?.[offer.history.length - 1]?.timestamp || offer.createdAt,
-            urgency: 'warning',
-            targetPage: 'dashboard',
-            relatedId: offer.id
-          });
-        } else if (offer.status === FreightOfferStatus.Contraproposta) {
-          alerts.push({
-            id: `client_counter_${offer.id}`,
-            type: 'client_freight_offer',
-            title: 'Contraproposta da Transportadora',
-            message: `Nova contraproposta de R$ ${(offer.counterOfferValue || 0).toFixed(2)}/ton para sua oferta.`,
-            timestamp: offer.history?.[offer.history.length - 1]?.timestamp || offer.createdAt,
-            urgency: 'warning',
-            targetPage: 'dashboard',
             relatedId: offer.id
           });
         }
@@ -386,6 +365,52 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       }
     });
 
+    // 7. REGRA NOVA CARGA CADASTRADA: Alerta para Comercial, Administrador do Sistema, Agenciador e Embarcador
+    const isEligibleForNewCargoAlert = !isDemo && (isDeveloperUser(user) || [
+      UserProfile.Desenvolvedor,
+      UserProfile.Comercial,
+      UserProfile.GerenteComercial,
+      UserProfile.Admin,
+      UserProfile.GerenciadoraDeRisco,
+      UserProfile.Diretor,
+      UserProfile.Agenciador,
+      UserProfile.Embarcador,
+    ].includes(user.profile));
+
+    if (isEligibleForNewCargoAlert) {
+      cargos.forEach(cargo => {
+        if (cargo.status !== CargoStatus.EmAndamento) return;
+
+        const createdAtTime = new Date(cargo.createdAt).getTime();
+        if (isNaN(createdAtTime)) return;
+
+        const elapsedMinutes = Math.max(0, Math.floor((now - createdAtTime) / (1000 * 60)));
+
+        // Exibir cargas cadastradas nas últimas 24 horas (1440 min)
+        if (elapsedMinutes <= 1440) {
+          const client = clientMap.get(cargo.clientId);
+          const product = productMap.get(cargo.productId);
+          const clientName = client?.nomeFantasia || client?.razaoSocial || 'Cliente';
+          const productName = product?.name || 'Mercadoria';
+          const cargoSeq = cargo.sequenceId ? `#${cargo.sequenceId}` : `#${cargo.id.slice(-6)}`;
+          const volumeFormatted = cargo.totalVolume ? `${cargo.totalVolume.toLocaleString('pt-BR')} ton` : '';
+          const originDest = `${cargo.origin || 'Origem'} ➔ ${cargo.destination || 'Destino'}`;
+
+          alerts.push({
+            id: `new_cargo_${cargo.id}`,
+            type: 'new_cargo',
+            title: `Nova Carga Cadastrada (${cargoSeq})`,
+            message: `${clientName} • ${productName} (${originDest})${volumeFormatted ? ` • ${volumeFormatted}` : ''}.`,
+            timestamp: cargo.createdAt,
+            elapsedMinutes,
+            urgency: elapsedMinutes <= 120 ? 'warning' : 'normal',
+            targetPage: 'loads',
+            relatedId: cargo.id
+          });
+        }
+      });
+    }
+
     // Ordenar alertas: Críticos primeiro, depois Atenção
     return alerts.sort((a, b) => {
       if (a.urgency === 'critical' && b.urgency !== 'critical') return -1;
@@ -401,7 +426,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
   // Disparar som de alerta sonoro quando novos alertas chegarem ou periodicamente
   useEffect(() => {
-    if (totalCount === 0) {
+    if (user.profile === UserProfile.Cliente || totalCount === 0) {
       lastAlertIdsRef.current.clear();
       return;
     }
@@ -432,6 +457,12 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       const offerId = alert.relatedId || alert.id.replace('order_', '');
       const matchedOffer = freightOffers.find(o => o.id === offerId);
       if (matchedOffer && user.profile !== UserProfile.Motorista) {
+        const reqTime = new Date(matchedOffer.requestTimestamp || (matchedOffer as any).createdAt || Date.now()).getTime();
+        if (Date.now() - reqTime >= 10 * 60 * 1000) {
+          onRefuseOrderRequest?.(matchedOffer, 'Solicitação exp.');
+          setIsOpen(false);
+          return;
+        }
         setIsOpen(false);
         setDecisionOffer(matchedOffer);
         return;
@@ -451,10 +482,20 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     if (isDemo) return;
     const matchedOffer = freightOffers.find(o => o.id === offerId);
     if (matchedOffer) {
+      const reqTime = new Date(matchedOffer.requestTimestamp || (matchedOffer as any).createdAt || Date.now()).getTime();
+      if (Date.now() - reqTime >= 10 * 60 * 1000) {
+        onRefuseOrderRequest?.(matchedOffer, 'Solicitação exp.');
+        setIsOpen(false);
+        return;
+      }
       setIsOpen(false);
       setDecisionOffer(matchedOffer);
     }
   };
+
+  if (user.profile === UserProfile.Cliente) {
+    return null;
+  }
 
   return (
     <>
@@ -462,7 +503,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
         {/* BOTÃO DO SINO VISUAL E SONORO */}
         <button
           onClick={() => setIsOpen(prev => !prev)}
-          className={`relative p-2 rounded-full transition-all focus:outline-none ${
+          className={`relative p-1.5 rounded-xl transition-all focus:outline-none cursor-pointer ${
             criticalCount > 0
               ? 'text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/80 animate-pulse ring-2 ring-rose-500/50'
               : totalCount > 0
@@ -472,7 +513,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
           aria-label="Notificações e Alertas"
           title={totalCount > 0 ? `${totalCount} alerta(s) pendente(s)` : 'Sem alertas no momento'}
         >
-          <BellIcon className={`w-6 h-6 ${criticalCount > 0 ? 'animate-bounce' : ''}`} />
+          <BellIcon className={`w-4 h-4 ${criticalCount > 0 ? 'animate-bounce' : ''}`} />
 
           {/* BADGE VISUAL DE CONTAGEM DE ALERTAS */}
           {totalCount > 0 && (
@@ -488,7 +529,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
         {isOpen && (
           <div className="absolute right-0 mt-3 w-80 sm:w-96 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50 animate-in fade-in zoom-in duration-150">
             {/* HEADER DO POPUP */}
-            <div className="p-4 bg-gradient-to-r from-blue-900 via-slate-900 to-slate-900 text-white flex items-center justify-between">
+            <div className="p-4 bg-gradient-to-r from-amber-900 via-slate-900 to-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <BellIcon className="w-5 h-5 text-amber-400" />
                 <h4 className="font-bold text-sm">Central de Alertas</h4>
@@ -541,6 +582,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                   const isCritical = alert.urgency === 'critical';
                   const isOrderRequest = alert.type === 'order_request';
                   const isClientOffer = alert.type === 'client_freight_offer';
+                  const isNewCargo = alert.type === 'new_cargo';
                   const offerId = alert.relatedId || alert.id.replace('order_', '');
 
                   return (
@@ -551,21 +593,28 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                         isCritical
                           ? 'border-l-rose-500 bg-rose-50/40 dark:bg-rose-950/20'
                           : isOrderRequest
-                          ? 'border-l-blue-500 bg-blue-50/30 dark:bg-blue-950/10'
+                          ? 'border-l-amber-500 bg-amber-50/30 dark:bg-amber-950/10'
                           : isClientOffer
-                          ? 'border-l-indigo-500 bg-indigo-50/30 dark:bg-indigo-950/10'
+                          ? 'border-l-amber-500 bg-amber-50/30 dark:bg-amber-950/10'
+                          : isNewCargo
+                          ? 'border-l-emerald-500 bg-emerald-50/30 dark:bg-emerald-950/10'
                           : 'border-l-amber-500 bg-amber-50/30 dark:bg-amber-950/10'
                       }`}
                     >
                       <div className="shrink-0 mt-0.5">
                         {alert.type === 'order_request' && (
-                          <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400">
+                          <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400">
                             <Truck className="w-4 h-4" />
                           </div>
                         )}
                         {alert.type === 'client_freight_offer' && (
-                          <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">
+                          <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400">
                             <Tag className="w-4 h-4" />
+                          </div>
+                        )}
+                        {alert.type === 'new_cargo' && (
+                          <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400">
+                            <Package className="w-4 h-4" />
                           </div>
                         )}
                         {alert.type === 'fiscal_sla' && (
@@ -584,7 +633,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                           </div>
                         )}
                         {alert.type === 'ticket' && (
-                          <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">
+                          <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400">
                             <AlertTriangle className="w-4 h-4" />
                           </div>
                         )}
@@ -596,16 +645,22 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                             isCritical 
                               ? 'text-rose-600 dark:text-rose-400' 
                               : isOrderRequest 
-                              ? 'text-blue-900 dark:text-blue-200' 
+                              ? 'text-amber-900 dark:text-amber-200' 
                               : isClientOffer
-                              ? 'text-indigo-900 dark:text-indigo-200'
+                              ? 'text-amber-900 dark:text-amber-200'
+                              : isNewCargo
+                              ? 'text-emerald-900 dark:text-emerald-200'
                               : 'text-gray-900 dark:text-white'
                           }`}>
                             {alert.title}
                           </span>
                           {alert.elapsedMinutes !== undefined && (
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold font-mono ${
-                              isCritical ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300'
+                              isCritical 
+                                ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300' 
+                                : isNewCargo
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
+                                : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300'
                             }`}>
                               {formatElapsedTime(alert.elapsedMinutes)}
                             </span>
@@ -621,7 +676,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                             <button
                               type="button"
                               onClick={(e) => handleOpenDecisionForOffer(e, offerId)}
-                              className="px-2.5 py-1 text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-xs flex items-center gap-1"
+                              className="px-2.5 py-1 text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-all shadow-xs flex items-center gap-1"
                             >
                               <CheckCircle className="w-3.5 h-3.5" />
                               Aceitar / Recusar
