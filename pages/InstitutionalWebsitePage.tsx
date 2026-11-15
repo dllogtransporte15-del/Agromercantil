@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import {
   Cpu,
@@ -87,10 +87,9 @@ const HUBS: Array<{
 
 const PARTNERS = [
   { name: 'Rodo Chagas', logo: '/partners/rodo-chagas.png' },
-  { name: 'MMJV', logo: '/partners/mmjv.png' },
+  { name: 'TransCunha', logo: '/partners/transcunha.png' },
   { name: 'Sementes', logo: '/partners/sementes.png' },
   { name: 'G3 Agro', logo: '/partners/g3-agro.png' },
-  { name: 'Bioma Trading', logo: '/partners/bioma-trading.png' },
   { name: 'Novo Parceiro 1', logo: '/partners/extra_1.png' },
   { name: 'Grao Expresso', logo: '/partners/extra_2.png' },
   { name: 'Pif Paf', logo: '/partners/extra_3.png' },
@@ -256,212 +255,707 @@ Email: ${formData.email}`;
   );
 };
 
-const PricingSection: React.FC = () => (
-  <section id="precos" className="py-24 bg-white relative overflow-hidden">
-    {/* Decorative background elements */}
-    <div className="absolute top-0 left-0 w-full h-1/2 bg-brand-neutral/30 -skew-y-3 origin-top-left" />
+const HUB_ROUTES: Array<[number, number][]> = [
+  [HUBS[0].coords, HUBS[1].coords], // Sorriso -> Rio Verde
+  [HUBS[1].coords, HUBS[5].coords], // Rio Verde -> Uberlândia
+  [HUBS[1].coords, HUBS[2].coords], // Rio Verde -> Barreiras
+  [HUBS[1].coords, HUBS[4].coords], // Rio Verde -> Dourados
+  [HUBS[4].coords, HUBS[3].coords], // Dourados -> Cascavel
+  [HUBS[5].coords, HUBS[3].coords], // Uberlândia -> Cascavel
+];
 
-    <div className="max-w-7xl mx-auto px-6 relative z-10">
-      <div data-dllog-reveal className="text-center mb-16">
-        <h2 className="text-sm font-bold uppercase tracking-[0.3em] text-brand-primary mb-4">Investimento</h2>
-        <h3 className="text-4xl md:text-5xl font-bold text-brand-secondary">
-          Adquira a <span className="text-brand-primary">Tecnologia</span> DLLOG
-        </h3>
-        <p className="mt-6 text-lg text-brand-secondary/60 max-w-2xl mx-auto">
-          Escolha o modelo ideal para o seu negócio e transforme sua operação logística hoje mesmo.
-        </p>
+const createHubPinIcon = (isActive: boolean) =>
+  L.divIcon({
+    className: 'dllog-custom-hub-pin',
+    html: `
+      <div style="position:relative;display:flex;align-items:center;justify-content:center;width:${isActive ? 38 : 30}px;height:${isActive ? 38 : 30}px;">
+        <span style="position:absolute;inset:0;border-radius:9999px;background:${isActive ? 'rgba(176,125,60,0.35)' : 'rgba(176,125,60,0.22)'};animation:ping 2s cubic-bezier(0,0,0.2,1) infinite;"></span>
+        <span style="position:relative;width:${isActive ? 22 : 16}px;height:${isActive ? 22 : 16}px;border-radius:9999px;background:${isActive ? '#B07D3C' : '#1C1917'};border:3px solid ${isActive ? '#FFFFFF' : '#D9A55B'};box-shadow:0 4px 12px rgba(0,0,0,0.35);"></span>
       </div>
+    `,
+    iconSize: [isActive ? 38 : 30, isActive ? 38 : 30],
+    iconAnchor: [isActive ? 19 : 15, isActive ? 19 : 15],
+    popupAnchor: [0, -14],
+  });
 
-      <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-        {/* Option 1: Frontend Only */}
-        <div
-          data-dllog-reveal
-          className="p-8 bg-white rounded-3xl border border-brand-border shadow-sm hover:shadow-xl transition-all group flex flex-col h-full"
-        >
-          <div className="flex justify-between items-start mb-8">
-            <div className="w-14 h-14 bg-brand-neutral rounded-2xl flex items-center justify-center text-brand-secondary group-hover:bg-brand-secondary group-hover:text-white transition-all">
-              <Layout className="w-7 h-7" />
+const MapFocusController: React.FC<{ center: [number, number]; zoom: number }> = ({ center, zoom }) => {
+  const map = useMap();
+  useEffect(() => {
+    map.flyTo(center, zoom, { duration: 0.9 });
+  }, [center, zoom, map]);
+  return null;
+};
+
+const SYSTEM_DEMO_TABS = [
+  { id: 'embarques', label: 'Embarques' },
+  { id: 'cargas', label: 'Cargas' },
+  { id: 'mapa', label: 'Mapa' },
+] as const;
+
+type SystemDemoTabId = (typeof SYSTEM_DEMO_TABS)[number]['id'];
+
+const DEMO_MAP_CARGOS: Array<{ code: string; coords: [number, number] }> = [
+  { code: '#501', coords: [-16.82, -49.25] },
+  { code: '#502', coords: [-18.17, -47.94] },
+  { code: '#503', coords: [-18.92, -48.27] },
+];
+
+const createDemoMapPinIcon = (code: string) =>
+  L.divIcon({
+    className: 'dllog-demo-map-pin',
+    html: `<div style="background:#1D4ED8;color:#FFFFFF;border:2px solid #FFFFFF;border-radius:9999px;padding:2px 7px;font-size:9px;font-weight:800;box-shadow:0 4px 10px rgba(0,0,0,0.35);white-space:nowrap;">${code}</div>`,
+    iconSize: [42, 22],
+    iconAnchor: [21, 11],
+  });
+
+const InteractiveSystemDemoWindow: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<SystemDemoTabId>('embarques');
+  const [isPaused, setIsPaused] = useState(false);
+
+  useEffect(() => {
+    if (isPaused) return;
+    const timer = window.setInterval(() => {
+      setActiveTab((prev) => {
+        const idx = SYSTEM_DEMO_TABS.findIndex((t) => t.id === prev);
+        return SYSTEM_DEMO_TABS[(idx + 1) % SYSTEM_DEMO_TABS.length].id;
+      });
+    }, 6000);
+    return () => window.clearInterval(timer);
+  }, [isPaused]);
+
+  return (
+    <div
+      className="relative rounded-2xl border overflow-hidden shadow-2xl flex flex-col h-[535px] select-none"
+      style={{ backgroundColor: '#0B1120', borderColor: '#1E293B', color: '#F1F5F9' }}
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+    >
+      {/* ── Barra Superior do Sistema (Sem Sobreposição e com Logo Censurada) ── */}
+      <div
+        className="px-3.5 py-2.5 flex items-center justify-between border-b gap-2 shrink-0"
+        style={{ backgroundColor: '#0F172A', borderColor: '#1E293B' }}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="flex gap-1.5 shrink-0">
+            <div className="w-2.5 h-2.5 rounded-full bg-rose-500/85" />
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-400/85" />
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400/85" />
+          </div>
+
+          <div className="h-4 w-px bg-slate-700/80 mx-0.5 shrink-0" />
+
+          {/* Área da Logo Censurada (Cliente Confidencial) */}
+          <div
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg border shrink-0"
+            style={{ backgroundColor: '#131C31', borderColor: '#24324D' }}
+            title="Logo do operador censurada para demonstração"
+          >
+            <div className="w-3.5 h-3.5 rounded bg-slate-500/70 blur-[2.5px]" />
+            <div className="flex flex-col gap-0.5">
+              <div className="w-9 h-1.5 rounded bg-slate-400/70 blur-[2px]" />
+              <div className="w-6 h-1 rounded bg-sky-400/65 blur-[2px]" />
             </div>
-            <span className="text-[10px] font-black text-brand-secondary/30 uppercase tracking-widest px-3 py-1 bg-brand-neutral rounded-full">
-              Licença Core
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+          </div>
+
+          {/* Abas da Demonstração (Compactas e sem sobreposição) */}
+          <div className="flex items-center gap-1 min-w-0 overflow-x-auto no-scrollbar ml-1">
+            {SYSTEM_DEMO_TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setIsPaused(true);
+                  }}
+                  style={
+                    isActive
+                      ? { backgroundColor: '#2563EB', color: '#FFFFFF', boxShadow: '0 4px 12px rgba(37,99,235,0.35)' }
+                      : { color: '#94A3B8' }
+                  }
+                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all cursor-pointer hover:text-white shrink-0"
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Usuário Demo à Direita */}
+        <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+          <div
+            className="px-2 py-1 rounded-lg border flex items-center gap-1.5"
+            style={{ backgroundColor: '#131C31', borderColor: '#24324D' }}
+          >
+            <span
+              className="w-4 h-4 rounded-md text-[9px] font-black flex items-center justify-center text-white"
+              style={{ backgroundColor: '#2563EB' }}
+            >
+              S
             </span>
+            <span className="text-[9px] font-bold text-slate-200 whitespace-nowrap">Suporte</span>
           </div>
-
-          <h4 className="text-2xl font-bold mb-2 text-brand-secondary">Apenas FRONTEND</h4>
-          <p className="text-brand-secondary/60 text-sm mb-8">
-            Ideal para desenvolvedores que já possuem infraestrutura de backend e desejam nossa interface premium.
-          </p>
-
-          <ul className="space-y-4 mb-10 flex-1">
-            {[
-              'Código fonte completo do Frontend',
-              'Interface React + Vite + Tailwind',
-              'Componentes de Mapa e Dashboard',
-              'Documentação de integração API',
-              'Atualizações de UI por 6 meses'
-            ].map((item, i) => (
-              <li key={i} className="flex items-start gap-3 text-sm font-medium text-brand-secondary/80">
-                <CheckCircle2 className="w-5 h-5 text-brand-primary shrink-0" />
-                {item}
-              </li>
-            ))}
-          </ul>
-
-          <a
-            href="https://pay.kiwify.com.br/2pZYadK"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full py-4 border-2 border-brand-secondary text-brand-secondary rounded-xl font-bold text-center hover:bg-brand-secondary hover:text-white transition-all flex items-center justify-center gap-2 group/btn"
-          >
-            Comprar Frontend <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
-          </a>
-        </div>
-
-        {/* Option 2: Complete System */}
-        <div
-          data-dllog-reveal
-          className="p-8 bg-brand-secondary rounded-3xl border border-brand-primary shadow-2xl relative overflow-hidden flex flex-col h-full"
-        >
-          {/* Best Value Badge */}
-          <div className="absolute top-0 right-0 bg-brand-primary text-brand-secondary px-6 py-2 rounded-bl-2xl text-[10px] font-black uppercase tracking-widest">
-            Mais Vendido
-          </div>
-
-          <div className="flex justify-between items-start mb-8">
-            <div className="w-14 h-14 bg-brand-primary rounded-2xl flex items-center justify-center text-brand-secondary shadow-lg shadow-brand-primary/20">
-              <Zap className="w-7 h-7" />
-            </div>
-            <div className="flex items-center gap-2">
-              <Server className="w-4 h-4 text-brand-primary" />
-              <span className="text-[10px] font-black text-brand-primary uppercase tracking-widest">Full Stack</span>
-            </div>
-          </div>
-
-          <h4 className="text-2xl font-bold mb-2 text-white">SISTEMA COMPLETO</h4>
-          <p className="text-white/60 text-sm mb-8">
-            A solução definitiva: Frontend + Backend + Banco de Dados. Pronto para rodar sua operação.
-          </p>
-
-          <ul className="space-y-4 mb-10 flex-1">
-            {[
-              'Código fonte Frontend & Backend',
-              'Integração total com Supabase',
-              'Sistema de Autenticação e RLS',
-              'Dashboard operacional completo',
-              'Gestão de fretes e cargas ativa',
-              'Suporte prioritário na implantação'
-            ].map((item, i) => (
-              <li key={i} className="flex items-start gap-3 text-sm font-medium text-white/90">
-                <CheckCircle2 className="w-5 h-5 text-brand-primary shrink-0" />
-                {item}
-              </li>
-            ))}
-          </ul>
-
-          <a
-            href="https://pay.kiwify.com.br/jnaqY2z"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full py-4 bg-gold-gradient text-brand-secondary rounded-xl font-bold text-center hover:brightness-110 transition-all shadow-xl shadow-brand-primary/20 flex items-center justify-center gap-2 group/btn"
-          >
-            Adquirir Sistema Completo <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
-          </a>
         </div>
       </div>
 
-      {/* Security / Info footer */}
+      {/* ── Conteúdo Dinâmico das 3 Telas ── */}
       <div
-        data-dllog-reveal
-        className="mt-16 flex flex-col md:flex-row items-center justify-center gap-8 text-brand-secondary/40 text-[10px] font-bold uppercase tracking-[0.2em]"
+        className="flex-1 overflow-hidden p-3 sm:p-4 flex flex-col gap-2.5"
+        style={{
+          backgroundColor: '#0B1120',
+          backgroundImage:
+            'linear-gradient(to right, rgba(59,130,246,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(59,130,246,0.05) 1px, transparent 1px)',
+          backgroundSize: '28px 28px',
+        }}
       >
-        <div className="flex items-center gap-2">
-          <Zap className="w-4 h-4 text-brand-primary" />
-          Pagamento Seguro via Kiwify
-        </div>
-        <div className="hidden md:block w-1 h-1 rounded-full bg-brand-border" />
-        <div className="flex items-center gap-2">
-          <Zap className="w-4 h-4 text-brand-primary" />
-          Acesso Imediato ao Código
-        </div>
-        <div className="hidden md:block w-1 h-1 rounded-full bg-brand-border" />
-        <div className="flex items-center gap-2">
-          <Zap className="w-4 h-4 text-brand-primary" />
-          Licença Vitalícia
-        </div>
-      </div>
-    </div>
-  </section>
-);
+        {activeTab === 'embarques' && (
+          <div className="flex-1 flex flex-col gap-2.5 overflow-hidden animate-in fade-in duration-300">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-black text-white">Embarques</h4>
+                <div className="w-7 h-0.5 rounded-full mt-0.5" style={{ backgroundColor: '#F59E0B' }} />
+              </div>
+              <span className="text-[9px] font-bold text-slate-400">10 embarques listados</span>
+            </div>
 
-const MapHubsSection: React.FC = () => (
-  <section className="py-24 bg-white overflow-hidden">
-    <div className="max-w-7xl mx-auto px-6">
-      <div data-dllog-reveal className="text-center mb-16">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-primary/10 text-brand-primary text-[11px] font-bold uppercase tracking-widest mb-4">
-          <MapPin className="w-3 h-3" />
-          Atendimento Nacional
-        </div>
-        <h2 className="text-4xl font-bold text-brand-secondary mb-4">
-          Presença nos Polos <span className="text-brand-primary">Estratégicos</span>
-        </h2>
-        <p className="text-brand-secondary/60 max-w-2xl mx-auto">
-          A DLLOG opera com precisão nos principais eixos produtivos do país, garantindo conectividade e agilidade onde o agronegócio acontece.
-        </p>
-      </div>
+            {/* Pipeline de Status fiel ao original */}
+            <div
+              className="flex items-center gap-1 overflow-x-auto no-scrollbar py-1.5 px-2 rounded-xl border shrink-0"
+              style={{ backgroundColor: '#11192C', borderColor: '#1E293B' }}
+            >
+              {[
+                { label: 'Pendente', count: 0, active: false },
+                { label: 'Pré-cadastro', count: 0, active: false },
+                { label: 'Ag. Carregamento', count: 10, active: true },
+                { label: 'Ag. Nota', count: 3, active: false },
+                { label: 'Ag. Descarga', count: 4, active: false },
+                { label: 'Todos', count: 17, active: false },
+              ].map((st) => (
+                <div
+                  key={st.label}
+                  style={
+                    st.active
+                      ? { backgroundColor: '#2563EB', color: '#FFFFFF' }
+                      : { color: '#94A3B8' }
+                  }
+                  className="px-2 py-1 rounded-lg text-[9px] font-bold whitespace-nowrap flex items-center gap-1 shrink-0"
+                >
+                  <span>{st.label}</span>
+                  <span style={{ opacity: st.active ? 0.95 : 0.6 }}>{st.count}</span>
+                </div>
+              ))}
+            </div>
 
-      <div
-        data-dllog-reveal
-        className="h-[600px] w-full rounded-[2.5rem] overflow-hidden shadow-2xl border-8 border-white bg-brand-neutral relative"
-      >
-        <MapContainer
-          center={[-15.78, -47.93]}
-          zoom={4}
-          className="h-full w-full z-10"
-          scrollWheelZoom={false}
-        >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-          />
-          {HUBS.map((hub, idx) => (
-            <Marker key={idx} position={hub.coords}>
-              <Popup className="custom-popup">
-                <div className="p-2 min-w-[200px]">
-                  <h4 className="font-bold text-brand-primary text-base mb-1">{hub.name}</h4>
-                  <p className="text-xs text-brand-secondary/70 mb-3 leading-relaxed">{hub.description}</p>
-                  <div className="flex items-center gap-2 bg-brand-primary/5 p-2 rounded border border-brand-primary/10">
-                    <Info className="w-3 h-3 text-brand-primary" />
-                    <span className="text-[10px] font-bold text-brand-primary uppercase tracking-wider">{hub.stats}</span>
+            {/* Barra de Filtros */}
+            <div className="flex items-center justify-between shrink-0">
+              <div
+                className="px-2.5 py-1 rounded-lg border text-[9px] font-semibold text-slate-300"
+                style={{ backgroundColor: '#11192C', borderColor: '#1E293B' }}
+              >
+                Filtros Avançados
+              </div>
+              <span className="text-[8px] text-slate-400">Mostrando página 1</span>
+            </div>
+
+            {/* Tabela de Embarques */}
+            <div
+              className="flex-1 rounded-xl border overflow-hidden flex flex-col min-h-0"
+              style={{ backgroundColor: '#0F172A', borderColor: '#1E293B' }}
+            >
+              <div
+                className="grid grid-cols-12 gap-2 px-3 py-2 text-[9px] font-bold text-slate-400 border-b shrink-0"
+                style={{ backgroundColor: '#131C31', borderColor: '#1E293B' }}
+              >
+                <span className="col-span-2">Embarque</span>
+                <span className="col-span-3">Motorista / Veículo</span>
+                <span className="col-span-3">Origem / Destino</span>
+                <span className="col-span-2">Frete / Ton</span>
+                <span className="col-span-2 text-right">Status Atual</span>
+              </div>
+              <div className="divide-y divide-slate-800/80 overflow-y-auto flex-1">
+                {[
+                  {
+                    id: 'DEM-1001',
+                    carga: 'Carga: 501',
+                    driver: 'CARLOS ALBERTO S.',
+                    plate: 'AAA0X01 • Bitrem 7e',
+                    origin: 'Rio Verde, GO',
+                    dest: 'Uberlândia, MG',
+                    margin: '8,7%',
+                    mtr: 'R$ 102,00',
+                    emp: 'R$ 113,00',
+                    hora: 'Previsto: 16:00',
+                  },
+                  {
+                    id: 'DEM-1002',
+                    carga: 'Carga: 502',
+                    driver: 'MARCOS VINICIUS R.',
+                    plate: 'BBB0X02 • Bitrem 7e',
+                    origin: 'Sorriso, MT',
+                    dest: 'Rondonópolis, MT',
+                    margin: '9,1%',
+                    mtr: 'R$ 300,00',
+                    emp: 'R$ 330,00',
+                    hora: 'Previsto: 10:30',
+                  },
+                  {
+                    id: 'DEM-1003',
+                    carga: 'Carga: 503',
+                    driver: 'RAFAEL MENDES P.',
+                    plate: 'CCC0X03 • LS Trucada',
+                    origin: 'Catalão, GO',
+                    dest: 'Santos, SP',
+                    margin: '11,1%',
+                    mtr: 'R$ 120,00',
+                    emp: 'R$ 135,00',
+                    hora: 'Previsto: 12:00',
+                  },
+                  {
+                    id: 'DEM-1004',
+                    carga: 'Carga: 504',
+                    driver: 'RODRIGO FERREIRA L.',
+                    plate: 'DDD0X04 • Rodotrem 9e',
+                    origin: 'Dourados, MS',
+                    dest: 'Paranaguá, PR',
+                    margin: '7,5%',
+                    mtr: 'R$ 185,00',
+                    emp: 'R$ 200,00',
+                    hora: 'Previsto: 14:30',
+                  },
+                ].map((row) => (
+                  <div
+                    key={row.id}
+                    className="grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-slate-800/40 transition-colors text-[10px]"
+                  >
+                    <div className="col-span-2 min-w-0">
+                      <p className="font-bold text-sky-400 truncate">{row.id}</p>
+                      <p className="text-[8px] text-slate-400 truncate">{row.carga}</p>
+                    </div>
+                    <div className="col-span-3 min-w-0">
+                      <p className="font-bold text-slate-100 truncate text-[9px]">{row.driver}</p>
+                      <p className="text-[8px] text-slate-400 truncate">{row.plate}</p>
+                    </div>
+                    <div className="col-span-3 min-w-0">
+                      <p className="font-semibold text-slate-200 truncate text-[9px]">{row.origin}</p>
+                      <p className="text-[8px] text-slate-400 truncate">→ {row.dest}</p>
+                    </div>
+                    <div className="col-span-2 min-w-0">
+                      <p className="font-bold text-white text-[9px] truncate">MTR: {row.mtr}</p>
+                      <p className="text-[8px] text-sky-400 font-semibold truncate">EMP: {row.emp}</p>
+                    </div>
+                    <div className="col-span-2 text-right flex flex-col items-end gap-0.5">
+                      <span className="text-[7px] text-amber-400 font-semibold">{row.hora}</span>
+                      <span
+                        className="inline-block px-1.5 py-0.5 rounded text-white text-[8px] font-bold whitespace-nowrap"
+                        style={{ backgroundColor: '#10B981' }}
+                      >
+                        Marcar Chegada
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'cargas' && (
+          <div className="flex-1 flex flex-col gap-2.5 overflow-hidden animate-in fade-in duration-300">
+            <div className="flex items-center justify-between gap-2 shrink-0">
+              <div>
+                <h4 className="text-sm font-black text-white">Oportunidades de Carga</h4>
+                <div className="w-7 h-0.5 rounded-full mt-0.5" style={{ backgroundColor: '#F59E0B' }} />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="px-2 py-1 rounded-lg text-white text-[9px] font-bold"
+                  style={{ backgroundColor: '#10B981' }}
+                >
+                  Divulgar Cargas
+                </span>
+                <span
+                  className="px-2 py-1 rounded-lg text-white text-[9px] font-bold hidden sm:inline"
+                  style={{ backgroundColor: '#2563EB' }}
+                >
+                  Prompt Fretebras
+                </span>
+              </div>
+            </div>
+
+            <div className="flex-1 space-y-2 overflow-y-auto pr-0.5 min-h-0">
+              {[
+                {
+                  code: '#501',
+                  client: 'Agropecuária Horizonte',
+                  product: 'Calcário',
+                  origin: 'Catalão, GO',
+                  dest: 'Uberaba, MG',
+                  disp: '120 TON',
+                  pct: 59,
+                  rate: 'R$ 120,00/t',
+                  margin: '11,11%',
+                },
+                {
+                  code: '#502',
+                  client: 'Cooperativa Cerrado Sul',
+                  product: 'SORGO',
+                  origin: 'Rio Verde, GO',
+                  dest: 'Uberlândia, MG',
+                  disp: '462 TON',
+                  pct: 18,
+                  rate: 'R$ 102,00/t',
+                  margin: '9,73%',
+                },
+                {
+                  code: '#503',
+                  client: 'Grãos do Centro Ltda',
+                  product: 'Milho em Grãos',
+                  origin: 'Sorriso, MT',
+                  dest: 'Santos, SP',
+                  disp: '1.000 TON',
+                  pct: 8,
+                  rate: 'R$ 255,00/t',
+                  margin: '5,56%',
+                },
+                {
+                  code: '#504',
+                  client: 'Fazenda Nova Era',
+                  product: 'Milho em Grãos',
+                  origin: 'Dourados, MS',
+                  dest: 'Paranaguá, PR',
+                  disp: '760 TON',
+                  pct: 22,
+                  rate: 'R$ 185,00/t',
+                  margin: '7,50%',
+                },
+              ].map((load) => (
+                <div
+                  key={load.code}
+                  className="p-2.5 rounded-xl border flex items-center justify-between gap-2 text-[10px]"
+                  style={{ backgroundColor: '#0F172A', borderColor: '#1E293B' }}
+                >
+                  <div className="min-w-0 w-36">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sky-400 font-black">{load.code}</span>
+                      <span className="font-bold text-white truncate">{load.client}</span>
+                    </div>
+                    <p className="text-[9px] text-slate-400">{load.product}</p>
+                  </div>
+
+                  <div className="hidden sm:flex items-center gap-1 shrink-0">
+                    {['DOM 15/11', 'SEG 16/11', 'TER 17/11'].map((d) => (
+                      <span
+                        key={d}
+                        className="px-1.5 py-0.5 rounded border text-[8px] font-bold text-slate-300"
+                        style={{ backgroundColor: '#131C31', borderColor: '#24324D' }}
+                      >
+                        {d}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[9px] font-semibold text-slate-200 truncate">
+                      {load.origin} → {load.dest}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${load.pct}%`, backgroundColor: '#10B981' }} />
+                      </div>
+                      <span className="text-[8px] font-bold text-emerald-400 whitespace-nowrap">
+                        DISP: {load.disp}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <p className="font-black text-sky-300 text-[10px]">{load.rate}</p>
+                    <p className="text-[8px] font-bold text-emerald-400">{load.margin}</p>
                   </div>
                 </div>
-              </Popup>
-            </Marker>
-          ))}
-        </MapContainer>
+              ))}
+            </div>
+          </div>
+        )}
 
-        {/* Overlay info */}
-        <div className="absolute top-6 right-6 z-20 hidden md:block">
-          <div className="bg-white/90 backdrop-blur-md p-6 rounded-2xl shadow-xl border border-brand-neutral max-w-[240px]">
-            <p className="text-sm font-bold text-brand-secondary mb-2">Cobertura Integrada</p>
-            <p className="text-xs text-brand-secondary/60 leading-relaxed mb-4">
-              Monitoramos cada etapa do transporte através destes centros tecnológicos de distribuição.
-            </p>
-            <div className="space-y-2">
+        {activeTab === 'mapa' && (
+          <div className="flex-1 flex flex-col gap-2 overflow-hidden animate-in fade-in duration-300 min-h-0">
+            <div className="flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-brand-primary" />
-                <span className="text-[10px] font-bold text-brand-secondary uppercase">Monitoramento 24/7</span>
+                <h4 className="text-sm font-black text-white">Mapa Operacional Logístico</h4>
+                <span
+                  className="px-2 py-0.5 rounded text-white text-[8px] font-bold"
+                  style={{ backgroundColor: '#10B981' }}
+                >
+                  Divulgar (3)
+                </span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-brand-primary" />
-                <span className="text-[10px] font-bold text-brand-secondary uppercase">Suporte Local</span>
+              <span className="text-[9px] font-bold text-slate-400">Sincronizado</span>
+            </div>
+
+            {/* 4 KPIs do Mapa */}
+            <div className="grid grid-cols-4 gap-2 shrink-0">
+              {[
+                { label: 'CARGAS NO RAIO', val: '3', color: '#38BDF8' },
+                { label: 'VOLUME DISP.', val: '732 ton', color: '#34D399' },
+                { label: 'MÉDIA FRETE', val: 'R$ 1.599', color: '#FBBF24' },
+                { label: 'CORREDORES', val: '3 origens', color: '#A78BFA' },
+              ].map((kpi) => (
+                <div
+                  key={kpi.label}
+                  className="p-2 rounded-xl border"
+                  style={{ backgroundColor: '#0F172A', borderColor: '#1E293B' }}
+                >
+                  <p className="text-[7px] font-bold text-slate-400 uppercase truncate">{kpi.label}</p>
+                  <p className="text-xs font-black mt-0.5" style={{ color: kpi.color }}>
+                    {kpi.val}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* Área Mapa Real Leaflet + Parâmetros de Busca */}
+            <div className="flex-1 grid grid-cols-12 gap-2.5 min-h-0">
+              <div
+                className="col-span-8 rounded-xl border relative overflow-hidden"
+                style={{ borderColor: '#24324D', backgroundColor: '#E2E8F0' }}
+              >
+                <MapContainer
+                  center={[-18.17, -48.3]}
+                  zoom={6}
+                  zoomControl={false}
+                  dragging={false}
+                  scrollWheelZoom={false}
+                  doubleClickZoom={false}
+                  attributionControl={false}
+                  className="h-full w-full z-10"
+                >
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                  <Circle
+                    center={[-18.17, -48.1]}
+                    radius={150000}
+                    pathOptions={{
+                      color: '#2563EB',
+                      weight: 2,
+                      fillColor: '#3B82F6',
+                      fillOpacity: 0.14,
+                    }}
+                  />
+                  {DEMO_MAP_CARGOS.map((c) => (
+                    <Marker key={c.code} position={c.coords} icon={createDemoMapPinIcon(c.code)} />
+                  ))}
+                </MapContainer>
+
+                {/* Seletor de Estilo no Canto Superior Esquerdo igual ao original */}
+                <div
+                  className="absolute top-2 left-2 z-20 flex items-center gap-1 p-0.5 rounded-lg border shadow-md"
+                  style={{ backgroundColor: '#0F172A', borderColor: '#334155' }}
+                >
+                  {['Padrão', 'Satélite', 'Dark', 'Claro'].map((mode, idx) => (
+                    <span
+                      key={mode}
+                      style={idx === 0 ? { backgroundColor: '#2563EB', color: '#FFFFFF' } : { color: '#94A3B8' }}
+                      className="px-1.5 py-0.5 rounded text-[7px] font-bold"
+                    >
+                      {mode}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Painel Parâmetros de Busca fiel ao original */}
+              <div
+                className="col-span-4 rounded-xl border p-2.5 flex flex-col justify-between min-h-0"
+                style={{ backgroundColor: '#0F172A', borderColor: '#1E293B' }}
+              >
+                <div className="space-y-2">
+                  <p className="text-[8px] font-black text-slate-300 uppercase tracking-wider">
+                    Parâmetros de Busca
+                  </p>
+                  <div
+                    className="p-1.5 rounded-lg border"
+                    style={{ backgroundColor: '#080E1A', borderColor: '#1E293B' }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-[7px] text-sky-400 font-bold">Origem (Coleta)</p>
+                      <span
+                        className="px-1 py-0.2 rounded text-[7px] font-bold text-white"
+                        style={{ backgroundColor: '#2563EB' }}
+                      >
+                        400 km
+                      </span>
+                    </div>
+                    <p className="text-[9px] text-white font-semibold mt-0.5 truncate">Catalão, GO</p>
+                  </div>
+                  <div
+                    className="p-1.5 rounded-lg border"
+                    style={{ backgroundColor: '#080E1A', borderColor: '#1E293B' }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-[7px] text-rose-400 font-bold">Destino (Opcional)</p>
+                      <span
+                        className="px-1 py-0.2 rounded text-[7px] font-bold text-white"
+                        style={{ backgroundColor: '#DC2626' }}
+                      >
+                        200 km
+                      </span>
+                    </div>
+                    <p className="text-[9px] text-slate-400 mt-0.5 truncate">Ex: Santos, SP</p>
+                  </div>
+                </div>
+                <div
+                  className="py-1.5 rounded-lg text-center text-[9px] font-black text-white shadow-md"
+                  style={{ backgroundColor: '#2563EB' }}
+                >
+                  Filtrar Cargas no Mapa
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Rodapé da Demonstração ── */}
+      <div
+        className="border-t px-4 py-2 flex items-center justify-between text-[9px] text-slate-400 shrink-0"
+        style={{ backgroundColor: '#0F172A', borderColor: '#1E293B' }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <TrendingUp className="w-3 h-3 text-sky-400 shrink-0" />
+          <span className="truncate">Demonstração Interativa • Clique nas abas acima</span>
+        </div>
+        <span className="font-black text-sky-400/85 uppercase shrink-0">© DLLOG INFRA</span>
+      </div>
+    </div>
+  );
+};
+
+const MapHubsSection: React.FC = () => {
+  const [selectedHubIndex, setSelectedHubIndex] = useState<number | null>(null);
+  const activeHub = selectedHubIndex !== null ? HUBS[selectedHubIndex] : null;
+  const mapCenter: [number, number] = activeHub ? activeHub.coords : [-16.5, -50.8];
+  const mapZoom = activeHub ? 7 : 4;
+
+  return (
+    <section className="py-24 bg-white overflow-hidden">
+      <style>{`
+        .dllog-site-map .leaflet-tile-pane {
+          filter: saturate(0.75) contrast(1.04) brightness(1.02);
+        }
+        .dllog-site-map .leaflet-popup-content-wrapper {
+          border-radius: 1rem;
+          border: 1px solid #e7e5e4;
+          box-shadow: 0 20px 35px -10px rgba(28, 25, 23, 0.2);
+        }
+      `}</style>
+      <div className="max-w-7xl mx-auto px-6">
+        <div data-dllog-reveal className="text-center mb-12">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-primary/10 text-brand-primary text-[11px] font-bold uppercase tracking-widest mb-4">
+            <MapPin className="w-3 h-3" />
+            Atendimento Nacional
+          </div>
+          <h2 className="text-4xl font-bold text-brand-secondary mb-4">
+            Presença nos Polos <span className="text-brand-primary">Estratégicos</span>
+          </h2>
+          <p className="text-brand-secondary/60 max-w-2xl mx-auto">
+            A DLLOG opera com precisão nos principais eixos produtivos do país, garantindo conectividade e agilidade onde o agronegócio acontece.
+          </p>
+        </div>
+
+        <div
+          data-dllog-reveal
+          className="dllog-site-map h-[560px] w-full rounded-[2.5rem] overflow-hidden shadow-2xl border-8 border-white bg-stone-100 relative"
+        >
+          <MapContainer
+            center={[-16.5, -50.8]}
+            zoom={4}
+            className="h-full w-full z-10"
+            scrollWheelZoom={false}
+          >
+            <MapFocusController center={mapCenter} zoom={mapZoom} />
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+
+            {/* Corredores Logísticos Conectando os Polos */}
+            {HUB_ROUTES.map((route, rIdx) => (
+              <Polyline
+                key={rIdx}
+                positions={route}
+                pathOptions={{
+                  color: '#B07D3C',
+                  weight: 2.5,
+                  opacity: 0.65,
+                  dashArray: '6, 8',
+                }}
+              />
+            ))}
+
+            {HUBS.map((hub, idx) => (
+              <Marker
+                key={idx}
+                position={hub.coords}
+                icon={createHubPinIcon(selectedHubIndex === idx)}
+                eventHandlers={{
+                  click: () => setSelectedHubIndex(idx),
+                }}
+              >
+                <Popup className="custom-popup">
+                  <div className="p-2 min-w-[210px]">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <h4 className="font-bold text-brand-primary text-base">{hub.name}</h4>
+                      <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                        Polo Ativo
+                      </span>
+                    </div>
+                    <p className="text-xs text-brand-secondary/75 mb-3 leading-relaxed">{hub.description}</p>
+                    <div className="flex items-center gap-2 bg-brand-primary/10 p-2 rounded-lg border border-brand-primary/20">
+                      <Info className="w-3.5 h-3.5 text-brand-primary shrink-0" />
+                      <span className="text-[10px] font-bold text-brand-primary uppercase tracking-wider">{hub.stats}</span>
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+          </MapContainer>
+
+          {/* Overlay info */}
+          <div className="absolute top-6 right-6 z-20 hidden md:block">
+            <div className="bg-white/95 backdrop-blur-md p-6 rounded-2xl shadow-xl border border-stone-200/80 max-w-[260px]">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                <p className="text-sm font-bold text-brand-secondary">
+                  {activeHub ? activeHub.name : 'Cobertura Integrada'}
+                </p>
+              </div>
+              <p className="text-xs text-brand-secondary/70 leading-relaxed mb-4">
+                {activeHub
+                  ? activeHub.description
+                  : 'Monitoramos cada etapa do transporte através destes centros tecnológicos de distribuição.'}
+              </p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-brand-primary" />
+                  <span className="text-[10px] font-bold text-brand-secondary uppercase">Monitoramento 24/7</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-brand-primary" />
+                  <span className="text-[10px] font-bold text-brand-secondary uppercase">
+                    {activeHub ? activeHub.stats : '6 Polos Agrícolas Conectados'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  </section>
-);
+    </section>
+  );
+};
 
 const PartnersSection: React.FC = () => (
   <section className="py-12 bg-white border-t border-brand-border overflow-hidden">
@@ -615,7 +1109,6 @@ export const InstitutionalWebsitePage: React.FC<InstitutionalWebsitePageProps> =
               { href: '#home', label: 'Início' },
               { href: '#sobre', label: 'Sobre' },
               { href: '#sistema', label: 'Sistema' },
-              { href: '#precos', label: 'Preços' },
               { href: '#servicos', label: 'Serviços' },
             ].map((item) => (
               <a
@@ -636,7 +1129,7 @@ export const InstitutionalWebsitePage: React.FC<InstitutionalWebsitePageProps> =
                 className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-stone-300/90 bg-white text-stone-800 hover:bg-stone-900 hover:text-white hover:border-stone-900 transition-all duration-200 text-[11px] font-bold uppercase tracking-[0.12em] shadow-2xs cursor-pointer"
               >
                 <LogIn className="w-3.5 h-3.5 text-[#A67142]" />
-                <span>{isLoggedIn ? 'Voltar ao Sistema' : 'Acessar Sistema'}</span>
+                <span>{isLoggedIn ? 'Voltar ao Sistema' : 'Acessar Portal'}</span>
               </button>
             )}
             <button
@@ -665,7 +1158,6 @@ export const InstitutionalWebsitePage: React.FC<InstitutionalWebsitePageProps> =
               <a href="#home" onClick={() => setMobileMenuOpen(false)} className="text-stone-700 hover:text-brand-primary py-1">Início</a>
               <a href="#sobre" onClick={() => setMobileMenuOpen(false)} className="text-stone-700 hover:text-brand-primary py-1">Sobre</a>
               <a href="#sistema" onClick={() => setMobileMenuOpen(false)} className="text-stone-700 hover:text-brand-primary py-1">Sistema</a>
-              <a href="#precos" onClick={() => setMobileMenuOpen(false)} className="text-stone-700 hover:text-brand-primary py-1">Preços</a>
               <a href="#servicos" onClick={() => setMobileMenuOpen(false)} className="text-stone-700 hover:text-brand-primary py-1">Serviços</a>
             </div>
             <div className="pt-2 flex flex-col gap-2 border-t border-stone-100">
@@ -677,7 +1169,7 @@ export const InstitutionalWebsitePage: React.FC<InstitutionalWebsitePageProps> =
                   }}
                   className="w-full py-2 rounded-lg border border-stone-300 text-stone-800 text-[11px] font-bold uppercase tracking-wider"
                 >
-                  {isLoggedIn ? 'Voltar ao Sistema' : 'Acessar Sistema'}
+                  {isLoggedIn ? 'Voltar ao Sistema' : 'Acessar Portal'}
                 </button>
               )}
               <button
@@ -845,169 +1337,7 @@ export const InstitutionalWebsitePage: React.FC<InstitutionalWebsitePageProps> =
               <div className="relative group">
                 <div className="absolute -inset-4 bg-brand-primary/10 rounded-[2.5rem] blur-2xl group-hover:bg-brand-primary/20 transition-all" />
 
-                {/* ── Dashboard Container ── */}
-                <div className="relative bg-[#f8f6f2] rounded-[2.5rem] border border-brand-secondary/5 overflow-hidden shadow-2xl flex flex-col h-[520px]">
-                  {/* --- Dashboard Header --- */}
-                  <div className="bg-brand-secondary px-6 py-4 flex items-center justify-between border-b border-white/5">
-                    <div className="flex items-center gap-4">
-                      <div className="flex gap-1.5">
-                        <div className="w-2.5 h-2.5 rounded-full bg-red-400/80 shadow-sm" />
-                        <div className="w-2.5 h-2.5 rounded-full bg-yellow-400/80 shadow-sm" />
-                        <div className="w-2.5 h-2.5 rounded-full bg-green-400/80 shadow-sm" />
-                      </div>
-                      <div className="h-4 w-px bg-white/10 mx-2" />
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded bg-brand-primary/20 flex items-center justify-center">
-                          <Zap className="w-3 h-3 text-brand-primary" />
-                        </div>
-                        <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">
-                          DLLOG OPERATIONAL v2.4
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                      <span className="text-[10px] font-bold text-green-500/80 uppercase tracking-widest">
-                        SISTEMA ONLINE
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex-1 flex overflow-hidden lg:flex-row flex-col">
-                    {/* --- Map Area (Left) --- */}
-                    <div className="flex-1 bg-brand-neutral relative p-4 overflow-hidden min-h-[300px]">
-                      {/* Simulated Map Background */}
-                      <div
-                        className="absolute inset-0 opacity-40 mix-blend-multiply grayscale contrast-125"
-                        style={{
-                          backgroundImage: 'radial-gradient(#a67c52 1px, transparent 1px)',
-                          backgroundSize: '24px 24px',
-                        }}
-                      />
-
-                      {/* Floating Marker Popup */}
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 w-56 bg-white rounded-xl shadow-2xl border border-brand-primary/20 overflow-hidden">
-                        <div className="bg-brand-primary/5 px-4 py-3 border-b border-brand-primary/10 flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-brand-primary uppercase tracking-wider">
-                            Carga #1502
-                          </span>
-                          <BarChart3 className="w-3 h-3 text-brand-primary" />
-                        </div>
-                        <div className="p-4 space-y-3">
-                          <div>
-                            <p className="text-[9px] text-brand-secondary/40 font-bold uppercase tracking-tight">Rota</p>
-                            <p className="text-[11px] font-bold text-brand-secondary leading-tight">
-                              Sorriso, MT → Santos, SP
-                            </p>
-                          </div>
-                          <div className="flex justify-between">
-                            <div>
-                              <p className="text-[9px] text-brand-secondary/40 font-bold uppercase tracking-tight">
-                                Valor/ton
-                              </p>
-                              <p className="text-[11px] font-bold text-brand-primary">R$ 315,00</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-[9px] text-brand-secondary/40 font-bold uppercase tracking-tight">
-                                Volume
-                              </p>
-                              <p className="text-[11px] font-bold text-brand-secondary">36.5 ton</p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => setIsModalOpen(true)}
-                            className="w-full py-2 bg-gold-gradient text-brand-secondary rounded-lg text-[10px] font-bold uppercase tracking-widest hover:brightness-110 transition-all cursor-pointer shadow-lg shadow-brand-primary/10 border border-brand-primary/20"
-                          >
-                            Aceitar Embarque
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Other decorative markers */}
-                      {[
-                        { t: '20%', l: '30%' },
-                        { t: '70%', l: '15%' },
-                        { t: '40%', l: '80%' },
-                        { t: '80%', l: '85%' },
-                      ].map((m, i) => (
-                        <div
-                          key={i}
-                          className="absolute w-2 h-2 rounded-full bg-brand-primary/30 border border-brand-primary/50 animate-pulse"
-                          style={{ top: m.t, left: m.l }}
-                        />
-                      ))}
-                    </div>
-
-                    {/* --- Sidebar (Right) --- */}
-                    <div className="w-full lg:w-72 bg-white border-l border-brand-secondary/5 p-5 space-y-6 overflow-y-auto">
-                      <div>
-                        <h4 className="text-[10px] font-black text-brand-secondary uppercase tracking-[0.2em] mb-4">
-                          Busca Operacional
-                        </h4>
-                        <div className="space-y-4">
-                          <div className="space-y-1.5">
-                            <label className="text-[9px] font-bold text-brand-secondary/50 uppercase ml-1">Origem</label>
-                            <div className="h-9 w-full bg-brand-neutral rounded-lg border border-brand-secondary/5 flex items-center px-3 gap-3">
-                              <MapPin className="w-3.5 h-3.5 text-brand-primary" />
-                              <div className="h-2 w-20 bg-brand-secondary/10 rounded-full" />
-                            </div>
-                          </div>
-                          <div className="space-y-1.5">
-                            <label className="text-[9px] font-bold text-brand-secondary/50 uppercase ml-1">Destino</label>
-                            <div className="h-9 w-full bg-brand-neutral rounded-lg border border-brand-secondary/5 flex items-center px-3 gap-3">
-                              <MapPin className="w-3.5 h-3.5 text-brand-secondary/20" />
-                              <div className="h-2 w-24 bg-brand-secondary/10 rounded-full" />
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => setIsModalOpen(true)}
-                            className="w-full py-3 bg-brand-secondary text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-lg shadow-brand-secondary/10 hover:opacity-90 transition-opacity cursor-pointer"
-                          >
-                            Localizar Fretes
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="pt-2">
-                        <div className="flex items-center justify-between mb-4">
-                          <h4 className="text-[10px] font-black text-brand-secondary uppercase tracking-[0.2em]">
-                            Cargas Ativas
-                          </h4>
-                          <span className="w-5 h-5 bg-brand-primary/10 rounded-full flex items-center justify-center text-[9px] font-extrabold text-brand-primary">
-                            12
-                          </span>
-                        </div>
-                        <div className="space-y-2">
-                          {[1, 2, 3].map((i) => (
-                            <div
-                              key={i}
-                              className="p-3 rounded-xl bg-brand-neutral/50 border border-transparent hover:border-brand-primary/20 transition-all cursor-default group"
-                            >
-                              <div className="flex justify-between items-start mb-2">
-                                <div className="h-2 w-16 bg-brand-secondary/10 rounded-full" />
-                                <div className="h-2 w-10 bg-brand-primary/20 rounded-full" />
-                              </div>
-                              <div className="h-2 w-full bg-brand-secondary/5 rounded-full mb-1.5" />
-                              <div className="h-2 w-2/3 bg-brand-secondary/5 rounded-full" />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* --- Footer Status Bar --- */}
-                  <div className="bg-brand-neutral border-t border-brand-secondary/5 px-6 py-2 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <TrendingUp className="w-3 h-3 text-brand-primary" />
-                      <div className="h-1.5 w-32 bg-brand-secondary/10 rounded-full overflow-hidden">
-                        <div className="h-full w-[65%] bg-brand-primary" />
-                      </div>
-                      <span className="text-[8px] font-bold text-brand-secondary/40">OTIMIZAÇÃO: 65%</span>
-                    </div>
-                    <span className="text-[9px] font-black text-brand-secondary/30 uppercase">© DLLOG INFRA</span>
-                  </div>
-                </div>
+                <InteractiveSystemDemoWindow />
               </div>
             </div>
 
@@ -1049,8 +1379,6 @@ export const InstitutionalWebsitePage: React.FC<InstitutionalWebsitePageProps> =
           </div>
         </div>
       </section>
-
-      <PricingSection />
 
       {/* Connectivity Banner */}
       <section className="bg-brand-secondary py-12">
@@ -1264,7 +1592,6 @@ export const InstitutionalWebsitePage: React.FC<InstitutionalWebsitePageProps> =
                 <a href="#home" className="hover:text-brand-primary transition-colors">Início</a>
                 <a href="#sobre" className="hover:text-brand-primary transition-colors">Quem Somos</a>
                 <a href="#sistema" className="hover:text-brand-primary transition-colors">Tecnologia</a>
-                <a href="#precos" className="hover:text-brand-primary transition-colors">Preços</a>
                 <a href="#servicos" className="hover:text-brand-primary transition-colors">Serviços</a>
               </div>
             </div>

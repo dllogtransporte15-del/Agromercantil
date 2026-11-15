@@ -5010,14 +5010,21 @@ const App: React.FC = () => {
     );
   }
 
-  if (location.pathname === '/curso-embarcador' || location.pathname === '/curso' || location.pathname === '/curso-aluno') {
+  if (currentUser && (location.pathname === '/curso-embarcador' || location.pathname === '/curso' || location.pathname === '/curso-aluno')) {
     return (
       <React.Suspense fallback={<PageLoadingFallback />}>
         <ShipperCoursePage 
           currentUser={currentUser} 
-          onBackToApp={currentUser && currentUser.profile !== UserProfile.Aluno ? () => navigate('/') : undefined}
-          onLogout={currentUser ? handleLogout : undefined}
+          onBackToApp={currentUser.profile !== UserProfile.Aluno ? () => navigate('/') : undefined}
+          onLogout={handleLogout}
         />
+        {currentUser?.requirePasswordChange && (
+          <PasswordChangeModal 
+            user={currentUser} 
+            onPasswordChange={handlePasswordChange} 
+            onCancel={handleLogout}
+          />
+        )}
       </React.Suspense>
     );
   }

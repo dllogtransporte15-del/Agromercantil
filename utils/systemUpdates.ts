@@ -27,6 +27,146 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_15_v2_116_43',
+    version: 'v2.116.43',
+    date: '15/11/2026',
+    title: 'Refinamento Visual da Demonstração Interativa do Sistema no Site',
+    summary: 'Corrigida a sobreposição de abas no cabeçalho da janela de demonstração, aplicada a paleta azul/marinho original do sistema e integrado mapa real OpenStreetMap com raio de busca na aba Mapa.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Fidelidade Visual ao Sistema Original e Zero Sobreposição',
+        description: 'Refinado o componente InteractiveSystemDemoWindow em InstitutionalWebsitePage.tsx com abas compactas sem sobreposição, cores fiéis (#0B1120, #2563EB, #10B981) e mapa Leaflet real com círculo de raio 400km.'
+      }
+    ],
+    excludeProfiles: [UserProfile.Aluno]
+  },
+  {
+    id: 'rel_2026_11_15_v2_116_42',
+    version: 'v2.116.42',
+    date: '15/11/2026',
+    title: 'Anonimização Completa dos Dados na Demonstração do Site Institucional',
+    summary: 'Substituídos nomes de motoristas, IDs de embarque/carga, clientes e placas na demonstração interativa do site por dados 100% fictícios para proteção de privacidade.',
+    items: [
+      {
+        category: 'security',
+        title: 'Dados Fictícios na Demonstração Pública',
+        description: 'Atualizado o componente InteractiveSystemDemoWindow em InstitutionalWebsitePage.tsx com IDs (DEM-1001..1004), placas (AAA0X01..DDD0X04), motoristas e clientes totalmente fictícios.'
+      }
+    ],
+    excludeProfiles: [UserProfile.Aluno]
+  },
+  {
+    id: 'rel_2026_11_15_v2_116_41',
+    version: 'v2.116.41',
+    date: '15/11/2026',
+    title: 'Nova Demonstração Interativa do Sistema no Site Institucional (3 Telas Reais)',
+    summary: 'Substituído o mockup estático da seção Sistema por uma demonstração interativa com as telas reais de Embarques, Oportunidades de Carga e Mapa Operacional Logístico, com censura da logo do operador.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Demonstração Interativa com Alternância Automática e Manual',
+        description: 'Criado o componente InteractiveSystemDemoWindow em InstitutionalWebsitePage.tsx simulando Embarques, Oportunidades de Carga e Mapa Operacional com raio de busca e logo superior censurada.'
+      }
+    ],
+    excludeProfiles: [UserProfile.Aluno]
+  },
+  {
+    id: 'rel_2026_11_15_v2_116_40',
+    version: 'v2.116.40',
+    date: '15/11/2026',
+    title: 'Remoção dos Botões de Nomes das Cidades Acima do Mapa no Site',
+    summary: 'Removida a barra de botões com nomes das cidades acima do mapa de polos estratégicos no site institucional, mantendo a interação diretamente pelos pinos no mapa.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Layout Limpo na Seção do Mapa',
+        description: 'Removido o seletor em pílulas com nomes das cidades acima do mapa em InstitutionalWebsitePage.tsx.'
+      }
+    ],
+    excludeProfiles: [UserProfile.Aluno]
+  },
+  {
+    id: 'rel_2026_11_15_v2_116_39',
+    version: 'v2.116.39',
+    date: '15/11/2026',
+    title: 'Inclusão da Logo TransCunha na Vitrine de Parceiros do Site',
+    summary: 'Adicionada a logo oficial da TransCunha ("Soluções que Movem o Futuro") no carrossel "Empresas que Confiam em Nós" do site institucional.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Novo Parceiro na Vitrine Institucional',
+        description: 'Salva a imagem public/partners/transcunha.png e adicionada à lista PARTNERS em InstitutionalWebsitePage.tsx.'
+      }
+    ],
+    excludeProfiles: [UserProfile.Aluno]
+  },
+  {
+    id: 'rel_2026_11_15_v2_116_38',
+    version: 'v2.116.38',
+    date: '15/11/2026',
+    title: 'Exigência de Login Obrigatório para Acessar o Link Direto do Curso',
+    summary: 'As rotas /curso-embarcador, /curso e /curso-aluno agora exigem autenticação obrigatória antes de liberar o acesso ao conteúdo e às aulas em áudio.',
+    items: [
+      {
+        category: 'security',
+        title: 'Autenticação Obrigatória em /curso-embarcador',
+        description: 'Atualizado o roteamento em App.tsx para exigir login prévio ao acessar https://www.dllog.space/curso-embarcador. Após o login, o usuário (incluindo perfil Aluno) é direcionado automaticamente ao curso.'
+      }
+    ],
+    excludeProfiles: [UserProfile.Aluno]
+  },
+  {
+    id: 'rel_2026_11_15_v2_116_37',
+    version: 'v2.116.37',
+    date: '15/11/2026',
+    title: 'Atualização do Botão "Acessar Portal" no Site Institucional',
+    summary: 'Alterado o rótulo do botão de acesso no cabeçalho desktop e menu mobile do site institucional de "Acessar Sistema" para "Acessar Portal".',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Nomenclatura Executiva no Cabeçalho do Site',
+        description: 'Substituído o texto "Acessar Sistema" por "Acessar Portal" em InstitutionalWebsitePage.tsx.'
+      }
+    ],
+    excludeProfiles: [UserProfile.Aluno]
+  },
+  {
+    id: 'rel_2026_11_15_v2_116_36',
+    version: 'v2.116.36',
+    date: '15/11/2026',
+    title: 'Remoção da Seção de Investimento / Preços do Site Institucional',
+    summary: 'Removida a seção comercial de "Investimento / Adquira a Tecnologia DLLOG" e os respectivos links de "Preços" do cabeçalho e rodapé do site institucional.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Site Institucional Focado em Operação Logística',
+        description: 'Removido o bloco PricingSection ("Investimento") e os atalhos de "Preços" da navegação superior, menu mobile e sitemap do rodapé em InstitutionalWebsitePage.tsx.'
+      }
+    ],
+    excludeProfiles: [UserProfile.Aluno]
+  },
+  {
+    id: 'rel_2026_11_15_v2_116_35',
+    version: 'v2.116.35',
+    date: '15/11/2026',
+    title: 'Ativação do Mapa Interativo de Polos Estratégicos e Atualização de Parceiros no Site',
+    summary: 'Substituição do provedor de mapa que exigia chave de API por visualização OpenStreetMap ativa com pinos dourados interativos, rotas logísticas e remoção das logos Bioma Trading e MMJV.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Mapa "Presença nos Polos Estratégicos" Ativado e Refinado',
+        description: 'Corrigida a exibição do mapa em InstitutionalWebsitePage.tsx substituindo o provedor CartoDB ("API KEY REQUIRED") por OpenStreetMap com filtro corporativo, pinos personalizados DLLOG, rotas conectando os 6 polos e seletor interativo com zoom automático.'
+      },
+      {
+        category: 'improvement',
+        title: 'Atualização da Vitrine de Parceiros e Clientes',
+        description: 'Removidas as logos "Bioma Trading" e "MMJV" da lista de parceiros exibida no site institucional.'
+      }
+    ],
+    excludeProfiles: [UserProfile.Aluno]
+  },
+  {
     id: 'rel_2026_11_15_v2_116_34',
     version: 'v2.116.34',
     date: '15/11/2026',
