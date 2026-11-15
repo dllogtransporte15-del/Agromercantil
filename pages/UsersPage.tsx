@@ -205,6 +205,30 @@ const UsersPage: React.FC<UsersPageProps> = ({
     }
   };
 
+  const handleCopyAccessMessage = async (targetUser: User) => {
+    const passwordText = targetUser.password && String(targetUser.password).trim() !== ''
+      ? targetUser.password
+      : 'Não informada no cadastro';
+    const message = [
+      `Olá, *${targetUser.name}*! 👋`,
+      '',
+      'Segue seus dados de acesso ao sistema *DLLOG Transportes*:',
+      '',
+      '🔗 *Link:* https://dllog.space',
+      `👤 *Usuário:* ${targetUser.email}`,
+      `🔑 *Senha:* ${passwordText}`,
+      '',
+      'Qualquer dúvida, estou à disposição!'
+    ].join('\n');
+
+    try {
+      await navigator.clipboard.writeText(message);
+      showToast(`Mensagem de acesso de ${targetUser.name} copiada para o WhatsApp!`, 'success');
+    } catch {
+      window.prompt('Copie a mensagem de acesso para enviar no WhatsApp:', message);
+    }
+  };
+
   return (
     <>
       <Header title="Gerenciar Usuários">
@@ -357,6 +381,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
         onEdit={canUpdateUser ? handleEditUser : undefined} 
         onDelete={canDeleteUser ? handleDeleteUser : undefined}
         onInspectUser={isAdmin ? (user) => setUserToInspect(user) : undefined}
+        onCopyAccessMessage={handleCopyAccessMessage}
         clients={clients}
         branches={branches}
         showAppOptionColumn={activeTab === 'internal' || activeTab === 'all'}

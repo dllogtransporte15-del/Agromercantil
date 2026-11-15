@@ -1,9 +1,9 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { User, Client, Branch } from '../types';
 import { UserProfile } from '../types';
 import { WhatsAppIcon } from './icons';
-import { Building2, Smartphone, PhoneOff, Eye, Mail } from 'lucide-react';
+import { Building2, Smartphone, PhoneOff, Eye, Mail, Check } from 'lucide-react';
 
 interface UserTableProps {
   users: User[];
@@ -11,6 +11,7 @@ interface UserTableProps {
   onEdit?: (user: User) => void;
   onDelete?: (userId: string) => void;
   onInspectUser?: (user: User) => void;
+  onCopyAccessMessage?: (user: User) => void;
   clients?: Client[];
   branches?: Branch[];
   showAppOptionColumn?: boolean;
@@ -23,11 +24,22 @@ const UserTable: React.FC<UserTableProps> = ({
   onEdit, 
   onDelete, 
   onInspectUser, 
+  onCopyAccessMessage,
   clients, 
   branches,
   showAppOptionColumn = false, 
   onToggleDriverRequests 
 }) => {
+  const [copiedUserId, setCopiedUserId] = useState<string | null>(null);
+
+  const handleCopyClick = (user: User) => {
+    if (!onCopyAccessMessage) return;
+    onCopyAccessMessage(user);
+    setCopiedUserId(user.id);
+    window.setTimeout(() => {
+      setCopiedUserId((prev) => (prev === user.id ? null : prev));
+    }, 2000);
+  };
   const getWhatsAppUrl = (phone: string) => {
     const digits = phone.replace(/\D/g, '');
     const finalDigits = (digits.length === 10 || digits.length === 11) ? `55${digits}` : digits;
@@ -58,8 +70,8 @@ const UserTable: React.FC<UserTableProps> = ({
                   Opção no App (Motoristas)
                 </th>
               )}
-              {(onEdit || onDelete || onInspectUser) && (
-                <th scope="col" className="w-36 px-3 sm:px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Ações</th>
+              {(onEdit || onDelete || onInspectUser || onCopyAccessMessage) && (
+                <th scope="col" className="px-3 sm:px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Ações</th>
               )}
             </tr>
           </thead>
@@ -219,9 +231,33 @@ const UserTable: React.FC<UserTableProps> = ({
                     )}
                   </td>
                 )}
-                {(onEdit || onDelete || onInspectUser) && (
+                {(onEdit || onDelete || onInspectUser || onCopyAccessMessage) && (
                   <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
                     <div className="inline-flex items-center justify-end gap-2.5">
+                      {onCopyAccessMessage && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyClick(user)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md border transition-all shadow-sm active:scale-95 ${
+                            copiedUserId === user.id
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60 border-emerald-200 dark:border-emerald-800'
+                          }`}
+                          title="Copiar mensagem de acesso (link, usuário e senha) para enviar no WhatsApp"
+                        >
+                          {copiedUserId === user.id ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Copiado!</span>
+                            </>
+                          ) : (
+                            <>
+                              <WhatsAppIcon className="w-3.5 h-3.5" />
+                              <span>Copiar Acesso</span>
+                            </>
+                          )}
+                        </button>
+                      )}
                       {onInspectUser && (
                         <button
                           type="button"
@@ -247,7 +283,7 @@ const UserTable: React.FC<UserTableProps> = ({
           })}
             {users.length === 0 && (
               <tr>
-                <td colSpan={((onEdit || onDelete || onInspectUser) ? 8 : 7) + (showAppOptionColumn ? 1 : 0)} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={((onEdit || onDelete || onInspectUser || onCopyAccessMessage) ? 8 : 7) + (showAppOptionColumn ? 1 : 0)} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                   Nenhum usuário encontrado para os filtros selecionados.
                 </td>
               </tr>

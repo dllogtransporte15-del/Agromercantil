@@ -27,6 +27,20 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_15_v2_116_44',
+    version: 'v2.116.44',
+    date: '15/11/2026',
+    title: 'Botão de Copiar Mensagem de Acesso para WhatsApp em Usuários',
+    summary: 'Adicionado o botão "Copiar Acesso" na tabela de Gerenciar Usuários para copiar rapidamente a mensagem formatada para WhatsApp com link (https://dllog.space), usuário e senha do cadastro.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Copiar Acesso para WhatsApp por Usuário',
+        description: 'Cada linha em Gerenciar Usuários agora conta com o botão "Copiar Acesso", que copia para a área de transferência uma mensagem pronta para WhatsApp contendo o link https://dllog.space, o usuário (e-mail) e a senha do cadastro.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_15_v2_116_43',
     version: 'v2.116.43',
     date: '15/11/2026',
