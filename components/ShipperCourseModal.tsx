@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { 
   X, 
   GraduationCap, 
@@ -59,6 +60,7 @@ export const ShipperCourseModal: React.FC<ShipperCourseModalProps> = ({
   onClose,
   currentUser
 }) => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'conteudo' | 'calculadora' | 'tabela' | 'quiz'>('conteudo');
   const [selectedPhaseFilter, setSelectedPhaseFilter] = useState<'all' | CoursePhaseNumber>('all');
   const [selectedChapterId, setSelectedChapterId] = useState<string>('apresentacao');
@@ -309,17 +311,18 @@ export const ShipperCourseModal: React.FC<ShipperCourseModalProps> = ({
               <span className="hidden sm:inline">PDF</span>
             </button>
 
-            <a
-              href="/curso-embarcador"
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={onClose}
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                navigate('/curso-embarcador');
+              }}
               className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/60 border border-violet-200 dark:border-violet-800/60 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors cursor-pointer"
-              title="Abrir Curso Completo em Nova Guia"
+              title="Abrir Curso Completo em Tela Cheia"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Nova Guia</span>
-            </a>
+              <span className="hidden sm:inline">Tela Cheia</span>
+            </button>
 
             <button
               onClick={onClose}

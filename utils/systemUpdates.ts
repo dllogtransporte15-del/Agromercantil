@@ -27,6 +27,20 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_16_v2_116_45',
+    version: 'v2.116.45',
+    date: '16/11/2026',
+    title: 'Acesso Direto ao Curso para Embarcador na Sessão Autenticada',
+    summary: 'Ao clicar em "Curso para Embarcador" dentro do sistema, o usuário agora acessa o curso diretamente na mesma sessão sem precisar refazer o login, mantendo o login obrigatório apenas para acessos via link direto sem sessão.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Navegação Direta ao Curso pelo Menu do Usuário',
+        description: 'O botão "Curso para Embarcador" no menu superior (desktop e mobile) e no modal de curso agora navega diretamente para /curso-embarcador mantendo a sessão autenticada, enquanto acessos externos diretos ao link continuam exigindo login.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_15_v2_116_44',
     version: 'v2.116.44',
     date: '15/11/2026',

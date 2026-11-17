@@ -564,17 +564,16 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                         </button>
                       )}
 
-                      {/* Curso para Embarcador (Liberado para Todos os Usuários Internos) - Abre em Nova Guia */}
+                      {/* Curso para Embarcador (Liberado para Todos os Usuários Internos) - Acesso Direto na Sessão */}
                       {isInternalUser(user) && (
-                        <a 
-                          href="/curso-embarcador"
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button 
+                          type="button"
                           onClick={() => {
                             handleDropdownToggle('user');
+                            navigate('/curso-embarcador');
                           }} 
                           className="w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
-                          title="Abrir Curso para Embarcador em Nova Guia"
+                          title="Abrir Curso para Embarcador diretamente"
                         >
                             <div className="flex items-center gap-2.5">
                               <div className="p-1.5 rounded-lg bg-violet-50 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 border border-violet-200/50 dark:border-violet-800/40 group-hover:scale-105 transition-transform">
@@ -583,10 +582,9 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                               <span>Curso para Embarcador</span>
                             </div>
                             <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 flex items-center gap-1">
-                              NOVA GUIA
-                              <ExternalLink className="w-2.5 h-2.5" />
+                              CURSO
                             </span>
-                        </a>
+                        </button>
                       )}
                     </div>
 
@@ -732,22 +730,22 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                    <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Site</span>
                 </button>
                 {isInternalUser(user) && (
-                  <a
-                    href="/curso-embarcador"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => setIsMobileMenuOpen(false)}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      navigate('/curso-embarcador');
+                    }}
                     className="w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
                     <div className="flex items-center">
                       <GraduationCap className="w-5 h-5 mr-3 text-violet-500" />
                       Curso para Embarcador
                     </div>
-                    <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-violet-500/10 text-violet-500 border border-violet-500/20 flex items-center gap-1">
-                      Nova Guia
-                      <ExternalLink className="w-3 h-3" />
+                    <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-violet-500/10 text-violet-500 border border-violet-500/20">
+                      Curso
                     </span>
-                  </a>
+                  </button>
                 )}
                 {user.profile !== UserProfile.Cliente && (
                   <>
