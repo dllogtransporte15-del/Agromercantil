@@ -27,6 +27,20 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_20_v2_116_46',
+    version: 'v2.116.46',
+    date: '20/11/2026',
+    title: 'Correção da Instalação do Aplicativo (PWA) no Mobile',
+    summary: 'Corrigido o manifesto PWA e os ícones para permitir a instalação nativa do aplicativo no Android e iOS.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Manifesto PWA e Ícones Oficiais (192x192 e 512x512)',
+        description: 'Removida a referência quebrada a /manifest.json no index.html para utilizar o /manifest.webmanifest gerado pelo VitePWA, gerados os ícones exatos pwa-192x192.png e pwa-512x512.png, adicionado suporte apple-touch-icon para iOS e captura antecipada do evento beforeinstallprompt.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_16_v2_116_45',
     version: 'v2.116.45',
     date: '16/11/2026',

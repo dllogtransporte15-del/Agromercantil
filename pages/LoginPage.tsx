@@ -57,9 +57,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
   React.useEffect(() => {
     const isPwaEnabled = profilePermissions?.system_settings?.pwa_enabled !== false;
     if (!isPwaEnabled) return;
+
+    if ((window as any).__deferredPwaPrompt) {
+      setDeferredPrompt((window as any).__deferredPwaPrompt);
+    }
     
     const handler = (e: any) => {
       e.preventDefault();
+      (window as any).__deferredPwaPrompt = e;
       setDeferredPrompt(e);
     };
     

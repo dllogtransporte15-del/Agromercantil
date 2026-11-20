@@ -11,39 +11,49 @@ const DownloadAppPage: React.FC<DownloadAppPageProps> = ({ companyLogo }) => {
 
   useEffect(() => {
     // Check if it's already installed (standalone mode)
-    if (window.matchMedia('(display-mode: standalone)').matches) {
+    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
       setIsInstalled(true);
+    }
+
+    if ((window as any).__deferredPwaPrompt) {
+      setDeferredPrompt((window as any).__deferredPwaPrompt);
     }
 
     const handler = (e: any) => {
       e.preventDefault();
+      (window as any).__deferredPwaPrompt = e;
       setDeferredPrompt(e);
     };
 
-    window.addEventListener('beforeinstallprompt', handler);
-
-    window.addEventListener('appinstalled', () => {
+    const installedHandler = () => {
       setIsInstalled(true);
       setDeferredPrompt(null);
-    });
+      (window as any).__deferredPwaPrompt = null;
+    };
+
+    window.addEventListener('beforeinstallprompt', handler);
+    window.addEventListener('appinstalled', installedHandler);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('appinstalled', installedHandler);
     };
   }, []);
 
   const handleInstallClick = async () => {
-    if (!deferredPrompt) {
+    const promptEvent = deferredPrompt || (window as any).__deferredPwaPrompt;
+    if (!promptEvent) {
       // If we don't have the prompt, they might be on iOS or unsupported browser
-      alert("Para instalar neste dispositivo, use a opção 'Adicionar à Tela Inicial' no menu do seu navegador (geralmente ícone de compartilhamento no Safari ou três pontos no Chrome).");
+      alert("Para instalar neste dispositivo, use a opção 'Adicionar à Tela Inicial' no menu do seu navegador (ícone de compartilhar no Safari ou três pontos no Chrome).");
       return;
     }
     
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
+    promptEvent.prompt();
+    const { outcome } = await promptEvent.userChoice;
     
     if (outcome === 'accepted') {
       setDeferredPrompt(null);
+      (window as any).__deferredPwaPrompt = null;
     }
   };
 
