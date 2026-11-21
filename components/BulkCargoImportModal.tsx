@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import {
   X,
   Upload,
   FileText,
+  FileSpreadsheet,
   Camera,
   Layers,
   CheckCircle2,
@@ -43,6 +45,8 @@ import {
   getDefaultAllowedVehicles,
   generateDailySchedule,
   normalizeCity,
+  parseAgromercantilPastedTable,
+  parseAgromercantilSpreadsheetRows,
   parseWhatsAppTextBlock,
   processComigoDocumentOcr,
   validateBulkCargo
@@ -73,11 +77,14 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
 
   // Step 1: Client & Strategy
   const [selectedClientId, setSelectedClientId] = useState<string>('');
-  const [strategyTab, setStrategyTab] = useState<'text' | 'image'>('text');
+  const [strategyTab, setStrategyTab] = useState<'text' | 'image' | 'spreadsheet'>('text');
 
   // Step 2: Input states
   const [whatsAppText, setWhatsAppText] = useState<string>('');
   const [uploadedImages, setUploadedImages] = useState<{ id: string; file: File; dataUrl: string; name: string }[]>([]);
+  const [spreadsheetRows, setSpreadsheetRows] = useState<unknown[][]>([]);
+  const [spreadsheetFileName, setSpreadsheetFileName] = useState<string>('');
+  const [spreadsheetPasteText, setSpreadsheetPasteText] = useState<string>('');
   const [isProcessingInput, setIsProcessingInput] = useState<boolean>(false);
   const [processingProgress, setProcessingProgress] = useState<string>('');
 
@@ -117,7 +124,9 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
     if (!client) return;
 
     const name = (client.razaoSocial || client.nomeFantasia || '').toLowerCase();
-    if (name.includes('comigo')) {
+    if (name.includes('agromercantil')) {
+      setStrategyTab('spreadsheet');
+    } else if (name.includes('comigo')) {
       setStrategyTab('image');
     } else if (name.includes('milh')) {
       setStrategyTab('text');
@@ -225,6 +234,61 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
     }
   };
 
+  // Handle Agromercantil Spreadsheet Upload (.xlsx / .xls / .csv)
+  const handleSpreadsheetFile = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    setIsProcessingInput(true);
+    setProcessingProgress(`Lendo planilha ${file.name}...`);
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'array' });
+      const firstSheetName = wb.SheetNames[0];
+      if (!firstSheetName) {
+        alert('A planilha selecionada não possui abas.');
+        return;
+      }
+      const ws = wb.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][];
+      setSpreadsheetRows(rows);
+      setSpreadsheetFileName(file.name);
+    } catch (err) {
+      console.error('Erro ao ler planilha:', err);
+      alert('Não foi possível ler o arquivo de planilha. Verifique se está no formato .xlsx, .xls ou .csv.');
+    } finally {
+      setIsProcessingInput(false);
+      setProcessingProgress('');
+    }
+  };
+
+  // Process Spreadsheet (uploaded file or pasted Excel rows)
+  const handleProcessSpreadsheet = () => {
+    if (spreadsheetRows.length === 0 && !spreadsheetPasteText.trim()) {
+      alert('Envie uma planilha (.xlsx/.csv) ou cole as linhas copiadas do Excel.');
+      return;
+    }
+
+    setIsProcessingInput(true);
+    try {
+      const parsed =
+        spreadsheetRows.length > 0
+          ? parseAgromercantilSpreadsheetRows(spreadsheetRows, selectedClient, products)
+          : parseAgromercantilPastedTable(spreadsheetPasteText, selectedClient, products);
+
+      if (parsed.length === 0) {
+        alert('Nenhuma carga ativa foi identificada na planilha. Verifique as colunas (ATUA, STATUS, PRODUTO, CIDADE DE ORIGEM, CIDADE DE DESTINO, FRETE PJ, FRETE PF, EMPRESA).');
+        return;
+      }
+      setParsedCargos(parsed);
+      setCurrentStep(3);
+    } catch (err) {
+      console.error('Erro ao processar planilha Agromercantil:', err);
+      alert('Ocorreu um erro ao interpretar os dados da planilha.');
+    } finally {
+      setIsProcessingInput(false);
+    }
+  };
+
   // Process Images with OCR / Gemini
   const handleProcessImages = async () => {
     if (uploadedImages.length === 0) {
@@ -266,11 +330,14 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
         if (c.tempId !== tempId) return c;
         const updated = { ...c, ...updates };
 
-        // Recalcula financeiro se mudou frete ou ICMS
+        // Recalcula financeiro (-8% PJ / -12% PF) apenas quando não for modelo planilha Agromercantil (que usa Col. M e N explícitas)
+        const isAgromercantilSpreadsheet =
+          strategyTab === 'spreadsheet' || updated.tempId.startsWith('TEMP-AGRO-');
         if (
-          updates.companyFreightValuePerTon !== undefined ||
-          updates.hasIcms !== undefined ||
-          updates.icmsPercentage !== undefined
+          !isAgromercantilSpreadsheet &&
+          (updates.companyFreightValuePerTon !== undefined ||
+            updates.hasIcms !== undefined ||
+            updates.icmsPercentage !== undefined)
         ) {
           const fin = calculateFinancials(
             updated.companyFreightValuePerTon,
@@ -422,7 +489,7 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
               id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
               userId: currentUserId,
               timestamp: new Date().toISOString(),
-              description: `Carga criada via Importação em Lote (${strategyTab === 'image' ? 'OCR/Imagem' : 'WhatsApp'}).`
+              description: `Carga criada via Importação em Lote (${strategyTab === 'spreadsheet' ? 'Planilha Agromercantil' : strategyTab === 'image' ? 'OCR/Imagem' : 'WhatsApp'}).`
             }
           ],
           allowedVehicleTypes: p.allowedVehicleTypes,
@@ -564,7 +631,7 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                   Detecção Automática de Modelo por Cliente
                 </h3>
                 <p className="text-xs text-emerald-800 dark:text-emerald-300/90 mt-1">
-                  Selecione o cliente pagador. O sistema ativará automaticamente as regras customizadas (Ex: <strong>COMIGO</strong> ativa o modo Imagem/OCR com Roteiro em Rio Verde; <strong>Milhão Ingredients</strong> ativa o modo Texto WhatsApp com margens automáticas).
+                  Selecione o cliente pagador. O sistema ativará automaticamente as regras customizadas (Ex: <strong>Agromercantil</strong> ativa o modo Planilha/Excel padrão ATUA/FRETE-E; <strong>COMIGO</strong> ativa o modo Imagem/OCR com Roteiro em Rio Verde; <strong>Milhão Ingredients</strong> ativa o modo Texto WhatsApp com margens automáticas).
                 </p>
               </div>
 
@@ -592,7 +659,26 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">
                   Estratégia de Entrada de Dados
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div
+                    onClick={() => setStrategyTab('spreadsheet')}
+                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex items-start gap-3.5 ${
+                      strategyTab === 'spreadsheet'
+                        ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-md ring-2 ring-emerald-500/20'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className={`p-3 rounded-xl ${strategyTab === 'spreadsheet' ? 'bg-emerald-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                      <FileSpreadsheet className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-900 dark:text-white">📊 Planilha / Excel</h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        Padrão <strong>Agromercantil</strong> (ATUA, FRETE-E, Origem/Destino, Frete PJ/PF/Empresa) via .xlsx/.csv ou colagem do Excel.
+                      </p>
+                    </div>
+                  </div>
+
                   <div
                     onClick={() => setStrategyTab('image')}
                     className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex items-start gap-3.5 ${
@@ -654,7 +740,17 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
             <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn">
               {/* Tab Header Selector */}
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => setStrategyTab('spreadsheet')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                      strategyTab === 'spreadsheet'
+                        ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <FileSpreadsheet className="w-4 h-4" /> 📊 Planilha / Excel
+                  </button>
                   <button
                     onClick={() => setStrategyTab('image')}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
@@ -681,6 +777,136 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                   Cliente: <strong>{selectedClient?.razaoSocial || selectedClient?.nomeFantasia}</strong>
                 </div>
               </div>
+
+              {/* TAB CONTENT: MODO PLANILHA / EXCEL (PADRÃO AGROMERCANTIL) */}
+              {strategyTab === 'spreadsheet' && (
+                <div className="space-y-4">
+                  <div className="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200">
+                    <p className="font-bold">Layout Padrão Agromercantil (15 colunas):</p>
+                    <p className="mt-1 font-mono text-[11px] opacity-90">
+                      ATUA | STATUS | FRETE-E | RESPONSÁVEL | PRODUTO | CIDADE DE ORIGEM | UF ORIGEM | LOCAL DE COLETA | CIDADE DE DESTINO | LOCAL DE ENTREGA | TIPO DE VEÍCULO | ICMS | FRETE PJ | FRETE PF | EMPRESA
+                    </p>
+                  </div>
+
+                  {/* Upload .xlsx / .xls / .csv */}
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleSpreadsheetFile(e.dataTransfer.files);
+                    }}
+                    onClick={() => {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = '.xlsx,.xls,.csv';
+                      input.onchange = (e: any) => handleSpreadsheetFile(e.target.files);
+                      input.click();
+                    }}
+                    className="border-2 border-dashed border-emerald-400/80 dark:border-emerald-600/60 rounded-2xl p-6 text-center bg-emerald-50/30 dark:bg-emerald-950/10 hover:bg-emerald-50/60 transition-all cursor-pointer group"
+                  >
+                    <div className="w-12 h-12 mx-auto rounded-2xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-2.5 group-hover:scale-110 transition-transform">
+                      <FileSpreadsheet className="w-6 h-6" />
+                    </div>
+                    <h3 className="font-bold text-slate-800 dark:text-white text-sm">
+                      {spreadsheetFileName ? `Planilha carregada: ${spreadsheetFileName} (${Math.max(0, spreadsheetRows.length - 1)} linhas)` : 'Arraste ou Selecione a Planilha Excel (.xlsx, .xls, .csv)'}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Linhas com STATUS diferente de ATIVO (ex: Inativo/Cancelado) são ignoradas automaticamente.
+                    </p>
+                    {spreadsheetFileName && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSpreadsheetRows([]);
+                          setSpreadsheetFileName('');
+                        }}
+                        className="mt-2 text-xs text-red-500 font-semibold hover:underline"
+                      >
+                        Remover planilha
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Ou colagem direta do Excel */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Ou cole aqui as linhas copiadas direto do Excel (Ctrl + V):
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSpreadsheetRows([]);
+                            setSpreadsheetFileName('');
+                            setSpreadsheetPasteText(
+                              [
+                                'ATUA\tSTATUS\tFRETE-E\tRESPONSÁVEL\tPRODUTO\tCIDADE DE ORIGEM\tUF ORIGEM\tLOCAL DE COLETA\tCIDADE DE DESTINO\tLOCAL DE ENTREGA\tTIPO DE VEÍCULO\tICMS\tFRETE PJ\tFRETE PF\tEMPRESA',
+                                '1213\tATIVO\t86473\tFABIO\tMILHO\tBURITIS\tMG\tFAZ CELESTE\tSÃO JOSE DA VARGINHA\tMARIA JOSE\tAPENAS RODO PJ\t0,00\tR$ 180,00\tR$ 180,00\tR$ 205,00',
+                                '1176\tATIVO\t88230\tFABIO\tMILHO\tUNAI\tMG\tFAZ FENIX\tONÇA DE PITANGUI\tRICARDO DUARTE\tRODOTREM PJ\t0,00\tR$ 160,00\tR$ 155,00\tR$ 175,00',
+                                '1177\tATIVO\t87577\tFABIO\tSORGO\tCRISTALINA\tGO\tFAZ MATÃO\tPARA DE MINAS/MG\tFRANCAP\tCARRETA 4E E (RODO 3x3)\t0,00\tR$ 160,00\tR$ 158,00\tR$ 180,00',
+                                '1217\tATIVO\t87562\tCAMILE\tSOJA\tGUARDA MOR\tMG\tOESTE MINEIRO\tUBERLANDIA\tCARGILL\tRESTRIÇÃO - CARRETA 4E GRAN.\t0,00\tR$ 95,00\tR$ 90,00\tR$ 105,00'
+                              ].join('\n')
+                            );
+                          }}
+                          className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+                        >
+                          📋 Inserir Exemplo Agromercantil
+                        </button>
+                        <span>•</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSpreadsheetPasteText('');
+                            setSpreadsheetRows([]);
+                            setSpreadsheetFileName('');
+                          }}
+                          className="text-[11px] text-red-500 hover:underline"
+                        >
+                          Limpar
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      rows={6}
+                      value={spreadsheetPasteText}
+                      onChange={(e) => {
+                        setSpreadsheetPasteText(e.target.value);
+                        if (spreadsheetRows.length > 0) {
+                          setSpreadsheetRows([]);
+                          setSpreadsheetFileName('');
+                        }
+                      }}
+                      placeholder="Selecione as linhas no Excel, pressione Ctrl+C e cole aqui com Ctrl+V..."
+                      className="w-full p-3.5 font-mono text-xs border border-slate-300 dark:border-slate-700 rounded-2xl bg-slate-50 dark:bg-slate-800/90 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 shadow-inner"
+                    />
+                  </div>
+
+                  <div className="pt-2 flex justify-between items-center">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentStep(1)}
+                      className="px-4 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold rounded-xl text-xs flex items-center gap-1.5"
+                    >
+                      <ArrowLeft className="w-4 h-4" /> Voltar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={(spreadsheetRows.length === 0 && !spreadsheetPasteText.trim()) || isProcessingInput}
+                      onClick={handleProcessSpreadsheet}
+                      className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm flex items-center gap-2 shadow-lg shadow-emerald-600/20"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      Interpretar Planilha e Gerar Cargas ➔
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* TAB CONTENT: MODO IMAGEM */}
               {strategyTab === 'image' && (
@@ -1213,16 +1439,40 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                             </span>
                           </div>
 
-                          <div className="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60">
+                          <div className="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 space-y-1">
                             <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400 block">
-                              Motorista PJ (-8% pós-ICMS)
+                              {strategyTab === 'spreadsheet' ? 'Motorista PJ / PF (Col. M e N)' : 'Motorista PJ / PF'}
                             </span>
-                            <span className="text-sm font-black text-emerald-900 dark:text-emerald-200">
-                              R$ {fin.driverFreightPj.toFixed(2).replace('.', ',')}
-                            </span>
-                            <span className="text-[10px] text-purple-600 dark:text-purple-300 block font-medium">
-                              PF (-12%): R$ {fin.driverFreightPf.toFixed(2).replace('.', ',')}
-                            </span>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <div>
+                                <span className="text-[9px] text-emerald-700 dark:text-emerald-300 font-bold block">PJ (R$)</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={cargo.driverFreightValuePerTon || 0}
+                                  onChange={(e) =>
+                                    updateCargoField(cargo.tempId, {
+                                      driverFreightValuePerTon: Number(e.target.value) || 0
+                                    })
+                                  }
+                                  className="w-full px-1.5 py-0.5 text-xs font-black rounded border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 text-emerald-900 dark:text-emerald-200"
+                                />
+                              </div>
+                              <div>
+                                <span className="text-[9px] text-purple-700 dark:text-purple-300 font-bold block">PF (R$)</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={cargo.driverFreightValuePerTonPf || 0}
+                                  onChange={(e) =>
+                                    updateCargoField(cargo.tempId, {
+                                      driverFreightValuePerTonPf: Number(e.target.value) || 0
+                                    })
+                                  }
+                                  className="w-full px-1.5 py-0.5 text-xs font-black rounded border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-900 text-purple-900 dark:text-purple-200"
+                                />
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>

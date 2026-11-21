@@ -536,7 +536,8 @@ export const COURSE_CHAPTERS: CourseChapter[] = [
       'Mudança número 2: Crédito Imediato na compra de caminhões e carretas! Hoje, quando uma transportadora compra um caminhão novo, ela precisa esperar 48 meses, 4 anos inteiros, para recuperar o crédito de ICMS aos poucos. Com a Reforma Tributária, o crédito de IBS e CBS na compra de veículos para a frota será integral e imediato, e se sobrar saldo credor, o governo devolve em dinheiro em até 30 a 60 dias!',
       'Mudança número 3: Combustíveis terão cobrança monofásica uniforme no país inteiro, e a lei garante expressamente que a transportadora continuará tomando 100% do crédito de IBS e CBS sobre o óleo diesel e biodiesel abastecidos!',
       'Mudança número 4: E na contratação de motorista autônomo? Mesmo o caminhoneiro autônomo sendo isento de pagar IBS e CBS como nanoempreendedor, a Lei Complementar garante que a transportadora que contrata o autônomo terá direito a um crédito presumido de IBS e CBS sobre o valor do frete pago a ele!',
-      'E Mudança número 5: Nos fretes de exportação do agronegócio, a Reforma garantiu desoneração total inclusive no trecho rodoviário interno até os portos, mantendo 100% dos créditos de diesel e insumos da transportadora! Dominar essas cinco regras coloca você no topo do mercado logístico!'
+      'E Mudança número 5: Nos fretes de exportação do agronegócio, a Reforma garantiu desoneração total inclusive no trecho rodoviário interno até os portos, mantendo 100% dos créditos de diesel e insumos da transportadora! Dominar essas cinco regras coloca você no topo do mercado logístico!',
+      'Para fechar este módulo com chave de ouro, também incluímos o Guia Prático de Créditos na Contratação e Subcontratação de Frete: em 2026, em um frete de R$ 10.000,00 no Lucro Real, contratar outra transportadora (Lucro Real ou Presumido) gera R$ 925,00 de crédito (9,25%), contra R$ 693,75 (6,9375%) no Simples Nacional ou TAC — uma diferença de R$ 231,25 por viagem. A partir de 2027 com a CBS, empresas do Lucro Presumido também passam a tomar crédito, e o Simples Nacional padrão perde competitividade se não optar pelo regime híbrido!'
     ],
     sections: [
       {
@@ -604,6 +605,70 @@ export const COURSE_CHAPTERS: CourseChapter[] = [
             ['Devolução de Saldo Credor Acumulado', 'Burocracia estadual que pode levar de 1 a 5 anos para liberar créditos de ICMS', 'Ressarcimento em dinheiro em até 30 dias (no Split Payment/conformidade) ou 60 dias na regra geral']
           ]
         }
+      },
+      {
+        title: '6. GUIA PRÁTICO — Contratação e Subcontratação de Frete em 2026 (PIS e COFINS)',
+        content: [
+          'No sistema atual (válido até dezembro de 2026), o direito ao crédito na contratação ou subcontratação de frete depende exclusivamente do regime tributário da empresa contratante (quem paga o frete):',
+          '• Contratante no Lucro Presumido ou Simples Nacional: Direito a 0% de crédito de PIS/COFINS, independentemente de quem seja o contratado.',
+          '• Contratante no Lucro Real (Regime Não Cumulativo): Tem direito a tomar crédito sobre o valor bruto do frete contratado, variando conforme o perfil do prestador do serviço (conforme tabela abaixo).'
+        ],
+        table: {
+          headers: ['Perfil do Contratado (Quem executa o frete)', 'PIS', 'COFINS', 'Crédito Total (2026)', 'Regra Aplicada'],
+          rows: [
+            ['Transportadora Lucro Real', '1,65%', '7,60%', '9,25%', 'Crédito integral (100% das alíquotas básicas).'],
+            ['Transportadora Lucro Presumido', '1,65%', '7,60%', '9,25%', 'Crédito integral permitido por lei, mesmo o prestador pagando 3,65%.'],
+            ['Transportadora Simples Nacional', '1,2375%', '5,7000%', '6,9375%', 'Crédito presumido equivalente a 75% das alíquotas básicas.'],
+            ['Autônomo (TAC — Pessoa Física)', '1,2375%', '5,7000%', '6,9375%', 'Crédito presumido de 75% sobre o valor bruto do frete (via RPA/CIOT).']
+          ]
+        }
+      },
+      {
+        title: '7. GUIA PRÁTICO — Subcontratação Pós-Reforma (A partir de 2027 — CBS e IBS)',
+        content: [
+          'A Reforma Tributária substitui PIS e COFINS pela CBS (federal) a partir de 2027, e substitui ICMS e ISS pelo IBS (estadual/municipal) gradualmente entre 2029 e 2033. O transporte rodoviário de cargas não recebeu alíquota reduzida e seguirá a alíquota padrão (estimada entre 26,5% e 28% na soma de IBS + CBS quando totalmente implementada).',
+          'A lógica deixa de ser baseada em "presunções" e passa a ser a não cumulatividade plena (crédito financeiro): você só credita exatamente o imposto que foi efetivamente pago na etapa anterior.',
+          '• 1. Contratação de Transportadora no Regime Regular (Lucro Real ou Lucro Presumido): Ambos passam a recolher CBS e IBS pelo mesmo sistema não cumulativo. O crédito passa a ser de 100% do valor destacado no CT-e do parceiro, condicionado à liquidação/pagamento do tributo (split payment ou recolhimento efetivo). Vantagem nova: contratantes no Lucro Presumido também passam a ter direito a tomar créditos de CBS/IBS sobre fretes contratados e insumos (diesel, pneus, peças, manutenção, pedágio), o que é proibido no PIS/COFINS até 2026.',
+          '• 2. Contratação de Transportadora do Simples Nacional: Perda de competitividade no modelo padrão — se a empresa do Simples permanecer recolhendo tudo dentro da guia única (DAS), o crédito transferido para a contratante será limitado apenas à pequena parcela de CBS/IBS embutida no DAS (muito inferior aos 6,9375% atuais). Alternativa (Regime Híbrido): a LC 214/2025 permite que a transportadora do Simples opte por recolher CBS e IBS "por fora" do DAS no regime regular; se fizer essa opção, destaca a alíquota cheia no CT-e e transfere 100% do crédito ao contratante.',
+          '• 3. Contratação de Motorista Autônomo (TAC — Pessoa Física): O TAC pessoa física é considerado não contribuinte de IBS e CBS, portanto não emite documento com destaque desses tributos. A partir de 2027, a contratante que pagar diretamente ao TAC terá direito a um crédito presumido específico da CBS, cujo percentual será fixado anualmente pelo Ministério da Fazenda/Receita Federal (e tende a ser menor que a alíquota cheia do regime regular). O crédito é apropriado conforme os pagamentos ao autônomo são confirmados.'
+        ]
+      },
+      {
+        title: '8. Quadro Resumo Comparativo na Contratação de Frete (2026 vs. Pós-Reforma)',
+        content: [
+          'Compare diretamente os impactos na contratação e subcontratação de fretes antes e depois da Reforma Tributária:'
+        ],
+        table: {
+          headers: ['Critério', 'Até Dezembro de 2026 (PIS/COFINS)', 'A partir de 2027 (CBS / IBS)'],
+          rows: [
+            ['Quem pode tomar crédito?', 'Apenas transportadoras no Lucro Real.', 'Lucro Real e Lucro Presumido (todo o regime regular).'],
+            ['Contratado: Lucro Real', '9,25% (crédito integral).', '100% do imposto destacado no CT-e (alíquota padrão).'],
+            ['Contratado: Lucro Presumido', '9,25% (crédito integral).', '100% do imposto destacado no CT-e (alíquota padrão).'],
+            ['Contratado: Simples Nacional', '6,9375% (crédito presumido fixo).', 'Apenas o valor pago no DAS (ou 100% se optar pelo regime híbrido).'],
+            ['Contratado: Autônomo (TAC)', '6,9375% (crédito presumido fixo).', 'Crédito presumido específico (percentual a ser definido pelo governo).'],
+            ['Cálculo do imposto', '"Por dentro" (imposto integra a própria base).', '"Por fora" (alíquota aplicada sobre o valor líquido do frete).']
+          ]
+        }
+      },
+      {
+        title: '9. Exemplo Prático na Ponta do Lápis (Frete de R$ 10.000,00) & Cronograma 2026–2033',
+        content: [
+          'Imagine uma transportadora contratante no Lucro Real pagando R$ 10.000,00 por um frete subcontratado em 2026 versus o impacto estrutural a partir de 2027:',
+          '• Em 2026 (Regra Atual — PIS/COFINS):',
+          '  — Se contratar empresa do Lucro Real ou Lucro Presumido: recupera R$ 925,00 (9,25%) em créditos federais.',
+          '  — Se contratar Simples Nacional ou Autônomo (TAC): recupera R$ 693,75 (6,9375%) em créditos federais — uma diferença de R$ 231,25 a menos de crédito por viagem.',
+          '• A partir de 2027 (Com a CBS):',
+          '  — Ao contratar empresas do Regime Regular (ou Simples no regime híbrido), a contratante recuperará o valor integral (100%) da CBS destacada na nota.',
+          '  — Ao contratar Simples Nacional (padrão no DAS) ou TAC, o crédito será significativamente menor que o do regime regular, exigindo que a transportadora avalie o custo líquido do frete (valor pago menos o crédito recuperado) antes de fechar a negociação.',
+          '• Cronograma de Transição para se Preparar:',
+          '  — 2026 (Ano de Teste): Campos de IBS (0,1%) e CBS (0,9%) já constam no leiaute do CT-e e MDF-e para empresas do regime regular (sem recolhimento efetivo, valendo as regras antigas de PIS/COFINS).',
+          '  — 2027 (Virada Federal): Extinção definitiva de PIS e COFINS; entrada da CBS com alíquota cheia. Optantes do Simples passam a informar IBS/CBS nos documentos fiscais. Início do novo crédito presumido do TAC.',
+          '  — 2029 a 2032 (Transição Estadual): Redução gradual do ICMS (e do crédito presumido de ICMS do Convênio 106/96) em 10% ao ano, com aumento proporcional do IBS.',
+          '  — 2033 (Sistema Definitivo): Extinção total do ICMS e ISS; vigência plena apenas de IBS e CBS.'
+        ],
+        tips: [
+          'Regra de Ouro na Negociação de Frete: Nunca olhe apenas o valor bruto cobrado pelo parceiro ou autônomo. Calcule sempre o Custo Líquido do Frete = Valor Pago − Crédito Tributário Recuperado. Em 2026, um frete de R$ 10.000,00 no Lucro Real/Presumido custa R$ 9.075,00 líquidos, enquanto no Simples/TAC custa R$ 9.306,25 líquidos (R$ 231,25 mais caro na comparação tributária).'
+        ]
       }
     ]
   },

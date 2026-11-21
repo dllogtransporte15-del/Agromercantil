@@ -1,4 +1,4 @@
-import type { Cargo } from '../types';
+import type { Cargo, Product } from '../types';
 import { getAllToolQuotes, QuoteRecord } from './toolStorage';
 import { geocodeCity } from './geocoding';
 
@@ -36,8 +36,16 @@ export interface RouteHistorySuggestion {
   destinationDistanceKm: number;
   date: string;
   clientName?: string;
+  productName?: string;
   cargoSequenceId?: number;
+  hasIcms?: boolean;
+  icmsPercentage?: number;
   totalMatchesCount: number;
+}
+
+export interface RouteReferencePair {
+  lastCargo: RouteHistorySuggestion | null;
+  lastQuote: RouteHistorySuggestion | null;
 }
 
 const normalizeCityName = (city: string): string => {
@@ -50,35 +58,36 @@ const normalizeCityName = (city: string): string => {
 };
 
 /**
- * Busca sugestões de valores no histórico de cargas (1ª prioridade)
- * ou no histórico de cotações (2ª prioridade) dentro de um raio de até 150 km.
+ * Busca simultaneamente a última carga e a última cotação com rota exata ou semelhante
+ * (dentro do raio configurado, padrão 150 km) para ajudar na formação de preço.
  */
-export async function findRouteHistorySuggestion(
+export async function findRouteReferencePair(
   originQuery: string,
   destinationQuery: string,
   cargos: Cargo[] = [],
   preloadedQuotes?: QuoteRecord[],
-  maxRadiusKm: number = 150
-): Promise<RouteHistorySuggestion | null> {
-  if (!originQuery || !destinationQuery) return null;
+  maxRadiusKm: number = 150,
+  products: Product[] = []
+): Promise<RouteReferencePair> {
+  if (!originQuery || !destinationQuery) return { lastCargo: null, lastQuote: null };
 
   const cleanOrigin = originQuery.trim();
   const cleanDest = destinationQuery.trim();
 
-  if (!cleanOrigin || !cleanDest) return null;
+  if (!cleanOrigin || !cleanDest) return { lastCargo: null, lastQuote: null };
 
   const normalizedOrigin = normalizeCityName(cleanOrigin);
   const normalizedDest = normalizeCityName(cleanDest);
 
-  // 1. Obter coordenadas da rota pesquisada
   const [originCoord, destCoord] = await Promise.all([
     geocodeCity(cleanOrigin),
     geocodeCity(cleanDest),
   ]);
 
-  // ─────────────────────────────────────────────────────────────
-  // 1ª PRIORIDADE: Buscar no histórico de Cargas (todas as cargas)
-  // ─────────────────────────────────────────────────────────────
+  let lastCargo: RouteHistorySuggestion | null = null;
+  let lastQuote: RouteHistorySuggestion | null = null;
+
+  // 1. Buscar última carga com rota exata ou semelhante
   if (cargos && cargos.length > 0) {
     const validCargos = cargos.filter((c) => {
       const companyRate = Number(c.companyFreightValuePerTon) || 0;
@@ -91,6 +100,7 @@ export async function findRouteHistorySuggestion(
       originDist: number;
       destDist: number;
       dateTimestamp: number;
+      isExact: boolean;
     }> = [];
 
     for (const cargo of validCargos) {
@@ -98,16 +108,14 @@ export async function findRouteHistorySuggestion(
       const cNormDest = normalizeCityName(cargo.destination);
 
       let isMatch = false;
+      let isExact = false;
       let originDist = 0;
       let destDist = 0;
 
-      // Correspondência exata por texto
       if (cNormOrigin === normalizedOrigin && cNormDest === normalizedDest) {
         isMatch = true;
-        originDist = 0;
-        destDist = 0;
+        isExact = true;
       } else if (originCoord && destCoord) {
-        // Obter coordenadas das cidades da carga
         const [cOriginCoord, cDestCoord] = await Promise.all([
           geocodeCity(cargo.origin),
           geocodeCity(cargo.destination),
@@ -141,16 +149,20 @@ export async function findRouteHistorySuggestion(
           originDist: Math.round(originDist),
           destDist: Math.round(destDist),
           dateTimestamp: isNaN(timestamp) ? 0 : timestamp,
+          isExact,
         });
       }
     }
 
     if (matchingCargos.length > 0) {
-      // Ordenar pelas cargas mais recentes primeiro
-      matchingCargos.sort((a, b) => b.dateTimestamp - a.dateTimestamp);
+      matchingCargos.sort((a, b) => {
+        if (a.isExact !== b.isExact) return a.isExact ? -1 : 1;
+        return b.dateTimestamp - a.dateTimestamp;
+      });
       const best = matchingCargos[0];
+      const matchedProd = products.find((p) => p.id === best.cargo.productId);
 
-      return {
+      lastCargo = {
         source: 'cargo',
         companyFreightRate: Number(best.cargo.companyFreightValuePerTon) || 0,
         driverFreightRate: Number(best.cargo.driverFreightValuePerTon) || 0,
@@ -159,15 +171,16 @@ export async function findRouteHistorySuggestion(
         originDistanceKm: best.originDist,
         destinationDistanceKm: best.destDist,
         date: best.cargo.createdAt || best.cargo.loadingDeadline || new Date().toISOString(),
+        productName: matchedProd?.name,
         cargoSequenceId: best.cargo.sequenceId,
+        hasIcms: best.cargo.hasIcms,
+        icmsPercentage: best.cargo.icmsPercentage,
         totalMatchesCount: matchingCargos.length,
       };
     }
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // 2ª PRIORIDADE: Buscar no histórico de Cotações (tool_quotes)
-  // ─────────────────────────────────────────────────────────────
+  // 2. Buscar última cotação com rota exata ou semelhante (tool_quotes)
   try {
     const quotes = preloadedQuotes || (await getAllToolQuotes());
 
@@ -183,6 +196,7 @@ export async function findRouteHistorySuggestion(
         originDist: number;
         destDist: number;
         dateTimestamp: number;
+        isExact: boolean;
       }> = [];
 
       for (const quote of validQuotes) {
@@ -190,13 +204,13 @@ export async function findRouteHistorySuggestion(
         const qNormDest = normalizeCityName(quote.destination);
 
         let isMatch = false;
+        let isExact = false;
         let originDist = 0;
         let destDist = 0;
 
         if (qNormOrigin === normalizedOrigin && qNormDest === normalizedDest) {
           isMatch = true;
-          originDist = 0;
-          destDist = 0;
+          isExact = true;
         } else if (originCoord && destCoord) {
           const [qOriginCoord, qDestCoord] = await Promise.all([
             geocodeCity(quote.origin),
@@ -230,15 +244,19 @@ export async function findRouteHistorySuggestion(
             originDist: Math.round(originDist),
             destDist: Math.round(destDist),
             dateTimestamp: isNaN(timestamp) ? 0 : timestamp,
+            isExact,
           });
         }
       }
 
       if (matchingQuotes.length > 0) {
-        matchingQuotes.sort((a, b) => b.dateTimestamp - a.dateTimestamp);
+        matchingQuotes.sort((a, b) => {
+          if (a.isExact !== b.isExact) return a.isExact ? -1 : 1;
+          return b.dateTimestamp - a.dateTimestamp;
+        });
         const best = matchingQuotes[0];
 
-        return {
+        lastQuote = {
           source: 'quote',
           companyFreightRate: Number(best.quote.companyFreightPerTon) || 0,
           driverFreightRate: Number(best.quote.driverFreightPerTon) || 0,
@@ -249,13 +267,35 @@ export async function findRouteHistorySuggestion(
           destinationDistanceKm: best.destDist,
           date: best.quote.date,
           clientName: best.quote.clientName,
+          productName: best.quote.cargoType,
           totalMatchesCount: matchingQuotes.length,
         };
       }
     }
   } catch (err) {
-    console.warn('[findRouteHistorySuggestion] Erro ao buscar cotações:', err);
+    console.warn('[findRouteReferencePair] Erro ao buscar cotações:', err);
   }
 
-  return null;
+  return { lastCargo, lastQuote };
+}
+
+/**
+ * Busca sugestões de valores no histórico de cargas (1ª prioridade)
+ * ou no histórico de cotações (2ª prioridade) dentro de um raio de até 150 km.
+ */
+export async function findRouteHistorySuggestion(
+  originQuery: string,
+  destinationQuery: string,
+  cargos: Cargo[] = [],
+  preloadedQuotes?: QuoteRecord[],
+  maxRadiusKm: number = 150
+): Promise<RouteHistorySuggestion | null> {
+  const { lastCargo, lastQuote } = await findRouteReferencePair(
+    originQuery,
+    destinationQuery,
+    cargos,
+    preloadedQuotes,
+    maxRadiusKm
+  );
+  return lastCargo || lastQuote;
 }

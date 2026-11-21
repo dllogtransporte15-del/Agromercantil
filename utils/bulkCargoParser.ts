@@ -587,3 +587,250 @@ ROTEIRO: ${roteiro || 'Ver imagem anexa da autorização'}`;
 
   return parsedCargo;
 }
+
+/**
+ * Converte valores numéricos ou monetários pt-BR ("R$ 180,00", "0,00", 205) para number.
+ */
+function parsePtBrNumber(val: unknown): number {
+  if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+  if (val === null || val === undefined) return 0;
+  const str = String(val)
+    .replace(/R\$/gi, '')
+    .replace(/\s+/g, '')
+    .trim();
+  if (!str) return 0;
+  // Se contém vírgula, assume formato pt-BR (ex: 1.234,56 ou 180,00)
+  if (str.includes(',')) {
+    const normalized = str.replace(/\./g, '').replace(',', '.');
+    const num = parseFloat(normalized);
+    return Number.isFinite(num) ? num : 0;
+  }
+  const num = parseFloat(str);
+  return Number.isFinite(num) ? num : 0;
+}
+
+/**
+ * Interpreta restrições da coluna TIPO DE VEÍCULO da planilha Agromercantil.
+ * Ex: "APENAS RODO PJ", "RODOTREM PJ", "CARRETA 4E E (RODO 3x3)", "RESTRIÇÃO - CARRETA 4E GRAN."
+ */
+function parseVehicleTypesFromText(raw: string): { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[] {
+  const norm = removeAccents(raw || '');
+  if (!norm) return getDefaultAllowedVehicles();
+
+  const bodyTypes: VehicleBodyType[] = norm.includes('bascul')
+    ? [VehicleBodyType.Basculante]
+    : norm.includes('gran')
+    ? [VehicleBodyType.Graneleiro]
+    : [VehicleBodyBodyDefault(), VehicleBodyType.Basculante];
+
+  function VehicleBodyBodyDefault(): VehicleBodyType {
+    return VehicleBodyType.Graneleiro;
+  }
+
+  const sets: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[] = [];
+  if (norm.includes('carreta 4e') || norm.includes('4e') || norm.includes('4 eixo')) {
+    sets.push({ setType: VehicleSetType.Carreta4e, bodyTypes });
+  }
+  if (norm.includes('bitrem 7') || norm.includes('7e')) {
+    sets.push({ setType: VehicleSetType.Bitrem7e, bodyTypes });
+  }
+  if (norm.includes('bitrem 8') || norm.includes('8e')) {
+    sets.push({ setType: VehicleSetType.Bitrem8e, bodyTypes });
+  }
+  if (norm.includes('rodo') || norm.includes('rodotrem') || norm.includes('3x3')) {
+    sets.push({ setType: VehicleSetType.Rodotrem, bodyTypes });
+  }
+  if (norm.includes('ls simples') || norm.includes('ls')) {
+    sets.push({ setType: VehicleSetType.LSSimples, bodyTypes });
+  }
+
+  return sets.length > 0 ? sets : getDefaultAllowedVehicles();
+}
+
+/**
+ * PARSER DA PLANILHA PADRÃO AGROMERCANTIL
+ * Colunas esperadas:
+ * ATUA | STATUS | FRETE-E | RESPONSÁVEL | PRODUTO | CIDADE DE ORIGEM | UF ORIGEM |
+ * LOCAL DE COLETA | CIDADE DE DESTINO | LOCAL DE ENTREGA | TIPO DE VEÍCULO | ICMS | FRETE PJ | FRETE PF | EMPRESA
+ */
+export function parseAgromercantilSpreadsheetRows(
+  rows: unknown[][],
+  client: Client | undefined,
+  products: Product[]
+): ParsedBulkCargo[] {
+  if (!rows || rows.length === 0) return [];
+
+  // Procura linha de cabeçalho
+  let headerIdx = -1;
+  const colMap: Record<string, number> = {};
+
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const row = rows[i] || [];
+    const normCells = row.map((c) => removeAccents(String(c ?? '')).replace(/\s+/g, ' '));
+    const hasOrigem = normCells.some((c) => c.includes('cidade de origem') || c === 'origem');
+    const hasDestino = normCells.some((c) => c.includes('cidade de destino') || c === 'destino');
+    const hasProduto = normCells.some((c) => c.includes('produto'));
+    if ((hasOrigem && hasDestino) || (hasProduto && (hasOrigem || hasDestino))) {
+      headerIdx = i;
+      normCells.forEach((cell, idx) => {
+        const isMarginOrPercentCol =
+          cell.includes('margem') ||
+          cell.includes('lucro') ||
+          cell.includes('dif') ||
+          cell.includes('%') ||
+          cell.includes('comissao');
+
+        if (colMap.atua === undefined && (cell === 'atua' || cell.includes('atua'))) colMap.atua = idx;
+        else if (colMap.status === undefined && cell.includes('status')) colMap.status = idx;
+        else if (colMap.freteE === undefined && (cell.includes('frete-e') || cell === 'frete e')) colMap.freteE = idx;
+        else if (colMap.responsavel === undefined && cell.includes('responsavel')) colMap.responsavel = idx;
+        else if (colMap.produto === undefined && cell.includes('produto')) colMap.produto = idx;
+        else if (colMap.cidadeOrigem === undefined && (cell.includes('cidade de origem') || cell === 'origem')) colMap.cidadeOrigem = idx;
+        else if (colMap.ufOrigem === undefined && (cell.includes('uf origem') || cell === 'uf')) colMap.ufOrigem = idx;
+        else if (colMap.localColeta === undefined && (cell.includes('local de coleta') || cell.includes('coleta'))) colMap.localColeta = idx;
+        else if (colMap.cidadeDestino === undefined && (cell.includes('cidade de destino') || cell === 'destino')) colMap.cidadeDestino = idx;
+        else if (colMap.localEntrega === undefined && (cell.includes('local de entrega') || cell.includes('entrega'))) colMap.localEntrega = idx;
+        else if (colMap.tipoVeiculo === undefined && (cell.includes('tipo de veiculo') || cell.includes('veiculo'))) colMap.tipoVeiculo = idx;
+        else if (colMap.icms === undefined && cell.includes('icms') && !isMarginOrPercentCol) colMap.icms = idx;
+        else if (colMap.fretePj === undefined && !isMarginOrPercentCol && (cell === 'frete pj' || cell.includes('frete pj') || cell === 'pj')) colMap.fretePj = idx;
+        else if (colMap.fretePf === undefined && !isMarginOrPercentCol && (cell === 'frete pf' || cell.includes('frete pf') || cell === 'pf')) colMap.fretePf = idx;
+        else if (colMap.empresa === undefined && !isMarginOrPercentCol && (cell === 'empresa' || cell === 'frete empresa')) colMap.empresa = idx;
+      });
+      // Garante fallback exato para colunas M (12) e N (13) caso o cabeçalho esteja abreviado
+      if (colMap.fretePj === undefined && row.length > 12) colMap.fretePj = 12;
+      if (colMap.fretePf === undefined && row.length > 13) colMap.fretePf = 13;
+      if (colMap.empresa === undefined && row.length > 14) colMap.empresa = 14;
+      break;
+    }
+  }
+
+  // Fallback para ordem padrão das 15 colunas caso usuário cole apenas as linhas de dados sem cabeçalho
+  const getCol = (key: string, fallbackIdx: number) =>
+    colMap[key] !== undefined ? colMap[key] : fallbackIdx;
+
+  const startRow = headerIdx >= 0 ? headerIdx + 1 : 0;
+  const results: ParsedBulkCargo[] = [];
+
+  for (let r = startRow; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || row.length === 0) continue;
+
+    const cellStr = (key: string, fallbackIdx: number) =>
+      String(row[getCol(key, fallbackIdx)] ?? '').trim();
+
+    const atua = cellStr('atua', 0);
+    const statusText = removeAccents(cellStr('status', 1));
+    const freteE = cellStr('freteE', 2);
+    const responsavel = cellStr('responsavel', 3);
+    const produtoRaw = cellStr('produto', 4);
+    const cidadeOrigemRaw = cellStr('cidadeOrigem', 5);
+    const ufOrigemRaw = cellStr('ufOrigem', 6).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2) || 'MG';
+    const localColeta = cellStr('localColeta', 7);
+    const cidadeDestinoRaw = cellStr('cidadeDestino', 8);
+    const localEntrega = cellStr('localEntrega', 9);
+    const tipoVeiculoRaw = cellStr('tipoVeiculo', 10);
+    const icmsVal = parsePtBrNumber(row[getCol('icms', 11)]);
+    const fretePjVal = parsePtBrNumber(row[getCol('fretePj', 12)]);
+    const fretePfVal = parsePtBrNumber(row[getCol('fretePf', 13)]);
+    const freteEmpresaVal = parsePtBrNumber(row[getCol('empresa', 14)]);
+
+    // Ignora linhas vazias ou linhas explicitamente inativas/canceladas/fechadas
+    if (!cidadeOrigemRaw && !cidadeDestinoRaw && !produtoRaw) continue;
+    if (
+      statusText &&
+      (statusText.includes('inativo') ||
+        statusText.includes('cancelad') ||
+        statusText.includes('fechad') ||
+        statusText.includes('encerrad'))
+    ) {
+      continue;
+    }
+
+    const origin = normalizeCity(
+      cidadeOrigemRaw.includes('/') || cidadeOrigemRaw.includes('-')
+        ? cidadeOrigemRaw
+        : `${cidadeOrigemRaw}-${ufOrigemRaw}`,
+      ufOrigemRaw
+    );
+    const destination = normalizeCity(cidadeDestinoRaw, ufOrigemRaw);
+
+    // Match produto
+    const prodNorm = removeAccents(produtoRaw);
+    let matchedProd = products.find((p) => removeAccents(p.name) === prodNorm);
+    if (!matchedProd && prodNorm) {
+      matchedProd = products.find(
+        (p) => removeAccents(p.name).includes(prodNorm) || prodNorm.includes(removeAccents(p.name))
+      );
+    }
+
+    const hasIcms = icmsVal > 0;
+    const companyFreight = freteEmpresaVal > 0 ? freteEmpresaVal : fretePjVal;
+    const fin = calculateFinancials(companyFreight, hasIcms, icmsVal);
+
+    const driverFreightPj = fretePjVal > 0 ? fretePjVal : fin.driverFreightPj;
+    const driverFreightPf = fretePfVal > 0 ? fretePfVal : (fretePjVal > 0 ? fretePjVal : fin.driverFreightPf);
+
+    const obsParts: string[] = [];
+    if (atua) obsParts.push(`ATUA: ${atua}`);
+    if (freteE) obsParts.push(`FRETE-E: ${freteE}`);
+    if (responsavel) obsParts.push(`Responsável: ${responsavel}`);
+    if (localColeta) obsParts.push(`Coleta: ${localColeta}`);
+    if (localEntrega) obsParts.push(`Entrega: ${localEntrega}`);
+    if (tipoVeiculoRaw) obsParts.push(`Veículo/Restrição: ${tipoVeiculoRaw}`);
+
+    const parsed: ParsedBulkCargo = {
+      tempId: `TEMP-AGRO-${Date.now()}-${r}-${Math.random().toString(36).substring(2, 5)}`,
+      clientId: client?.id || '',
+      productId: matchedProd?.id || '',
+      origin,
+      originLocation: localColeta,
+      destination,
+      destinationLocation: localEntrega,
+      totalVolume: 40, // Lote padrão inicial (editável na revisão)
+      companyFreightValuePerTon: companyFreight,
+      hasIcms,
+      icmsPercentage: icmsVal,
+      driverFreightValuePerTon: driverFreightPj,
+      driverFreightValuePerTonPf: driverFreightPf,
+      allowedVehicleTypes: parseVehicleTypesFromText(tipoVeiculoRaw),
+      observations: obsParts.join(' | '),
+      rawText: row.map((c) => String(c ?? '')).join(' | '),
+      status: 'ready',
+      validationErrors: [],
+      validationWarnings: []
+    };
+
+    const val = validateBulkCargo(parsed);
+    parsed.status = val.status;
+    parsed.validationErrors = val.validationErrors;
+    parsed.validationWarnings = val.validationWarnings;
+
+    results.push(parsed);
+  }
+
+  return results;
+}
+
+/**
+ * Converte texto tabular colado diretamente do Excel (separado por TAB ou ponto e vírgula)
+ * utilizando o layout padrão Agromercantil.
+ */
+export function parseAgromercantilPastedTable(
+  rawText: string,
+  client: Client | undefined,
+  products: Product[]
+): ParsedBulkCargo[] {
+  if (!rawText || !rawText.trim()) return [];
+  const lines = rawText
+    .split(/\r?\n/)
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim().length > 0);
+
+  const rows: string[][] = lines.map((line) => {
+    if (line.includes('\t')) return line.split('\t').map((c) => c.trim());
+    if (line.includes(';')) return line.split(';').map((c) => c.trim());
+    return line.split(',').map((c) => c.trim());
+  });
+
+  return parseAgromercantilSpreadsheetRows(rows, client, products);
+}

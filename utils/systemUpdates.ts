@@ -27,6 +27,114 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_21_v2_116_59',
+    version: 'v2.116.59',
+    date: '21/11/2026',
+    title: 'Correção de Leitura das Colunas FRETE PJ e FRETE PF na Planilha Agromercantil',
+    summary: 'Corrigido o mapeamento de colunas na Importação em Lote Multimodal para impedir que colunas de margem/percentual à direita sobrescrevam os valores reais de FRETE PJ (Col. M) e FRETE PF (Col. N).',
+    items: [
+      {
+        category: 'fix',
+        title: 'Proteção Contra Sobrescrita de Colunas por Margem',
+        description: 'O parser da planilha Agromercantil agora ignora colunas de margem/lucro/% ao mapear FRETE PJ, FRETE PF e EMPRESA e preserva a primeira correspondência exata das colunas M e N.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_21_v2_116_58',
+    version: 'v2.116.58',
+    date: '21/11/2026',
+    title: 'Preservação dos Preços FRETE PJ (Col. M) e FRETE PF (Col. N) no Modelo Agromercantil',
+    summary: 'Garantido que na Importação em Lote Multimodal (modelo Agromercantil), os valores de Frete Motorista PJ e PF sigam exatamente as colunas M e N da planilha mesmo ao editar outros campos na revisão.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Frete Motorista PJ e PF pelas Colunas M e N (Agromercantil)',
+        description: 'Preservados os valores explícitos de FRETE PJ (coluna M) e FRETE PF (coluna N) no passo de revisão da Importação em Lote para o modelo Agromercantil, evitando recálculo automático por percentual.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_21_v2_116_57',
+    version: 'v2.116.57',
+    date: '21/11/2026',
+    title: 'Janela de Últimas 7 Cotações Abaixo de Fechamento',
+    summary: 'Dividida a coluna direita da tela de Precificação & Cotações para exibir a nova janela compacta "Últimas 7 Cotações" logo abaixo do Fechamento.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Histórico Rápido das Últimas 7 Cotações',
+        description: 'Nova janela na coluna direita exibindo de forma reduzida as 7 cotações mais recentes (rota, data, cliente/produto, frete empresa e motorista), com carregamento rápido ao clicar.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_21_v2_116_56',
+    version: 'v2.116.56',
+    date: '21/11/2026',
+    title: 'Frete Motorista PJ e PF pelas Colunas M e N no Modelo Agromercantil',
+    summary: 'Corrigida a exibição e edição na revisão da Importação em Lote para que os valores de Motorista PJ e PF sigam exatamente os preços das colunas M (FRETE PJ) e N (FRETE PF) da planilha Agromercantil.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Preços Exatos de Motorista PJ (Col. M) e PF (Col. N)',
+        description: 'Na etapa de revisão da Importação em Lote Multimodal, o card financeiro agora exibe e permite editar diretamente os valores de Frete Motorista PJ e PF importados das colunas M e N, em vez de sobrescrevê-los com a margem automática -8%/-12%.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_21_v2_116_55',
+    version: 'v2.116.55',
+    date: '21/11/2026',
+    title: 'ICMS, Produto e Referências Duplas (Carga + Cotação) na Cotação de Frete',
+    summary: 'Adicionado cálculo de operações com ICMS em Configuração do Frete, campo de Produto em Parâmetros da Rota e painel refinado de preços de referência exibindo simultaneamente a última carga e a última cotação com rota semelhante.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Cálculo de Operações com ICMS na Configuração do Frete',
+        description: 'Agora é possível ativar ICMS e informar a alíquota (com atalhos 7%, 12%, 17% e 18%), descontando automaticamente o imposto sobre o Frete Empresa para apurar Frete Líquido, Lucro Bruto e Margem Real no Fechamento.'
+      },
+      {
+        category: 'feature',
+        title: 'Campo de Produto em Parâmetros da Rota',
+        description: 'Incluído o campo Produto da Cotação com sugestões automáticas dos produtos cadastrados e exportação no PDF.'
+      },
+      {
+        category: 'improvement',
+        title: 'Preços de Referência (Última Carga + Última Cotação)',
+        description: 'Ao preencher Origem e Destino ou montar a Configuração do Frete, o sistema consulta automaticamente e exibe lado a lado a última carga e a última cotação com rota semelhante (raio de até 150km) para aplicar valores com 1 clique.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_21_v2_116_54',
+    version: 'v2.116.54',
+    date: '21/11/2026',
+    title: 'Modelo Padrão de Planilha Agromercantil na Importação em Lote Multimodal',
+    summary: 'Configurado o modelo padrão de planilha Excel/CSV (ATUA, STATUS, FRETE-E, RESPONSÁVEL, PRODUTO, ORIGEM/DESTINO, TIPO DE VEÍCULO, ICMS, FRETE PJ, FRETE PF e EMPRESA) para o cliente Agromercantil na Importação em Lote.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Importação Padrão Agromercantil (Planilha Excel / Colagem Direta)',
+        description: 'Ao selecionar o cliente Agromercantil na Importação em Lote Multimodal, o sistema ativa automaticamente o modo Planilha/Excel com suporte a upload (.xlsx, .xls, .csv) e colagem direta de linhas do Excel.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_20_v2_116_53',
+    version: 'v2.116.53',
+    date: '20/11/2026',
+    title: 'Guia de Créditos na Contratação de Frete no Curso para Embarcador (Fase 2 • Módulo 09)',
+    summary: 'Adicionado ao Módulo 09 da Fase 2 o guia completo de créditos tributários na contratação e subcontratação de fretes (2026 vs. Reforma Tributária), com tabela comparativa, exemplo prático de R$ 10.000,00 e cronograma de transição até 2033.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Conteúdo Atualizado no Módulo 09 da Fase 2',
+        description: 'Incluídas as seções 6 a 9 no Módulo 09 com regras de PIS/COFINS (9,25% vs. 6,9375%), CBS/IBS para Regime Regular, Simples Híbrido e TAC, exemplo numérico de R$ 10.000,00 e cronograma 2026–2033.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_20_v2_116_52',
     version: 'v2.116.52',
     date: '20/11/2026',
