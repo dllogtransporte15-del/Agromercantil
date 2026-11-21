@@ -218,6 +218,96 @@ const memoryCache: Record<string, GeocodeResult | null> = {};
 // Gerenciamento de Promises em trânsito para evitar chamadas duplicadas simultâneas
 const pendingPromises: Record<string, Promise<GeocodeResult | null>> = {};
 
+export type BrazilianRegion = 'Norte' | 'Nordeste' | 'Centro-Oeste' | 'Sudeste' | 'Sul';
+
+const STATE_REGION_MAP: Record<string, BrazilianRegion> = {
+  AC: 'Norte', AM: 'Norte', AP: 'Norte', PA: 'Norte', RO: 'Norte', RR: 'Norte', TO: 'Norte',
+  AL: 'Nordeste', BA: 'Nordeste', CE: 'Nordeste', MA: 'Nordeste', PB: 'Nordeste', PE: 'Nordeste', PI: 'Nordeste', RN: 'Nordeste', SE: 'Nordeste',
+  DF: 'Centro-Oeste', GO: 'Centro-Oeste', MS: 'Centro-Oeste', MT: 'Centro-Oeste',
+  ES: 'Sudeste', MG: 'Sudeste', RJ: 'Sudeste', SP: 'Sudeste',
+  PR: 'Sul', RS: 'Sul', SC: 'Sul',
+};
+
+const STATE_CENTROID_COORDS: Record<string, { lat: number; lng: number }> = {
+  AC: { lat: -9.02, lng: -70.81 },
+  AL: { lat: -9.57, lng: -36.78 },
+  AM: { lat: -3.41, lng: -65.86 },
+  AP: { lat: 1.41, lng: -51.77 },
+  BA: { lat: -12.57, lng: -41.70 },
+  CE: { lat: -5.49, lng: -39.32 },
+  DF: { lat: -15.79, lng: -47.89 },
+  ES: { lat: -19.18, lng: -40.31 },
+  GO: { lat: -15.83, lng: -49.84 },
+  MA: { lat: -4.96, lng: -45.27 },
+  MG: { lat: -18.51, lng: -44.56 },
+  MS: { lat: -20.77, lng: -54.78 },
+  MT: { lat: -12.68, lng: -56.92 },
+  PA: { lat: -3.79, lng: -52.48 },
+  PB: { lat: -7.24, lng: -36.78 },
+  PE: { lat: -8.81, lng: -36.95 },
+  PI: { lat: -7.72, lng: -42.73 },
+  PR: { lat: -25.25, lng: -52.02 },
+  RJ: { lat: -22.91, lng: -43.17 },
+  RN: { lat: -5.40, lng: -36.95 },
+  RO: { lat: -11.51, lng: -63.58 },
+  RR: { lat: 2.74, lng: -62.08 },
+  RS: { lat: -30.03, lng: -51.22 },
+  SC: { lat: -27.24, lng: -50.22 },
+  SE: { lat: -10.57, lng: -37.39 },
+  SP: { lat: -23.55, lng: -46.63 },
+  TO: { lat: -10.17, lng: -48.30 },
+};
+
+export function extractBrazilianUF(text?: string): string | null {
+  if (!text) return null;
+  const upper = text.toUpperCase().trim();
+  const match = upper.match(/(?:^|[\s,\-\/])(AC|AL|AM|AP|BA|CE|DF|ES|GO|MA|MG|MS|MT|PA|PB|PE|PI|PR|RJ|RN|RO|RR|RS|SC|SE|SP|TO)(?:$|[\s,\-\/])/);
+  return match ? match[1] : null;
+}
+
+export function getBrazilianRegionByUF(uf?: string | null): BrazilianRegion | null {
+  if (!uf) return null;
+  return STATE_REGION_MAP[uf.toUpperCase()] || null;
+}
+
+/**
+ * Busca coordenada estática, em cache ou pelo centroide da UF de forma síncrona
+ */
+export function getCoordsWithStateFallbackSync(query?: string): { lat: number; lng: number; uf?: string } | null {
+  if (!query || !query.trim()) return null;
+  const uf = extractBrazilianUF(query) || undefined;
+  const exact = getCoordsSync(query);
+  if (exact) return { ...exact, uf };
+
+  const key = normalizeCityKey(query);
+  const partialKey = Object.keys(OFFLINE_CITIES).find(
+    k => k === key || k.startsWith(key + ' ') || key.startsWith(k + ' ')
+  );
+  if (partialKey && OFFLINE_CITIES[partialKey]) {
+    return { lat: OFFLINE_CITIES[partialKey].lat, lng: OFFLINE_CITIES[partialKey].lng, uf };
+  }
+
+  try {
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem(`geocache_${key}`);
+      if (cached) {
+        const parsed = JSON.parse(cached) as GeocodeResult;
+        if (parsed && typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
+          return { lat: parsed.lat, lng: parsed.lng, uf };
+        }
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+
+  if (uf && STATE_CENTROID_COORDS[uf]) {
+    return { ...STATE_CENTROID_COORDS[uf], uf };
+  }
+
+  return null;
+}
+
 /**
  * Busca coordenada estática ou no cache de forma síncrona
  */

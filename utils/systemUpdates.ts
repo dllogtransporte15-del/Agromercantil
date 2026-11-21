@@ -27,6 +27,90 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_20_v2_116_52',
+    version: 'v2.116.52',
+    date: '20/11/2026',
+    title: 'Proporção Ampliada e Integração Visual do Mapa Entregas por Região',
+    summary: 'Ampliada a área do mapa do Brasil no card Entregas por Região, compactados os nomes das regiões e removida a moldura interna para integrar o mapa ao mesmo ambiente do painel.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Mapa Integrado ao Painel com Maior Destaque',
+        description: 'O mapa do Brasil agora ocupa 8 de 12 colunas sem quadro interno separado, com lista de regiões mais compacta ao lado.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_20_v2_116_51',
+    version: 'v2.116.51',
+    date: '20/11/2026',
+    title: 'Siglas e Nomes dos Estados no Mapa Entregas por Região',
+    summary: 'Adicionadas as siglas (UF) diretamente no mapa do Brasil e tooltip interativo com nome completo do estado, região e resumo de cargas não finalizadas ao passar o mouse.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Siglas UF e Tooltip Detalhado por Estado',
+        description: 'Cada estado agora exibe sua sigla (UF) no mapa e, ao passar o mouse, destaca a divisa estadual e mostra o nome completo do estado, a macrorregião e o volume de cargas não finalizadas.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_20_v2_116_50',
+    version: 'v2.116.50',
+    date: '20/11/2026',
+    title: 'Reorganização do Layout do Dashboard Geral',
+    summary: 'Trocada a posição entre os cards "Funil de Embarques" e "Entregas por Região" no Dashboard Geral.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Posição de Entregas por Região e Funil de Embarques',
+        description: 'O mapa "Entregas por Região" agora aparece na parte superior ao lado dos gráficos de distribuição, enquanto o "Funil de Embarques" foi posicionado ao lado do "Ranking de Embarcadores".'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_20_v2_116_49',
+    version: 'v2.116.49',
+    date: '20/11/2026',
+    title: 'Contorno Real dos Estados Brasileiros e Paleta DLLOG no Mapa do Dashboard',
+    summary: 'Atualizado o mapa "Entregas por Região" com polígonos reais dos 27 estados brasileiros e aplicada a paleta oficial do projeto (Dourado, Bronze, Carvão e Esmeralda) compatível com os modos claro e escuro.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Geometria Real dos Estados e Paleta DLLOG',
+        description: 'Substituídos os polígonos aproximados por contornos reais dos 27 estados (utils/brazilStatesGeo.ts) e alinhada toda a paleta do card, regiões, pinos e rotas às cores oficiais do sistema DLLOG Transportes.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_20_v2_116_48',
+    version: 'v2.116.48',
+    date: '20/11/2026',
+    title: 'Mapa Interativo de Cargas Não Finalizadas ao Lado do Ranking de Embarcadores',
+    summary: 'O Dashboard Geral agora exibe o mapa interativo "Entregas por Região" lado a lado com o "Ranking de Embarcadores", destacando origens, destinos e rotas das cargas cadastradas não finalizadas.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Mapa Interativo de Origens e Destinos no Dashboard Geral',
+        description: 'Configurado o layout lado a lado entre Ranking de Embarcadores e o mapa Entregas por Região em todas as visões do Dashboard Geral, exibindo pontos pulsantes de Origem e Destino, arcos de rotas animados, tooltips interativos e filtro por região para cargas cadastradas não finalizadas.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_20_v2_116_47',
+    version: 'v2.116.47',
+    date: '20/11/2026',
+    title: 'Mapa de Entregas por Região no Dashboard Geral',
+    summary: 'Adicionado o card interativo "Entregas por Região" ao lado do Ranking de Embarcadores no Dashboard Geral, com mapa do Brasil colorido por região, rotas em aberto e percentual de volume por macrorregião.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Card "Entregas por Região" ao lado do Ranking de Embarcadores',
+        description: 'Novo mapa SVG do Brasil dividido pelas 5 macrorregiões (Sudeste, Sul, Norte, Nordeste e Centro-Oeste), exibindo origens de embarque, destinos de descarga, rotas ativas em aberto, tonelagem total e distribuição percentual por região.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_20_v2_116_46',
     version: 'v2.116.46',
     date: '20/11/2026',

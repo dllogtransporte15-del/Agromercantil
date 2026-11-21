@@ -137,7 +137,7 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md col-span-1 lg:col-span-2">
+    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md col-span-1">
       <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200 mb-1">Ranking de Embarcadores</h3>
       <p className="text-xs text-gray-500 mb-4">Resultados ({periodLabel || 'Mês Atual'})</p>
       <div className="overflow-x-auto">

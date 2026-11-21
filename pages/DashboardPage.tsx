@@ -6,6 +6,7 @@ import Header from '../components/Header';
 import DonutChartCard from '../components/DonutChartCard';
 import ShipmentFunnelCard from '../components/ShipmentFunnelCard';
 import ShipperRankingCard from '../components/ShipperRankingCard';
+import RegionalDeliveriesMapCard from '../components/RegionalDeliveriesMapCard';
 import { TruckIcon } from '../components/icons/TruckIcon';
 import { PackageIcon } from '../components/icons/PackageIcon';
 import { DollarSignIcon } from '../components/icons/DollarSignIcon';
@@ -1272,8 +1273,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               }}
             />
           </div>
-          <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
+          <RegionalDeliveriesMapCard
+            shipments={allShipments || shipments}
+            cargos={cargos}
+            dateRangeBounds={dateRangeBounds}
+            periodLabel={periodLabel}
+            onViewShipments={() => navigate('/loads')}
+          />
           <ShipperRankingCard shipments={allShipments || shipments} cargos={cargos} users={users} currentUser={currentUser} dateRangeBounds={dateRangeBounds} periodLabel={periodLabel} />
+          <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
         </div>
         <ShipmentDetailsModal
           isOpen={!!detailsModalShipment}
@@ -2263,8 +2271,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                   }}
                 />
             </div>
-            <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
+            <RegionalDeliveriesMapCard
+              shipments={shipments}
+              cargos={cargos}
+              dateRangeBounds={dateRangeBounds}
+              periodLabel={periodLabel}
+              onViewShipments={() => navigate('/loads')}
+            />
             {canViewRanking && <ShipperRankingCard shipments={shipments} cargos={cargos} users={users} currentUser={currentUser} dateRangeBounds={dateRangeBounds} periodLabel={periodLabel} />}
+            <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
           </div>
         </>
       )}
