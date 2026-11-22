@@ -27,6 +27,67 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_22_v2_116_63',
+    version: 'v2.116.63',
+    date: '22/11/2026',
+    title: 'E-books Separados por Fase (Fase 1 e Fase 2) no Curso para Embarcador',
+    summary: 'O botão "Baixar Ebook" agora oferece o download separado de dois E-books em PDF com capa e sumário exclusivos: Fase 1 (Operação Logística) e Fase 2 (Tributos & Reforma Tributária).',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Download Individual de E-book por Fase',
+        description: 'Ao clicar em "Baixar Ebook", o aluno ou operador escolhe entre baixar o Ebook Fase 1 (Módulos 00 a 06) ou o Ebook Fase 2 (Módulos 07 a 12) em arquivos PDF separados.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_21_v2_116_62',
+    version: 'v2.116.62',
+    date: '21/11/2026',
+    title: 'Botão "Baixar Ebook" com PDF Editorial Moderno no Curso para Embarcador',
+    summary: 'Substituído o botão Imprimir por "Baixar Ebook" no cabeçalho do Curso para Embarcador, gerando um E-book em PDF completo (Fase 1 e Fase 2) com capa editorial, sumário executivo, caixas de dicas e tabelas comparativas.',
+    items: [
+      {
+        category: 'feature',
+        title: 'E-book Oficial do Curso para Embarcador em PDF',
+        description: 'Criado o gerador editorial courseEbookGenerator.ts com capa escura em dourado e carvão, sumário completo dos 13 módulos, seções formatadas, quadros de Dicas Práticas/Atenção e tabelas comparativas da Reforma Tributária.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_21_v2_116_61',
+    version: 'v2.116.61',
+    date: '21/11/2026',
+    title: 'Detecção de Carga Idêntica na Importação em Lote Agromercantil',
+    summary: 'Na Importação em Lote Multimodal (modelo Agromercantil), ao identificar uma carga idêntica já cadastrada e aberta, o sistema adiciona automaticamente uma nova programação diária na carga existente em vez de duplicá-la.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Adição Automática de Programação em Carga Idêntica',
+        description: 'Compara cliente, produto, origem/destino, locais de coleta/entrega e fretes Empresa/Motorista com as cargas em andamento. Quando idêntica, exibe alerta na revisão e adiciona a nova programação diária e volume à carga existente.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_21_v2_116_60',
+    version: 'v2.116.60',
+    date: '21/11/2026',
+    title: 'Monitoramento de Acessos dos Operadores (Online + Histórico com Data e Hora)',
+    summary: 'Criada a ferramenta de Monitor de Acessos dos Operadores com presença em tempo real (Online / Offline) e histórico persistente de logins, sessões e saídas com data e hora.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Status Online em Tempo Real na Lista de Usuários',
+        description: 'Cada operador interno agora exibe indicador ao vivo (Online/Offline) diretamente na tabela de Gerenciar Usuários via Supabase Realtime Presence.'
+      },
+      {
+        category: 'feature',
+        title: 'Monitor de Acessos com Histórico de Data e Hora',
+        description: 'Adicionado o botão "Monitor de Acessos" em Gerenciar Usuários e em Saúde do Sistema & Auditoria, com painel de operadores online, tela atual, dispositivo e histórico completo com data e hora de login, sessão ativa e logout.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_21_v2_116_59',
     version: 'v2.116.59',
     date: '21/11/2026',

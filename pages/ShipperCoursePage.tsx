@@ -25,7 +25,6 @@ import {
   RefreshCw,
   ExternalLink,
   Info,
-  Printer,
   Check,
   Headphones,
   Play,
@@ -73,6 +72,7 @@ import {
   downloadCourseOfflinePDF,
   downloadOfflineInteractiveCourseBundle
 } from '../utils/courseOfflineBuilder';
+import { generateShipperCourseEbookPDF } from '../utils/courseEbookGenerator';
 
 interface ShipperCoursePageProps {
   currentUser?: User | null;
@@ -87,6 +87,22 @@ export const ShipperCoursePage: React.FC<ShipperCoursePageProps> = ({
 }) => {
   const isStudentOnly = currentUser?.profile === UserProfile.Aluno;
   const [copiedDirectLink, setCopiedDirectLink] = useState(false);
+  const [isGeneratingEbook, setIsGeneratingEbook] = useState<CoursePhaseNumber | null>(null);
+  const [showEbookMenu, setShowEbookMenu] = useState(false);
+
+  const handleDownloadEbook = async (phase: CoursePhaseNumber) => {
+    if (isGeneratingEbook !== null) return;
+    setShowEbookMenu(false);
+    setIsGeneratingEbook(phase);
+    try {
+      await generateShipperCourseEbookPDF(phase);
+    } catch (err) {
+      console.error('Erro ao gerar E-book:', err);
+      alert('Não foi possível gerar o E-book em PDF. Tente novamente.');
+    } finally {
+      setIsGeneratingEbook(null);
+    }
+  };
 
   const handleCopyDirectCourseLink = async () => {
     const directUrl = `${window.location.origin}/curso-embarcador`;
@@ -629,15 +645,59 @@ export const ShipperCoursePage: React.FC<ShipperCoursePageProps> = ({
               </button>
             )}
 
-            <button
-              onClick={handlePrint}
-              type="button"
-              className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors cursor-pointer"
-              title="Imprimir ou Salvar em PDF"
-            >
-              <Printer className="w-4 h-4 text-slate-400" />
-              <span>Imprimir</span>
-            </button>
+            <div className="relative hidden md:block">
+              <button
+                onClick={() => setShowEbookMenu((v) => !v)}
+                disabled={isGeneratingEbook !== null}
+                type="button"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-amber-200 bg-gradient-to-r from-amber-950/90 to-slate-900 border border-amber-500/40 hover:border-amber-400 hover:brightness-110 transition-all cursor-pointer shadow-sm disabled:opacity-60"
+                title="Baixar E-book Oficial por Fase em PDF (Design Editorial)"
+              >
+                {isGeneratingEbook !== null ? (
+                  <RefreshCw className="w-4 h-4 text-amber-400 animate-spin" />
+                ) : (
+                  <BookOpen className="w-4 h-4 text-amber-400" />
+                )}
+                <span>
+                  {isGeneratingEbook !== null ? `Gerando Fase ${isGeneratingEbook}...` : 'Baixar Ebook'}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-amber-300" />
+              </button>
+
+              {showEbookMenu && (
+                <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-slate-900 border border-amber-500/30 shadow-2xl p-2 z-50 space-y-1.5">
+                  <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                    Escolha o E-book por Fase (PDF)
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadEbook(1)}
+                    className="w-full text-left px-3 py-2.5 rounded-xl bg-slate-800/70 hover:bg-amber-950/50 border border-slate-700/80 hover:border-amber-500/50 transition-all cursor-pointer"
+                  >
+                    <div className="text-xs font-bold text-white flex items-center justify-between">
+                      <span>📘 E-book Fase 1</span>
+                      <span className="text-[10px] text-amber-400 font-semibold">Mód. 00–06</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      Operação Logística & Embarque Prático
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadEbook(2)}
+                    className="w-full text-left px-3 py-2.5 rounded-xl bg-slate-800/70 hover:bg-amber-950/50 border border-slate-700/80 hover:border-amber-500/50 transition-all cursor-pointer"
+                  >
+                    <div className="text-xs font-bold text-white flex items-center justify-between">
+                      <span>📙 E-book Fase 2</span>
+                      <span className="text-[10px] text-amber-400 font-semibold">Mód. 07–12</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      Tributos, Créditos & Reforma Tributária
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {isStudentOnly ? (
               <div className="flex items-center gap-2">

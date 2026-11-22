@@ -545,6 +545,10 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         clients={clients}
         products={products}
         currentUserId={currentUser?.id || ''}
+        existingCargos={loads}
+        onUpdateExistingCargo={async (updatedCargo) => {
+          await onSaveLoad(updatedCargo);
+        }}
         onBulkSave={onBulkSaveLoads || (async (cargosList) => {
           for (const c of cargosList) {
             onSaveLoad(c);

@@ -42,6 +42,7 @@ import { BRAZILIAN_CITIES } from '../brazilianCities';
 import {
   ParsedBulkCargo,
   calculateFinancials,
+  findIdenticalExistingCargo,
   getDefaultAllowedVehicles,
   generateDailySchedule,
   normalizeCity,
@@ -61,6 +62,8 @@ interface BulkCargoImportModalProps {
   clients: Client[];
   products: Product[];
   currentUserId: string;
+  existingCargos?: Cargo[];
+  onUpdateExistingCargo?: (cargo: Cargo) => Promise<void> | void;
   onBulkSave: (cargos: Omit<Cargo, 'id'>[]) => Promise<void>;
 }
 
@@ -70,6 +73,8 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
   clients,
   products,
   currentUserId,
+  existingCargos = [],
+  onUpdateExistingCargo,
   onBulkSave
 }) => {
   // Wizard step: 1 (Client & Strategy), 2 (Data Input), 3 (Review & Edit)
@@ -261,6 +266,28 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
     }
   };
 
+  // Anota cargas idênticas já cadastradas para adicionar apenas nova programação
+  const annotateIdenticalMatches = (list: ParsedBulkCargo[]): ParsedBulkCargo[] => {
+    if (!existingCargos || existingCargos.length === 0) return list;
+    return list.map((item) => {
+      const match = findIdenticalExistingCargo(item, existingCargos);
+      if (match) {
+        return {
+          ...item,
+          matchedExistingCargoId: match.id,
+          matchedExistingSequenceId: match.sequenceId,
+          addScheduleOnly: item.addScheduleOnly !== false
+        };
+      }
+      return {
+        ...item,
+        matchedExistingCargoId: undefined,
+        matchedExistingSequenceId: undefined,
+        addScheduleOnly: undefined
+      };
+    });
+  };
+
   // Process Spreadsheet (uploaded file or pasted Excel rows)
   const handleProcessSpreadsheet = () => {
     if (spreadsheetRows.length === 0 && !spreadsheetPasteText.trim()) {
@@ -279,7 +306,7 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
         alert('Nenhuma carga ativa foi identificada na planilha. Verifique as colunas (ATUA, STATUS, PRODUTO, CIDADE DE ORIGEM, CIDADE DE DESTINO, FRETE PJ, FRETE PF, EMPRESA).');
         return;
       }
-      setParsedCargos(parsed);
+      setParsedCargos(annotateIdenticalMatches(parsed));
       setCurrentStep(3);
     } catch (err) {
       console.error('Erro ao processar planilha Agromercantil:', err);
@@ -353,6 +380,22 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
         updated.status = val.status;
         updated.validationErrors = val.validationErrors;
         updated.validationWarnings = val.validationWarnings;
+
+        // Atualiza detecção de carga idêntica caso usuário altere campos-chave
+        if (updates.addScheduleOnly === undefined && existingCargos.length > 0) {
+          const match = findIdenticalExistingCargo(updated, existingCargos);
+          if (match) {
+            updated.matchedExistingCargoId = match.id;
+            updated.matchedExistingSequenceId = match.sequenceId;
+            if (updated.addScheduleOnly === undefined) {
+              updated.addScheduleOnly = true;
+            }
+          } else {
+            updated.matchedExistingCargoId = undefined;
+            updated.matchedExistingSequenceId = undefined;
+            updated.addScheduleOnly = undefined;
+          }
+        }
 
         return updated;
       })
@@ -452,63 +495,97 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
     setIsSaving(true);
 
     try {
-      // Converte cada ParsedBulkCargo em um objeto Cargo para persistência no banco
-      const cargosToInsert: Omit<Cargo, 'id'>[] = validCargos.map((p) => {
-        // Regra de corte das 16h para programação diária
-        const dailySchedule = generateDailySchedule(p.totalVolume || 40);
-        const parentClient = clients.find(cl => cl.id === p.clientId);
+      const toUpdateSchedule = validCargos.filter(
+        (p) => p.matchedExistingCargoId && p.addScheduleOnly !== false && onUpdateExistingCargo
+      );
+      const toCreateNew = validCargos.filter(
+        (p) => !(p.matchedExistingCargoId && p.addScheduleOnly !== false && onUpdateExistingCargo)
+      );
 
-        return {
-          sequenceId: 0, // Será recalculado atomicamente no salvamento
-          clientId: p.clientId,
-          productId: p.productId,
-          origin: p.origin,
-          originLocation: p.originLocation || '',
-          originMapLink: p.originMapLink || '',
-          destination: p.destination,
-          destinationLocation: p.destinationLocation || '',
-          destinationMapLink: p.destinationMapLink || '',
-          totalVolume: p.totalVolume || 40,
-          scheduledVolume: 0,
-          loadedVolume: 0,
-          companyFreightValuePerTon: p.companyFreightValuePerTon,
-          companyFreightHasToll: false,
-          driverFreightValuePerTon: p.driverFreightValuePerTon,
-          driverFreightHasToll: false,
-          hasIcms: p.hasIcms,
-          icmsPercentage: p.icmsPercentage,
-          requiresScheduling: false,
-          type: CargoType.Spot,
-          status: CargoStatus.EmAndamento,
-          salespersonName: parentClient?.salespersonName || '',
-          salespersonCommissionPerTon: parentClient?.salespersonCommissionPerTon || 0,
-          createdAt: new Date().toISOString(),
-          createdById: currentUserId,
+      // 1. Atualiza cargas idênticas já cadastradas adicionando apenas nova programação diária
+      for (const p of toUpdateSchedule) {
+        const existing = existingCargos.find((c) => c.id === p.matchedExistingCargoId);
+        if (!existing || !onUpdateExistingCargo) continue;
+
+        const addedVolume = p.totalVolume || 40;
+        const newScheduleEntries = generateDailySchedule(addedVolume);
+        const updatedCargo: Cargo = {
+          ...existing,
+          totalVolume: (Number(existing.totalVolume) || 0) + addedVolume,
+          dailySchedule: [...(existing.dailySchedule || []), ...newScheduleEntries],
           history: [
+            ...(existing.history || []),
             {
               id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
               userId: currentUserId,
               timestamp: new Date().toISOString(),
-              description: `Carga criada via Importação em Lote (${strategyTab === 'spreadsheet' ? 'Planilha Agromercantil' : strategyTab === 'image' ? 'OCR/Imagem' : 'WhatsApp'}).`
+              description: `Nova programação diária (+${addedVolume}t) adicionada via Importação em Lote (${strategyTab === 'spreadsheet' ? 'Planilha Agromercantil' : strategyTab === 'image' ? 'OCR/Imagem' : 'WhatsApp'}).`
             }
-          ],
-          allowedVehicleTypes: p.allowedVehicleTypes,
-          freightLegs: [
-            {
-              companyFreightValuePerTon: p.companyFreightValuePerTon,
-              driverFreightValuePerTon: p.driverFreightValuePerTon,
-              driverFreightValuePerTonPf: p.driverFreightValuePerTonPf,
-              hasIcms: p.hasIcms,
-              icmsPercentage: p.icmsPercentage
-            }
-          ],
-          dailySchedule,
-          observations: p.observations || '',
-          attachments: p.attachments || []
+          ]
         };
-      });
+        await onUpdateExistingCargo(updatedCargo);
+      }
 
-      await onBulkSave(cargosToInsert);
+      // 2. Cria novas cargas para os itens sem correspondência idêntica
+      if (toCreateNew.length > 0) {
+        const cargosToInsert: Omit<Cargo, 'id'>[] = toCreateNew.map((p) => {
+          // Regra de corte das 16h para programação diária
+          const dailySchedule = generateDailySchedule(p.totalVolume || 40);
+          const parentClient = clients.find(cl => cl.id === p.clientId);
+
+          return {
+            sequenceId: 0, // Será recalculado atomicamente no salvamento
+            clientId: p.clientId,
+            productId: p.productId,
+            origin: p.origin,
+            originLocation: p.originLocation || '',
+            originMapLink: p.originMapLink || '',
+            destination: p.destination,
+            destinationLocation: p.destinationLocation || '',
+            destinationMapLink: p.destinationMapLink || '',
+            totalVolume: p.totalVolume || 40,
+            scheduledVolume: 0,
+            loadedVolume: 0,
+            companyFreightValuePerTon: p.companyFreightValuePerTon,
+            companyFreightHasToll: false,
+            driverFreightValuePerTon: p.driverFreightValuePerTon,
+            driverFreightHasToll: false,
+            hasIcms: p.hasIcms,
+            icmsPercentage: p.icmsPercentage,
+            requiresScheduling: false,
+            type: CargoType.Spot,
+            status: CargoStatus.EmAndamento,
+            salespersonName: parentClient?.salespersonName || '',
+            salespersonCommissionPerTon: parentClient?.salespersonCommissionPerTon || 0,
+            createdAt: new Date().toISOString(),
+            createdById: currentUserId,
+            history: [
+              {
+                id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                userId: currentUserId,
+                timestamp: new Date().toISOString(),
+                description: `Carga criada via Importação em Lote (${strategyTab === 'spreadsheet' ? 'Planilha Agromercantil' : strategyTab === 'image' ? 'OCR/Imagem' : 'WhatsApp'}).`
+              }
+            ],
+            allowedVehicleTypes: p.allowedVehicleTypes,
+            freightLegs: [
+              {
+                companyFreightValuePerTon: p.companyFreightValuePerTon,
+                driverFreightValuePerTon: p.driverFreightValuePerTon,
+                driverFreightValuePerTonPf: p.driverFreightValuePerTonPf,
+                hasIcms: p.hasIcms,
+                icmsPercentage: p.icmsPercentage
+              }
+            ],
+            dailySchedule,
+            observations: p.observations || '',
+            attachments: p.attachments || []
+          };
+        });
+
+        await onBulkSave(cargosToInsert);
+      }
+
       onClose();
     } catch (err: any) {
       console.error('Erro ao salvar lote de cargas:', err);
@@ -521,6 +598,9 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
   const validCount = parsedCargos.filter((c) => c.status !== 'error').length;
   const errorCount = parsedCargos.filter((c) => c.status === 'error').length;
   const warningCount = parsedCargos.filter((c) => c.status === 'warning').length;
+  const scheduleUpdateCount = parsedCargos.filter(
+    (c) => c.status !== 'error' && c.matchedExistingCargoId && c.addScheduleOnly !== false
+  ).length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-fadeIn overflow-y-auto">
@@ -1106,6 +1186,11 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                   <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 text-xs font-bold border border-emerald-300 dark:border-emerald-800">
                     {validCount} Prontas
                   </span>
+                  {scheduleUpdateCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 text-xs font-bold border border-amber-300 dark:border-amber-800">
+                      🔄 {scheduleUpdateCount} Nova Programação em Carga Existente
+                    </span>
+                  )}
                   {errorCount > 0 && (
                     <span className="px-2 py-0.5 rounded-lg bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300 text-xs font-bold border border-red-300 dark:border-red-800">
                       {errorCount} com Erro
@@ -1144,6 +1229,32 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
                           : 'border-slate-200 dark:border-slate-700 hover:border-emerald-500/50'
                       }`}
                     >
+                      {/* BANNER DE CARGA IDÊNTICA JÁ CADASTRADA */}
+                      {cargo.matchedExistingCargoId && (
+                        <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200">
+                            <RefreshCw className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span>
+                              <strong>Carga Idêntica já cadastrada (#{cargo.matchedExistingSequenceId || cargo.matchedExistingCargoId}):</strong>{' '}
+                              {cargo.addScheduleOnly !== false
+                                ? `o sistema irá apenas adicionar nova programação (+${cargo.totalVolume || 40} t) nesta carga.`
+                                : 'será criada uma nova carga separada.'}
+                            </span>
+                          </div>
+                          <label className="inline-flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={cargo.addScheduleOnly !== false}
+                              onChange={(e) =>
+                                updateCargoField(cargo.tempId, { addScheduleOnly: e.target.checked })
+                              }
+                              className="w-3.5 h-3.5 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span>Adicionar apenas programação</span>
+                          </label>
+                        </div>
+                      )}
+
                       {/* CARD HEADER */}
                       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-slate-100 dark:border-slate-700">
                         <div className="flex items-center gap-2.5">

@@ -3,6 +3,8 @@ import Header from '../components/Header';
 import { Activity, CheckCircle2, AlertCircle, RefreshCw, Code, Database, Globe } from 'lucide-react';
 import { supabase } from '../supabase';
 import { UserProfile } from '../types';
+import OperatorAccessMonitorModal from '../components/OperatorAccessMonitorModal';
+import type { OnlineOperatorPresence } from '../services/accessMonitorService';
 
 import type { User, ProfilePermissions } from '../types';
 
@@ -17,9 +19,18 @@ interface SystemMonitorPageProps {
   currentUser?: User;
   profilePermissions?: ProfilePermissions;
   onSavePermissions?: (permissions: ProfilePermissions) => void;
+  users?: User[];
+  onlineOperators?: Record<string, OnlineOperatorPresence>;
 }
 
-const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({ currentUser, profilePermissions, onSavePermissions }) => {
+const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({
+  currentUser,
+  profilePermissions,
+  onSavePermissions,
+  users = [],
+  onlineOperators = {}
+}) => {
+  const [isAccessMonitorOpen, setIsAccessMonitorOpen] = useState(false);
   const [statuses, setStatuses] = useState<Record<string, ServiceStatus>>({
     github: { name: 'GitHub Infrastructure', status: 'loading', message: 'Verificando...' },
     supabase: { name: 'Supabase Database', status: 'loading', message: 'Verificando...' },
@@ -245,6 +256,40 @@ const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({ currentUser, prof
                 </div>
             </div>
         )}
+
+        <div className="mt-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60">
+              <Activity className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                <span>Monitor de Acessos dos Operadores</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  {Object.keys(onlineOperators).length} online
+                </span>
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Acompanhe quais operadores estão online em tempo real e consulte o histórico completo de logins e sessões com data e hora.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsAccessMonitorOpen(true)}
+            className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold shadow-sm transition-colors cursor-pointer"
+          >
+            Abrir Monitor de Acessos
+          </button>
+        </div>
+
+        <OperatorAccessMonitorModal
+          isOpen={isAccessMonitorOpen}
+          onClose={() => setIsAccessMonitorOpen(false)}
+          users={users}
+          onlineOperators={onlineOperators}
+        />
 
         <p className="mt-8 text-center text-xs text-gray-400 uppercase tracking-widest">
             DLLOG Transportes - Painel de Controle de Infraestrutura

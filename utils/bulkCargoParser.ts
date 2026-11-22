@@ -48,6 +48,10 @@ export interface ParsedBulkCargo {
   status: 'ready' | 'warning' | 'error';
   validationErrors: string[];
   validationWarnings: string[];
+  // Detecção de carga idêntica já cadastrada (apenas adiciona nova programação)
+  matchedExistingCargoId?: string;
+  matchedExistingSequenceId?: number;
+  addScheduleOnly?: boolean;
 }
 
 /**
@@ -833,4 +837,35 @@ export function parseAgromercantilPastedTable(
   });
 
   return parseAgromercantilSpreadsheetRows(rows, client, products);
+}
+
+/**
+ * Identifica se já existe uma carga aberta (não fechada) idêntica cadastrada no sistema
+ * para que a importação em lote apenas adicione uma nova programação diária em vez de duplicar.
+ */
+export function findIdenticalExistingCargo(
+  parsed: ParsedBulkCargo,
+  existingCargos: Cargo[] = []
+): Cargo | undefined {
+  if (!existingCargos || existingCargos.length === 0) return undefined;
+
+  const pOrigin = removeAccents(parsed.origin || '');
+  const pDest = removeAccents(parsed.destination || '');
+  const pOrigLoc = removeAccents(parsed.originLocation || '');
+  const pDestLoc = removeAccents(parsed.destinationLocation || '');
+  const pComp = Number(parsed.companyFreightValuePerTon) || 0;
+  const pDriv = Number(parsed.driverFreightValuePerTon) || 0;
+
+  return existingCargos.find((c) => {
+    if (c.status === CargoStatus.Fechada) return false;
+    if (c.clientId !== parsed.clientId) return false;
+    if (c.productId !== parsed.productId) return false;
+    if (removeAccents(c.origin || '') !== pOrigin) return false;
+    if (removeAccents(c.destination || '') !== pDest) return false;
+    if (removeAccents(c.originLocation || '') !== pOrigLoc) return false;
+    if (removeAccents(c.destinationLocation || '') !== pDestLoc) return false;
+    if (Math.abs((Number(c.companyFreightValuePerTon) || 0) - pComp) >= 0.01) return false;
+    if (Math.abs((Number(c.driverFreightValuePerTon) || 0) - pDriv) >= 0.01) return false;
+    return true;
+  });
 }

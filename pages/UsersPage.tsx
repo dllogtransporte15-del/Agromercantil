@@ -6,6 +6,8 @@ import UserFilter, { UserFilters } from '../components/UserFilter';
 import UserFormModal from '../components/UserFormModal';
 import PermissionsModal from '../components/PermissionsModal';
 import UserAccessViewerModal from '../components/UserAccessViewerModal';
+import OperatorAccessMonitorModal from '../components/OperatorAccessMonitorModal';
+import type { OnlineOperatorPresence } from '../services/accessMonitorService';
 import type { 
   User, ProfilePermissions, Client, Branch, Cargo, Shipment, Owner, 
   Driver, Vehicle, Product, FreightOffer, RiskQueryOption, Ticket 
@@ -13,7 +15,7 @@ import type {
 import { UserProfile } from '../types';
 import { can, isDeveloperUser, filterVisibleUsers, filterVisibleProfiles } from '../auth';
 import { useToast } from '../hooks/useToast';
-import { Building2, Globe, Truck, Users, Mail, GraduationCap, Link2 } from 'lucide-react';
+import { Building2, Globe, Truck, Users, Mail, GraduationCap, Link2, Activity } from 'lucide-react';
 
 export type UserTabType = 'internal' | 'external_clients' | 'external_drivers' | 'external_students' | 'all';
 
@@ -38,6 +40,7 @@ interface UsersPageProps {
   tickets?: Ticket[];
   riskQueryOptions?: RiskQueryOption[];
   companyLogo?: string | null;
+  onlineOperators?: Record<string, OnlineOperatorPresence>;
 }
 
 export const isExternalUserProfile = (profile?: UserProfile | string): boolean => {
@@ -64,11 +67,13 @@ const UsersPage: React.FC<UsersPageProps> = ({
   stays = [],
   tickets = [],
   riskQueryOptions = [],
-  companyLogo = null
+  companyLogo = null,
+  onlineOperators = {}
 }) => {
   const [activeTab, setActiveTab] = useState<UserTabType>('internal');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
+  const [isAccessMonitorOpen, setIsAccessMonitorOpen] = useState(false);
   const [userToEdit, setUserToEdit] = useState<User | null>(null);
   const [userToInspect, setUserToInspect] = useState<User | null>(null);
   const [filters, setFilters] = useState<UserFilters>({
@@ -229,9 +234,25 @@ const UsersPage: React.FC<UsersPageProps> = ({
     }
   };
 
+  const onlineInternalCount = useMemo(() => {
+    return visibleUsersList.filter(
+      (u) => !isExternalUserProfile(u.profile) && Boolean(onlineOperators[u.id])
+    ).length;
+  }, [visibleUsersList, onlineOperators]);
+
   return (
     <>
       <Header title="Gerenciar Usuários">
+          <button
+              type="button"
+              onClick={() => setIsAccessMonitorOpen(true)}
+              className="px-4 py-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 font-medium text-sm transition-colors flex items-center gap-2 cursor-pointer"
+              title="Monitorar operadores online e histórico de acessos com data e hora"
+          >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <Activity className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Monitor de Acessos ({onlineInternalCount} online)</span>
+          </button>
           <button
               type="button"
               onClick={handleCopyCourseLink}
@@ -382,6 +403,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
         onDelete={canDeleteUser ? handleDeleteUser : undefined}
         onInspectUser={isAdmin ? (user) => setUserToInspect(user) : undefined}
         onCopyAccessMessage={handleCopyAccessMessage}
+        onlineOperators={onlineOperators}
         clients={clients}
         branches={branches}
         showAppOptionColumn={activeTab === 'internal' || activeTab === 'all'}
@@ -444,6 +466,13 @@ const UsersPage: React.FC<UsersPageProps> = ({
         tickets={tickets}
         riskQueryOptions={riskQueryOptions}
         companyLogo={companyLogo}
+      />
+
+      <OperatorAccessMonitorModal
+        isOpen={isAccessMonitorOpen}
+        onClose={() => setIsAccessMonitorOpen(false)}
+        users={visibleUsersList}
+        onlineOperators={onlineOperators}
       />
     </>
   );

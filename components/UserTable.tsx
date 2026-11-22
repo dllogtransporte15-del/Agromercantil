@@ -4,6 +4,7 @@ import type { User, Client, Branch } from '../types';
 import { UserProfile } from '../types';
 import { WhatsAppIcon } from './icons';
 import { Building2, Smartphone, PhoneOff, Eye, Mail, Check } from 'lucide-react';
+import type { OnlineOperatorPresence } from '../services/accessMonitorService';
 
 interface UserTableProps {
   users: User[];
@@ -12,6 +13,7 @@ interface UserTableProps {
   onDelete?: (userId: string) => void;
   onInspectUser?: (user: User) => void;
   onCopyAccessMessage?: (user: User) => void;
+  onlineOperators?: Record<string, OnlineOperatorPresence>;
   clients?: Client[];
   branches?: Branch[];
   showAppOptionColumn?: boolean;
@@ -25,6 +27,7 @@ const UserTable: React.FC<UserTableProps> = ({
   onDelete, 
   onInspectUser, 
   onCopyAccessMessage,
+  onlineOperators = {},
   clients, 
   branches,
   showAppOptionColumn = false, 
@@ -89,7 +92,28 @@ const UserTable: React.FC<UserTableProps> = ({
                   </span>
                 </td>
                 <td className="px-3 sm:px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">
-                  {user.name}
+                  <div className="flex items-center gap-2">
+                    <span>{user.name}</span>
+                    {isInternal(user.profile) && (
+                      onlineOperators[user.id] ? (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60"
+                          title={`Online agora em ${onlineOperators[user.id].currentPage || 'Sistema'}`}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Online
+                        </span>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500 border border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700"
+                          title="Operador offline no momento"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                          Offline
+                        </span>
+                      )
+                    )}
+                  </div>
                 </td>
                 <td className="px-3 sm:px-4 py-3 text-sm text-gray-500 dark:text-gray-400 truncate max-w-[200px] lg:max-w-xs xl:max-w-none" title={user.email}>
                   <div className="font-medium text-gray-900 dark:text-gray-100">{user.email}</div>
