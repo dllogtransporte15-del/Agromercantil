@@ -27,6 +27,39 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_26_v2_116_65',
+    version: 'v2.116.65',
+    date: '26/11/2026',
+    title: 'Autenticação Supabase Auth & Rotas Protegidas',
+    summary: 'Integração híbrida e progressiva com o Supabase Auth (sessão oficial, vínculo automático de auth_id e listener de estado) e proteção uniforme de todas as rotas internas por perfil e permissão.',
+    items: [
+      {
+        category: 'security',
+        title: 'Supabase Auth Híbrido e Persistência de Sessão',
+        description: 'Login interno passa a autenticar via Supabase Auth (signInWithPassword) com fallback e vínculo progressivo automático para usuários existentes em app_users, mantendo o acesso de motoristas por CPF.'
+      },
+      {
+        category: 'security',
+        title: 'Guarda de Rotas Protegidas (ProtectedRoute)',
+        description: 'Todas as rotas internas agora validam autenticação e permissão de leitura por módulo, redirecionando acessos não autorizados ao Dashboard com notificação.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_26_v2_116_64',
+    version: 'v2.116.64',
+    date: '26/11/2026',
+    title: 'Assessor IA & Base de Conhecimento Corporativa',
+    summary: 'Novo módulo de Assessor IA em Módulos & Utilitários com banco de conhecimento alimentável e sincronizado via Supabase para responder dúvidas de operadores e gestores automaticamente.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Assessor IA por Voz e Base de Conhecimento',
+        description: 'Nova ferramenta "Assessor IA & Conhecimento" com conversa por voz (microfone e resposta falada em áudio), chat inteligente, cadastro/edição de informações por categoria e tags, e configurações de personalidade.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_22_v2_116_63',
     version: 'v2.116.63',
     date: '22/11/2026',

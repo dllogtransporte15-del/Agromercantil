@@ -14,17 +14,20 @@ import { ReloadPrompt } from './components/ReloadPrompt';
 import { BrowserRouter } from 'react-router-dom';
 
 import ErrorBoundary from './components/ErrorBoundary';
+import { SupabaseAuthProvider } from './hooks/useSupabaseAuth';
 
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <ErrorBoundary>
       <BrowserRouter>
-        <ToastProvider>
-          <App />
-          <ToastContainer />
-          <ReloadPrompt />
-        </ToastProvider>
+        <SupabaseAuthProvider>
+          <ToastProvider>
+            <App />
+            <ToastContainer />
+            <ReloadPrompt />
+          </ToastProvider>
+        </SupabaseAuthProvider>
       </BrowserRouter>
     </ErrorBoundary>
   </React.StrictMode>

@@ -123,6 +123,7 @@ const navItems: NavItem[] = [
       { id: 'layover-calculator', label: 'Cálculo de Estadias', icon: CalculatorIcon },
       { id: 'freight-quote', label: 'Precificação & Cotações', icon: MapIcon },
       { id: 'atua-reconciliation', label: 'Auditoria Atua TMS', icon: Scale },
+      { id: 'ai-assistant', label: 'Assessor IA & Conhecimento', icon: Sparkles },
       { id: 'messenger', label: 'Mensageiro WhatsApp', icon: Send },
       { id: 'tools-history', label: 'Histórico de Cotações', icon: HistoryIcon },
       { id: 'freight-offers-history', label: 'Histórico de Ofertas', icon: HistoryIcon },

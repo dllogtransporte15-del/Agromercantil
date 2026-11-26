@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabase';
 import { fetchDriverExtraConfig, saveDriverExtraConfig, fetchUserExtraConfig, saveUserExtraConfig } from '../lib/db';
+import { signInWithSupabaseHybrid } from '../services/supabaseAuthService';
 import { User, UserProfile, DriverClassification, VehicleSetType, VehicleBodyType } from '../types';
 import type { ProfilePermissions } from '../types';
 import { formatCPF, formatPhone } from '../utils/formatters';
@@ -223,51 +224,18 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
 
       } else {
         const inputLogin = email.trim();
-        const cleanEmail = inputLogin.toLowerCase();
-        const cleanPassword = password.trim();
-        const cleanDigits = inputLogin.replace(/\D/g, '');
-        const formattedCpf = cleanDigits.length === 11 ? formatCPF(cleanDigits) : '';
+        console.log('[LoginPage] Iniciando login híbrido para:', inputLogin);
 
-        console.log('[LoginPage] Iniciando login para:', inputLogin);
-        
-        let query = supabase.from('app_users').select('*').eq('password', cleanPassword);
-        if (formattedCpf) {
-          query = query.or(`email.ilike.${cleanEmail},email.eq.${inputLogin},email.eq.${formattedCpf},email.eq.${cleanDigits}`);
-        } else {
-          query = query.or(`email.ilike.${cleanEmail},email.eq.${inputLogin}`);
-        }
+        const result = await signInWithSupabaseHybrid(inputLogin, password);
 
-        const { data: dbUserList, error: dbError } = await query;
-        const dbUser = dbUserList && dbUserList.length > 0 ? dbUserList[0] : null;
-
-        if (dbError || !dbUser) {
-          console.error('[LoginPage] Erro de login:', dbError);
-          setError('Usuário, e-mail ou senha inválidos.');
+        if (!result.user) {
+          setError(result.error || 'Usuário, e-mail ou senha inválidos.');
           setIsLoading(false);
           return;
         }
 
-        const userProfile: User = {
-          id: dbUser.id,
-          name: dbUser.name,
-          email: dbUser.email,
-          profile: dbUser.profile,
-          active: dbUser.active,
-          password: dbUser.password,
-          clientId: dbUser.client_id || undefined,
-          branchId: dbUser.branch_id || undefined,
-          filialId: dbUser.branch_id || undefined,
-          requirePasswordChange: dbUser.require_password_change,
-          authId: dbUser.auth_id
-        };
-
-        if (!userProfile.active) {
-          setError('Este usuário está inativo.');
-          setIsLoading(false);
-          return;
-        }
-
-        console.log('[LoginPage] Login bem-sucedido:', userProfile.name);
+        const userProfile = result.user;
+        console.log('[LoginPage] Login bem-sucedido:', userProfile.name, `(${result.authMode})`);
         sessionStorage.setItem('trancunha_user_email', userProfile.email);
         sessionStorage.setItem('trancunha_currentUser', JSON.stringify(userProfile));
         try {

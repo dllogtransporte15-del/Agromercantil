@@ -64,7 +64,7 @@ const CATEGORIES = [
 ];
 
 const READ_ONLY_PAGES = [
-  'dashboard', 'reports', 'appearance', 'ai-assistant', 
+  'dashboard', 'reports', 'appearance', 
   'operational-map', 'shipment-history', 'load-history', 
   'tools-history', 'freight-offers-history', 'system-monitor'
 ] as Page[];
